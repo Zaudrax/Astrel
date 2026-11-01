@@ -1,0 +1,55 @@
+Astrel
+Copyright 2026 Baptiste Renaud (https://github.com/Zaudrax)
+Licence : PolyForm Noncommercial 1.0.0 (fichier LICENSE).
+
+COMPOSANTS TIERS
+
+Ils ne font pas partie de ce dépôt : l'installation (install.py) les télécharge
+ou les installe à part, chacun sous sa propre licence. Versions : celles fixées
+dans requirements.txt et les package.json, au 02/11/2026.
+
+Python (pip, requirements.txt)
+- openWakeWord 0.4.0 : code sous Apache-2.0. Ses modèles pré-entraînés (dont
+  l'alias d'éveil « hey_jarvis ») sont sous CC BY-NC-SA 4.0 : usage non
+  commercial. Le modèle de détection de voix Silero VAD qu'il fournit vient de
+  snakers4/silero-vad (MIT).
+- faster-whisper 1.2.1 (MIT), avec CTranslate2 (MIT). Le modèle Whisper
+  « small » converti (Systran/faster-whisper-small, MIT) est téléchargé depuis
+  Hugging Face au premier lancement.
+- Piper (piper-tts 1.8.0) : GPL-3.0-or-later.
+- edge-tts 7.3.1 : LGPL-3.0. Il appelle le service de synthèse vocale en ligne
+  de Microsoft Edge, soumis aux conditions de Microsoft.
+- onnxruntime (MIT), google-genai (Apache-2.0), aiohttp (Apache-2.0 et MIT),
+  mcp (MIT), httpx et httpcore (BSD-3-Clause), h11 (MIT), python-dateutil
+  (Apache-2.0 ou BSD), opencv-python-headless (Apache-2.0), MediaPipe
+  (Apache-2.0), psutil (BSD-3-Clause), NumPy (BSD-3-Clause), pytest (MIT),
+  sounddevice (MIT, hors Linux).
+- nvidia-cublas-cu12 et nvidia-cudnn-cu12 (Linux) : licence propriétaire NVIDIA.
+
+Modèles téléchargés par tools/fetch_models.py
+- Voix Piper fr_FR-upmc-medium (rhasspy/piper-voices) : données UPMC sous
+  CC BY-SA 4.0, d'après sa fiche de modèle.
+- MediaPipe blaze_face_short_range et gesture_recognizer (Google) : Apache-2.0.
+
+Node.js (npm)
+- hud : qrcode-generator 2.0.4 (MIT) ; esbuild (MIT), pour la compilation.
+- whatsapp : Baileys 7.0.0-rc14 (MIT), pino 9.14.0 (MIT),
+  qrcode-terminal 0.12.0 (Apache-2.0).
+- imagegen : playwright-core 1.64.1 (Apache-2.0).
+- mcp-servers : @playwright/mcp 0.0.82 (Apache-2.0).
+
+Installés à la demande depuis Réglages ou un outil
+- LiteLLM 1.105.1 (passerelle des autres fournisseurs) : MIT.
+- markitdown 0.1.8 (lecture de documents) : MIT.
+- rtk, édition rtk-oss (sorties de commandes compactées) : Apache-2.0.
+
+Fichiers tiers inclus dans ce dépôt
+- Police Inter (hud/assets/fonts/InterVariable.woff2) : SIL Open Font License
+  1.1, texte dans hud/assets/fonts/OFL.txt.
+- Icônes de services (hud/assets/icons/) : Simple Icons, https://simpleicons.org,
+  CC0 1.0. Les marques et logos restent la propriété de leurs détenteurs.
+
+Services en ligne
+Claude Code (Anthropic), la voix Edge (Microsoft), les fournisseurs d'IA et les
+sites de génération d'images ou de vidéos s'utilisent avec le compte de
+l'utilisateur et sous leurs propres conditions.
