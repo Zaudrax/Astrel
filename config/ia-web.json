@@ -1,0 +1,91 @@
+{
+ "version": 1,
+ "_note": "Catalogue des générateurs IA par le navigateur (plan P40, 27/10/2026), lu par astrel/ia_web.py et imagegen/. Par service : type (image|video), fournisseur du compte (google|openai|aucun), url, modeles [{id, libelle, cout en unités}], plafond par compte sur la fenetre (jour = minuit, 24h = depuis la première image), rang en mode auto (1 = essayé d'abord), pieces (vrai : le site prend des pièces jointes, P40 A4 ; absent = non). modeles_releves faux : les modèles réels du site ne sont PAS encore relevés (question Q5 du plan) ; seul le modèle par défaut du site est proposé, jamais un nom inventé. Les variables ASTREL_IMAGES_PLAFOND_* priment sur plafond.",
+ "services": {
+  "gemini": {
+   "type": "image",
+   "libelle": "Gemini",
+   "fournisseur": "google",
+   "url": "https://gemini.google.com/app",
+   "modeles": [{"id": "defaut", "libelle": "Modèle par défaut du site", "cout": 1}],
+   "modeles_releves": false,
+   "plafond": 20,
+   "fenetre": "jour",
+   "rang": 1,
+   "pieces": true
+  },
+  "chatgpt": {
+   "type": "image",
+   "libelle": "ChatGPT",
+   "fournisseur": "openai",
+   "url": "https://chatgpt.com/",
+   "modeles": [{"id": "defaut", "libelle": "Modèle par défaut du site", "cout": 1}],
+   "modeles_releves": false,
+   "plafond": 3,
+   "fenetre": "24h",
+   "rang": 2,
+   "pieces": true
+  },
+  "bing": {
+   "type": "image",
+   "libelle": "Bing Image Creator",
+   "fournisseur": "aucun",
+   "url": "https://www.bing.com/images/create",
+   "modeles": [{"id": "defaut", "libelle": "Modèle par défaut du site", "cout": 1}],
+   "modeles_releves": false,
+   "plafond": 15,
+   "fenetre": "jour",
+   "rang": 3,
+   "pieces": false
+  },
+  "flow": {
+   "type": "video",
+   "libelle": "Google Flow",
+   "fournisseur": "google",
+   "url": "https://flow.google.com/",
+   "pieces": true,
+   "_a_confirmer": "Plan P41 (vidéo, astrel/videos_ia.py) : valeurs PAR DÉFAUT PRUDENTES, à confirmer par le relevé B0 de l'utilisateur (étape 1 du plan), rien n'est relevé sur le vrai site. url vide : adresse exacte de la page non relevée (le module du site garde la sienne). Coûts en crédits Lite 10, Fast 20, Quality 100 (payant : refusé en gratuit), 50 crédits par fenêtre de 24 h ouverte par la première génération, durées 4/6/8 s, créneau de pointe 14 h-17 h UTC : chiffres du plan P41, source unique, non vérifiés.",
+   "modeles": [
+    {"id": "lite", "libelle": "Veo 3.1 Lite", "cout": 10, "durees": {"8": 10}},
+    {"id": "fast", "libelle": "Veo 3.1 Fast", "cout": 20, "durees": {"8": 20}},
+    {"id": "quality", "libelle": "Veo 3.1 Quality", "cout": 100, "gratuit": false, "durees": {"8": 100}},
+    {"id": "omni-flash", "libelle": "Omni 1.1 Flash (720p)", "cout": 12, "durees": {"4": 7, "8": 12, "10": 15}}
+   ],
+   "_pointe": "30/10 : plus de report PRÉVENTIF de 14 h à 17 h UTC (chiffre du plan P41 jamais vérifié ; il a reporté une vidéo de 15 h à 18 h). Le worker ne reporte que sur un vrai message de forte charge du site (code pointe).",
+   "_durees": "P41 B3 (28/10) : durees par modèle = secondes → crédits du relevé B0 (720p). Veo : 8 s seulement. Omni : 6 s proposé par le site mais coût NON relevé, donc pas proposé ici (à ajouter après un relevé).",
+   "_releve_b0": "Relevé du 28/10/2026 sur flow.google.com, mode Frames puis Ingredients, rien généré. Coûts en crédits pour UNE vidéo 720p de 8 s : Veo Lite 10, Fast 20, Quality 100 (refusé : solde 50), Omni 1.1 Flash 12 (360p : 6 ; 720p 4 s : 7, 10 s : 15 ; x4 = quatre fois le prix). Omni accepte 360p/720p et 4/6/8/10 s ; Veo n'a montré aucun choix de durée (8 s fixe) : durées par modèle dans `durees` de chaque modèle (P41 B3), `video.durees` ci-dessous = repli d'un modèle sans durées relevées ; la résolution n'est pas encore dans le code. Formats 16:9 et 9:16. Modes : Frames (image de départ + image de fin) et Ingredients (images de référence, bouton +). Filigrane vidéo et créneau de pointe : NON relevés (filigrane remis à plus tard par l'utilisateur ; pointe_utc reste la valeur du plan, non vérifiée). Détail : vault idees/releve-b0-flow-2026-10-28.md.",
+   "modeles_releves": true,
+   "plafond": 50,
+   "fenetre": "24h",
+   "rang": 1,
+   "video": {"durees": [4, 6, 8], "duree_defaut": 8}
+  },
+  "dreamina": {
+   "type": "video",
+   "libelle": "Dreamina",
+   "fournisseur": "google",
+   "url": "https://dreamina.capcut.com/ai-tool/home?type=video",
+   "_releve": "Relevé B5 du 29/10/2026 (~/Projets/Videos-IA/releves/dreamina/releve.md, captures et pages enregistrées), prix de TOUS les modèles relevés l'après-midi (section « Prix de TOUS les modèles »). Compte Google connecté à la main dans le profil (« Continuer avec Google »). 120 crédits gratuits PAR JOUR, donnés à la visite connectée et valables jusqu'à la fin du jour, plus des crédits bonus gratuits (« Task reward ») : fenêtre « jour », plafond 120 = estimation affichée. limite « solde » (décision du 29/10) : la vraie limite est le SOLDE affiché par le site, lu par le pilote avant l'envoi (rien n'est envoyé s'il ne couvre pas le coût débité) ; un modèle plus cher que 120 reste donc proposé. Coûts = prix CATALOGUE (le nombre barré quand il y a une remise), seuls ceux relevés sont proposés : 720p (Brouillon 2.5 : 480p ; Seedance 1.0 : 1080p, sa seule résolution). Seedance 1.5 Pro, 1.0 et 1.0 rapide ne marchent qu'en mode « Première et dernière image » (le pilote le règle). Gratuit seulement (ni abonnement, ni API, ni Dreamina CLI). Pas d'image de départ. Messages d'erreur jamais vus : à relever au premier essai réel.",
+   "limite": "solde",
+   "connexion": "site",
+   "_connexion": "30/10 : connexion PROPRE au site (CapCut, « Continuer avec Google »), indépendante de la session Google du compte : une session perdue sur Dreamina ne marque pas Gemini ni Flow « à reconnecter ».",
+   "modeles": [
+    {"id": "seedance-2-mini", "libelle": "Seedance 2.0 Mini (720p)", "cout": 55, "durees": {"5": 55, "10": 110, "15": 165}},
+    {"id": "seedance-2-rapide", "libelle": "Seedance 2.0 rapide (720p)", "cout": 60, "durees": {"5": 60, "10": 120, "15": 180}},
+    {"id": "seedance-2", "libelle": "Seedance 2.0 (720p)", "cout": 75, "durees": {"5": 75, "10": 150, "15": 225}},
+    {"id": "seedance-25-brouillon", "libelle": "Seedance 2.5 brouillon (480p)", "cout": 75, "durees": {"5": 75}},
+    {"id": "seedance-25", "libelle": "Seedance 2.5 (720p)", "cout": 160, "durees": {"5": 160, "10": 320, "15": 480}},
+    {"id": "seedance-15-pro", "libelle": "Seedance 1.5 Pro (720p)", "cout": 90, "durees": {"5": 90, "10": 180}},
+    {"id": "seedance-1-rapide", "libelle": "Seedance 1.0 rapide (720p)", "cout": 25, "durees": {"5": 25, "10": 50}},
+    {"id": "seedance-1", "libelle": "Seedance 1.0 (1080p)", "cout": 125, "durees": {"5": 125, "10": 250}},
+    {"id": "happyhorse-11", "libelle": "HappyHorse 1.1 (720p)", "cout": 135, "durees": {"5": 135, "10": 270, "15": 405}},
+    {"id": "wan-3", "libelle": "Wan 3.0 (720p)", "cout": 80, "durees": {"5": 80, "10": 160, "15": 240}}
+   ],
+   "modeles_releves": true,
+   "plafond": 120,
+   "fenetre": "jour",
+   "rang": 2,
+   "video": {"durees": [5, 10, 15], "duree_defaut": 5}
+  }
+ }
+}

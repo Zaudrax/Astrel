@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="en">
+<!-- FAUSSE page Google Flow (plan P41 lot B1) pour `node --test` : reproduit ce que montrent
+     les captures du relevé B0 (barre de création, bascule Image/Video, Frames avec cases Start
+     et End, menus format / modèle / résolution / durée / x1, « Generating will use N credits »,
+     solde, bouton flèche orange si crédits insuffisants, annonce « Got it », reCAPTCHA
+     INVISIBLE en badge). Ce n'est PAS le vrai DOM de Flow (inconnu) : les mêmes rôles et textes
+     visibles. Mode par ?mode= : ok, lent, activite, activite_avant, pointe, pointe_apres, refus,
+     credits, cout, captcha, captcha_tard, session, change, confirmer, recadrage, webm, matroska, pasvideo,
+     fermee (bouton d'envoi inactif), solde_bas (solde < coût, bouton NON orange), echo (écho
+     retouché du prompt dans l'état de génération, rôle status), pointe_carte (« high demand »
+     hors de tout rôle d'alerte), clic_rate (calque transparent sur le bouton d'envoi), dl404
+     (téléchargement en 404), chargement (animation d'attente de 1 s avant le clip, si le test
+     sert /chargement.webm). Chaque clic d'envoi est signalé au serveur (/envoi).
+     &ui=2026 : NOUVELLE interface (relevé du 30/10 sur le vrai site, profil amw, sans générer :
+     docs/CLAUDE-DETAIL.md, puce « Flow RÉÉCRIT » ; dernier <script> de la page). L'ancienne reste
+     dans la page, masquée. Réglages par l'URL : mode (ok, x2_bloque : la radio x1 ne prend pas),
+     depart (modèle vidéo au départ : lite, fast, quality, omni), duree (affichée sur « Settings
+     trigger », 8s par défaut), video=1 (projet neuf déjà en Video ; sinon Image, Nano Banana, comme
+     un compte neuf), attest=0 (attestation « Rights to use this image » déjà acceptée),
+     modele_ferme=1 (le choix d'un modèle referme aussi le panneau des réglages), modele_refuse=1
+     (idem, et le modèle ne change pas). Gestes que le pilote ne doit JAMAIS faire (bandeau de cookies,
+     « Download project », roue « Settings », « Uploads » du menu de gauche…) : signalés au serveur
+     (/signal, « interdit:… »), comme l'attestation acceptée et la taille téléchargée. -->
+<head>
+<meta charset="utf-8">
+<title>Flow</title>
+<style>
+  body { font-family: sans-serif; margin: 0; background: #111; color: #eee; }
+  button { margin: 4px; padding: 6px 10px; }
+  #barre { position: fixed; bottom: 20px; left: 20px; right: 20px; background: #222; padding: 8px; }
+  #cases button { width: 90px; height: 60px; position: relative; overflow: hidden; }
+  #cases img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #menu { position: fixed; bottom: 150px; left: 300px; background: #333; padding: 6px; }
+  #menu [role^="menuitem"] { display: block; padding: 4px 10px; cursor: pointer; }
+  #annonce, #dialogue { position: fixed; top: 80px; left: 200px; background: #6b3fd4; padding: 20px; }
+  #fil video { width: 320px; height: 180px; background: #000; display: block; }
+  .envoi-orange { background: orange; }
+  /* ---- nouvelle interface (&ui=2026) */
+  #u26 header { display: flex; align-items: center; gap: 2px; height: 48px; }
+  #u26 nav { position: fixed; top: 56px; left: 0; width: 190px; }
+  #u26 nav button { display: block; width: 180px; text-align: left; }
+  #u26-grille { margin-left: 200px; display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; }
+  flow-video-tile { display: block; position: relative; width: 140px; height: 250px; background: #000; }
+  flow-video-tile img, flow-video-tile video { display: block; width: 100%; height: 100%; object-fit: cover; }
+  flow-video-tile .hotbar, flow-video-tile .pied { position: absolute; visibility: hidden; }
+  flow-video-tile .hotbar { top: 0; right: 0; }
+  flow-video-tile .pied { bottom: 0; left: 0; }
+  flow-video-tile.survol .hotbar, flow-video-tile.survol .pied { visibility: visible; }
+  #u26-boite { position: fixed; left: 300px; right: 200px; bottom: 16px; height: 150px; background: #222; }
+  #u26-boite .frame-trigger { display: inline-block; }
+  #u26-boite .frame-trigger button { width: 70px; height: 44px; position: relative; overflow: hidden; }
+  #u26-boite .frame-trigger img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #u26-champ { background: #333; min-height: 28px; margin: 2px 4px; }
+  .glue-cookie-notification-bar { position: fixed; left: 0; right: 0; bottom: 0; height: 140px; background: #fff; color: #000; z-index: 2000; }
+  .u26-fond { position: fixed; inset: 0; }
+  .u26-panneau { position: fixed; background: #333; padding: 6px; }
+  .u26-panneau [role="menuitem"] { display: block; width: 100%; text-align: left; }
+  .u26-panneau [role="menuitem"] span { display: inline-block; }
+  /* Liste de la bibliothèque à taille FIXE (cdk-virtual-scroll-viewport relevé) : rien ne bouge quand une
+     image téléversée prend sa vignette (sinon « Add to prompt » glissait sous le clic) */
+  #u26-biblio [role="listbox"] { display: block; height: 260px; overflow: auto; }
+  #u26-biblio [role="option"] { display: block; width: 100%; height: 48px; text-align: left; }
+  #u26-biblio [role="option"] img { width: 40px; height: 40px; vertical-align: middle; }
+  .u26-dialogue { position: fixed; top: 200px; left: 420px; width: 420px; background: #444; padding: 16px; }
+</style>
+</head>
+<body>
+<header><span id="solde">50 credits</span></header>
+<iframe title="reCAPTCHA" src="/recaptcha/api2/anchor?k=x&amp;size=invisible" style="position:fixed;bottom:14px;right:-186px;width:256px;height:60px;border:0"></iframe>
+<main id="accueil">
+  <h1>Flow</h1>
+  <button id="nouveau">add New project</button>
+</main>
+<main id="projet" hidden>
+  <div id="bandeau"></div>
+  <div id="fil"></div>
+  <div id="barre">
+    <div role="group" aria-label="Type">
+      <button id="m-image" aria-pressed="true">image Image</button>
+      <button id="m-video" aria-pressed="false">videocam Video</button>
+    </div>
+    <div role="tablist" id="sousmodes" hidden>
+      <button role="tab" id="t-frames" aria-selected="true">crop_free Frames</button>
+      <button role="tab" id="t-ingr" aria-selected="false">category Ingredients</button>
+    </div>
+    <div id="cases" hidden>
+      <button id="start" aria-label="Start">Start</button>
+      <button aria-label="Swap frames">swap_horiz</button>
+      <button id="end" aria-label="End">End</button>
+    </div>
+    <input type="file" id="fichier" accept="image/*" hidden>
+    <textarea id="prompt" aria-label="What do you want to create?" rows="2" cols="60"></textarea>
+    <button id="b-format" aria-haspopup="menu" aria-expanded="false">16:9</button>
+    <button id="b-modele" aria-haspopup="menu" aria-expanded="false">Veo 3.1 - Lite</button>
+    <button id="b-res" aria-haspopup="menu" aria-expanded="false" hidden>360p</button>
+    <button id="b-duree" aria-haspopup="menu" aria-expanded="false" hidden>8s</button>
+    <button id="b-nombre" aria-haspopup="menu" aria-expanded="false">x1</button>
+    <span id="cout"></span>
+    <button id="envoi" aria-label="Create">arrow_forward</button>
+  </div>
+</main>
+<div role="menu" id="menu" hidden></div>
+<div role="dialog" id="annonce" aria-label="New">
+  <p>Meet Omni 1.1 Flash, our newest video model.</p>
+  <button id="gotit">Got it</button>
+</div>
+<script>
+const q = new URLSearchParams(location.search)
+const mode = q.get('mode') || 'ok'
+const cle = q.get('cle') || ''
+const $ = (id) => document.getElementById(id)
+const etat = { modele: 'Veo 3.1 - Lite', format: '16:9', res: '360p', duree: '8s', nombre: 'x1', start: '', end: '', video: false, solde: ['credits', 'solde_bas'].includes(mode) ? 5 : 50 }
+const COUTS = { 'Veo 3.1 - Lite': { '8s': 10 }, 'Veo 3.1 - Fast': { '8s': 20 }, 'Veo 3.1 - Quality': { '8s': 100 },
+  'Omni 1.1 Flash': { '360p': { '4s': 4, '6s': 5, '8s': 6, '10s': 8 }, '720p': { '4s': 7, '6s': 9, '8s': 12, '10s': 15 } } }
+const MENUS = {
+  'b-format': ['16:9', '9:16'],
+  'b-modele': ['Omni 1.1 Flash', 'Veo 3.1 - Lite', 'Veo 3.1 - Fast', 'Veo 3.1 - Quality'],
+  'b-res': ['360p', '720p'],
+  'b-duree': ['4s', '6s', '8s', '10s'],
+  'b-nombre': ['x1', 'x2', 'x3', 'x4']
+}
+const CLES = { 'b-format': 'format', 'b-modele': 'modele', 'b-res': 'res', 'b-duree': 'duree', 'b-nombre': 'nombre' }
+
+function cout () {
+  const m = etat.modele === 'Omni 1.1 Flash' ? COUTS[etat.modele][etat.res][etat.duree] : COUTS[etat.modele]['8s']
+  return m * Number(etat.nombre.slice(1)) + (mode === 'cout' ? 5 : 0)
+}
+function majCout () {
+  const n = cout()
+  $('cout').textContent = `Generating will use ${n} credits`
+  const manque = n > etat.solde && mode !== 'solde_bas'
+  $('envoi').classList.toggle('envoi-orange', manque)
+  $('envoi').textContent = manque ? 'info arrow_forward' : 'arrow_forward'
+  $('envoi').title = manque ? 'Not enough credits' : ''
+  if (mode === 'fermee') $('envoi').disabled = true
+  const omni = etat.modele === 'Omni 1.1 Flash'
+  $('b-res').hidden = !omni
+  $('b-duree').hidden = !omni
+}
+
+$('gotit').onclick = () => { $('annonce').remove() }
+// solde_bas : le solde AFFICHÉ est le vrai (en mode credits, il reste 50 affiché : seul le bouton orange le dit)
+if (mode === 'solde_bas') $('solde').textContent = `${etat.solde} credits`
+
+if (mode === 'session') {
+  $('nouveau').remove()
+  const b = document.createElement('a'); b.href = '#'; b.textContent = 'Sign in'; $('accueil').append(b)
+}
+if (mode === 'change') $('nouveau').remove()
+if (mode === 'captcha') {
+  const f = document.createElement('iframe')
+  f.src = '/recaptcha/api2/bframe?k=x'; f.width = 400; f.height = 580
+  f.style.cssText = 'position:absolute;top:40px;left:40px;border:0'
+  document.body.append(f)
+}
+
+$('nouveau').onclick = () => {
+  $('accueil').hidden = true
+  $('projet').hidden = false
+  if (mode === 'pointe') $('bandeau').textContent = 'We\'re experiencing high demand right now. Please try again after 5:00 PM.'
+  if (mode === 'activite_avant') $('bandeau').textContent = 'We noticed some unusual activity on your account. Please try again later.'
+  if (mode === 'captcha_tard') { // défi qui n'apparaît qu'une fois le projet ouvert, par-dessus la barre
+    const f = document.createElement('iframe')
+    f.src = '/recaptcha/api2/bframe?k=x'
+    f.style.cssText = 'position:fixed;left:0;bottom:0;width:100%;height:320px;border:0;background:#fff;z-index:9'
+    document.body.append(f)
+  }
+  majCout()
+  if (mode === 'clic_rate') { // calque transparent posé sur le bouton d'envoi une fois le prompt tapé
+    $('prompt').addEventListener('input', () => {
+      if ($('calque')) return
+      const r = $('envoi').getBoundingClientRect()
+      const c = document.createElement('div')
+      c.id = 'calque'
+      c.style.cssText = `position:fixed;left:${r.left - 4}px;top:${r.top - 4}px;width:${r.width + 8}px;height:${r.height + 8}px;z-index:50`
+      document.body.append(c)
+    })
+  }
+}
+
+$('m-video').onclick = () => {
+  $('m-video').setAttribute('aria-pressed', 'true'); $('m-image').setAttribute('aria-pressed', 'false')
+  $('sousmodes').hidden = false; $('cases').hidden = false; majCout()
+}
+$('m-image').onclick = () => {
+  $('m-video').setAttribute('aria-pressed', 'false'); $('m-image').setAttribute('aria-pressed', 'true')
+  $('sousmodes').hidden = true; $('cases').hidden = true
+}
+$('t-frames').onclick = () => { $('t-frames').setAttribute('aria-selected', 'true'); $('t-ingr').setAttribute('aria-selected', 'false'); $('cases').hidden = false }
+$('t-ingr').onclick = () => { $('t-frames').setAttribute('aria-selected', 'false'); $('t-ingr').setAttribute('aria-selected', 'true'); $('cases').hidden = true }
+
+// Cases Start / End : choix de fichier, recadrage éventuel, vignette à la place de la case
+let caseVisee = null
+function poserVignette (id, fichier) {
+  const img = document.createElement('img')
+  img.src = URL.createObjectURL(fichier)
+  $(id).textContent = ''
+  $(id).append(img)
+  etat[id] = fichier.name
+}
+for (const id of ['start', 'end']) {
+  $(id).onclick = () => { caseVisee = id; $('fichier').value = ''; $('fichier').click() }
+}
+$('fichier').onchange = () => {
+  const f = $('fichier').files[0]
+  if (!f || !caseVisee) return
+  const id = caseVisee
+  if (mode !== 'recadrage') { poserVignette(id, f); return }
+  const d = document.createElement('div')
+  d.setAttribute('role', 'dialog'); d.id = 'dialogue'
+  d.innerHTML = '<p>Crop your frame</p><button>Cancel</button><button>Crop and save</button>'
+  d.querySelectorAll('button')[1].onclick = () => { d.remove(); poserVignette(id, f) }
+  document.body.append(d)
+}
+
+// Menus à valeurs
+function ouvrirMenu (bouton) {
+  const menu = $('menu')
+  if (!menu.hidden && menu.dataset.pour === bouton.id) { fermerMenu(); return }
+  menu.innerHTML = ''
+  menu.dataset.pour = bouton.id
+  for (const v of MENUS[bouton.id]) {
+    const it = document.createElement('div')
+    it.setAttribute('role', 'menuitemradio')
+    it.setAttribute('aria-checked', String(etat[CLES[bouton.id]] === v))
+    it.tabIndex = 0
+    it.textContent = v
+    it.onclick = () => { etat[CLES[bouton.id]] = v; bouton.textContent = v; fermerMenu(); majCout() }
+    menu.append(it)
+  }
+  menu.hidden = false
+  bouton.setAttribute('aria-expanded', 'true')
+}
+function fermerMenu () {
+  const menu = $('menu')
+  if (menu.dataset.pour) $(menu.dataset.pour)?.setAttribute('aria-expanded', 'false')
+  menu.hidden = true; menu.dataset.pour = ''
+}
+for (const id of Object.keys(MENUS)) $(id).onclick = () => ouvrirMenu($(id))
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fermerMenu() })
+
+// Envoi : signalé au serveur à CHAQUE clic, puis génération selon le mode
+$('envoi').onclick = () => {
+  const releve = { cle, mode, modele: etat.modele, format: etat.format, res: etat.res, duree: etat.duree, nombre: etat.nombre,
+    start: etat.start, end: etat.end, prompt: $('prompt').value, cout: cout(), annonce: !!$('annonce'),
+    video: $('m-video').getAttribute('aria-pressed') === 'true', frames: $('t-frames').getAttribute('aria-selected') === 'true' }
+  fetch('/envoi', { method: 'POST', body: JSON.stringify(releve) })
+  if (cout() > etat.solde) return
+  if (mode === 'confirmer') {
+    const d = document.createElement('div')
+    d.setAttribute('role', 'dialog'); d.id = 'dialogue'
+    d.innerHTML = `<p>This will use ${cout()} credits.</p><button>Cancel</button><button>Generate</button>`
+    d.querySelectorAll('button')[1].onclick = () => { d.remove(); lancer() }
+    document.body.append(d)
+    return
+  }
+  lancer()
+}
+
+function lancer () {
+  const carte = document.createElement('div')
+  carte.innerHTML = '<p class="etat" role="status">Generating… 0%</p>'
+  const legende = document.createElement('p')
+  legende.textContent = $('prompt').value
+  carte.append(legende)
+  $('fil').append(carte)
+  const etatP = carte.querySelector('.etat')
+  if (mode === 'lent') { etatP.textContent = 'Generating… 12%'; return }
+  // Écho RETOUCHÉ du prompt (espaces, guillemets, tronqué) : textePage ne le retire pas
+  if (mode === 'echo') etatP.textContent = `Generating: ${$('prompt').value.replace(/\s+/g, ' ').replace(/"/g, '\u201d').slice(0, 90)}…`
+  if (mode === 'pointe_carte') {
+    const p = document.createElement('p')
+    p.textContent = 'Flow is experiencing high demand. Generation may take longer.'
+    carte.append(p)
+  }
+  if (mode === 'chargement') { // animation d'attente (boucle de 1 s), affichée, avant le clip
+    const l = document.createElement('video')
+    l.src = '/chargement.webm'; l.muted = true; l.loop = true; l.autoplay = true
+    carte.prepend(l)
+  }
+  setTimeout(() => {
+    if (mode === 'activite') { etatP.textContent = 'We noticed some unusual activity. Please try again later.'; return }
+    if (mode === 'pointe_apres') { etatP.textContent = 'Flow is experiencing high demand. Try again after 5:00 PM.'; return }
+    if (mode === 'refus') { etatP.textContent = 'We couldn\'t generate your video. This prompt might violate our policies.'; return }
+    etatP.textContent = ''
+    const src = { webm: '/clip.webm', matroska: '/clip.mkv', pasvideo: '/pas-video.mp4' }[mode] || '/clip.mp4'
+    const original = mode === 'dl404' ? '/absent.mp4' : src
+    const v = document.createElement('video')
+    v.src = src + '?n=' + Date.now()
+    v.muted = true
+    carte.prepend(v)
+    const dl = document.createElement('button')
+    dl.setAttribute('aria-label', 'Download')
+    dl.textContent = 'download'
+    dl.onclick = () => {
+      const menu = $('menu')
+      menu.innerHTML = ''
+      menu.dataset.pour = ''
+      for (const [texte, lien] of [['Animated GIF (270p)', '/clip.gif'], ['Original size (720p)', original], ['Upscaled (1080p)', '/upscale']]) {
+        const it = document.createElement('div')
+        it.setAttribute('role', 'menuitem')
+        it.textContent = texte
+        it.onclick = () => {
+          fermerMenu()
+          const a = document.createElement('a')
+          a.href = lien; a.download = 'flow' + lien.slice(lien.lastIndexOf('.'))
+          document.body.append(a); a.click(); a.remove()
+        }
+        menu.append(it)
+      }
+      menu.hidden = false
+    }
+    carte.append(dl)
+  }, ['echo', 'pointe_carte', 'chargement'].includes(mode) ? 1500 : 300)
+}
+</script>
+<script>
+// ---------------------------------------------------------------- nouvelle interface (&ui=2026)
+// Reproduit le relevé du 30/10 (scripts de relevé sur le profil amw, sans jamais générer) : noms,
+// rôles et états RELEVÉS ; ce qui n'a pas été relevé est dit en commentaire (« supposé »).
+(() => {
+  const q = new URLSearchParams(location.search)
+  if (q.get('ui') !== '2026') return
+  const mode = q.get('mode') || 'ok'
+  const cle = q.get('cle') || ''
+  // L'ancienne interface reste dans la page, MASQUÉE (ses gestionnaires restent branchés, sans effet) ;
+  // le badge reCAPTCHA invisible (et un défi ajouté par ?mode=captcha) restent visibles
+  const ancienne = document.createElement('div')
+  ancienne.hidden = true
+  for (const n of [...document.body.children]) if (!['SCRIPT', 'IFRAME'].includes(n.tagName)) ancienne.append(n)
+  document.body.prepend(ancienne)
+
+  const signaler = (quoi) => fetch('/signal', { method: 'POST', body: JSON.stringify({ cle, quoi }) }).catch(() => {})
+  const interdits = []
+  const interdit = (quoi) => { interdits.push(quoi); signaler(`interdit:${quoi}`) }
+
+  const el = (tag, attrs = {}, ...enfants) => {
+    const e = document.createElement(tag)
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'texte') e.textContent = v
+      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v)
+      else if (v === true) e.setAttribute(k, '')
+      else if (v !== false && v != null) e.setAttribute(k, v)
+    }
+    e.append(...enfants)
+    return e
+  }
+  const bouton = (texte, aria, clic, attrs = {}) => el('button', { type: 'button', 'aria-label': aria, texte, onclick: clic, ...attrs })
+
+  // ---- état (réglages gardés par compte sur le vrai site : un compte neuf part en Image, x2)
+  const MODELES = { lite: 'Veo 3.1 - Lite', fast: 'Veo 3.1 - Fast', quality: 'Veo 3.1 - Quality', omni: 'Omni 1.1 Flash' }
+  const ICONES = { '16:9': 'crop_16_9', '4:3': 'crop_landscape', '1:1': 'crop_square', '3:4': 'crop_portrait', '9:16': 'crop_9_16' }
+  const S = {
+    type: q.get('video') === '1' ? 'video' : 'image',
+    sousmode: 'ingredients', // Video : Ingredients coché par défaut (relevé)
+    format: '16:9',
+    nombre: 'x2', // x2 PAR DÉFAUT (relevé)
+    modeleVideo: MODELES[q.get('depart')] || MODELES.lite,
+    duree: q.get('duree') || '8s',
+    start: '',
+    end: '',
+    attestee: q.get('attest') === '0'
+  }
+  const texteReglages = () => S.type === 'video'
+    ? `Video · 720p · ${S.duree} ${ICONES[S.format]} ${S.nombre}` // relevé : « Video · 720p · 8s crop_9_16 x1 »
+    : `🍌 Nano Banana 2.1 ${ICONES[S.format]} ${S.nombre}`
+
+  // ---- calques (cdk-overlay) : menus empilés, Échap ferme celui du dessus, un clic sur le fond
+  // (transparent) ferme le menu SANS atteindre ce qui est dessous (comportement des menus Material)
+  const calques = el('div', { class: 'cdk-overlay-container' })
+  const pile = []
+  function ouvrirCalque (panneau, { declencheur = null, fond = true, fondFerme = true } = {}) {
+    const f = fond ? el('div', { class: 'u26-fond', onclick: () => { if (fondFerme) fermerCalque(panneau) } }) : null
+    if (f) f.style.zIndex = String(1000 + pile.length * 2)
+    panneau.style.zIndex = String(1001 + pile.length * 2)
+    calques.append(...(f ? [f] : []), panneau)
+    pile.push({ panneau, fond: f, declencheur })
+    declencheur?.setAttribute('aria-expanded', 'true')
+  }
+  /** Ferme `panneau` et tout ce qui est ouvert au-dessus. */
+  function fermerCalque (panneau) {
+    const i = pile.findIndex((p) => p.panneau === panneau)
+    if (i < 0) return
+    for (const p of pile.splice(i).reverse()) {
+      p.panneau.remove()
+      p.fond?.remove()
+      p.declencheur?.setAttribute('aria-expanded', 'false')
+    }
+  }
+  const ouvert = (panneau) => pile.some((p) => p.panneau === panneau)
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && pile.length) fermerCalque(pile.at(-1).panneau) })
+
+  // ---- accueil
+  const accueil = el('main', { id: 'u26-accueil' },
+    el('header', {}, bouton('help', 'Product help'), bouton('more_vert', 'More options'),
+      el('div', { role: 'button', 'aria-label': 'Account details', tabindex: '0' }), bouton('upgrade Upgrade')),
+    el('h1', { texte: 'Flow' }),
+    ...['Oct 29 - 18:02', 'Oct 30 - 15:05'].map((t) => el('div', { class: 'projet' }, el('span', { texte: t }),
+      bouton('edit', 'Edit project title'), bouton('delete', 'Delete project', () => interdit('delete-project')))),
+    bouton('add New project', null, () => ouvrirProjet()))
+
+  // ---- page de projet
+  const grille = el('div', { id: 'u26-grille' })
+  const champ = el('div', { id: 'u26-champ', role: 'textbox', contenteditable: 'true', 'aria-label': 'What do you want to create?', 'aria-multiline': 'true' })
+  const declencheurReglages = bouton('', 'Settings trigger', () => (ouvert(panneauReglages) ? fermerCalque(panneauReglages) : ouvrirReglages()), { 'aria-haspopup': 'menu', 'aria-expanded': 'false' })
+  const envoi = bouton('arrow_forward', 'Start generation', () => lancer(), { disabled: true })
+  const barre = el('div', { class: 'prompt-top-row' })
+  const boite = el('div', { id: 'u26-boite' }, barre, champ,
+    el('div', { class: 'bottom-controls' }, bouton('Agent'), declencheurReglages, el('flow-generate-icon-button', {}, envoi)))
+  champ.addEventListener('input', () => { envoi.disabled = !champ.innerText.trim() }) // relevé : DISABLED tant que le prompt est vide
+  const projet = el('main', { id: 'u26-projet', hidden: true },
+    el('header', {},
+      bouton('home', 'Home'), el('input', { 'aria-label': 'Editable text', value: 'Oct 30 - 15:05' }),
+      bouton('more_vert', 'More options for the project', () => interdit('more-options-projet')),
+      bouton('search', 'Search'), el('input', { 'aria-label': 'Search' }), bouton('filter_list', 'Filtering and sorting options'),
+      bouton('add', 'Add media menu', () => interdit('add-media-menu')), bouton('help', 'Product help'),
+      bouton('settings_2', 'Settings', (e) => ouvrirAffichage(e.currentTarget)), // PIÈGE : réglages d'AFFICHAGE seulement
+      el('flow-more-options-menu', {}, bouton('more_vert', 'More options', (e) => ouvrirMenuProjet(e.currentTarget), { 'aria-haspopup': 'menu' }))),
+    el('nav', { role: 'navigation', 'aria-label': 'Project navigation' },
+      ...['dashboard All media', 'image Images', 'videocam Videos', 'accessibility_new Characters', 'movie Scenes'].map((t) => bouton(t)),
+      bouton('drive_folder_upload Uploads', null, () => interdit('uploads-menu-gauche')), // PIÈGE : navigation, aucun choix de fichier
+      bouton('add', 'Create collection'), bouton('left_panel_close Collapse')),
+    grille, boite)
+
+  // ---- bandeau de cookies : couvre le bas de la page et PREND les clics ; seul bouton « Understood »
+  const bandeau = el('div', { role: 'region', class: 'glue-cookie-notification-bar', 'aria-label': 'Cookie notification' },
+    el('p', { texte: 'flow.google.com uses cookies from Google to deliver and enhance the quality of its services and to analyze traffic.' }),
+    bouton('Understood', null, (e) => { e.stopPropagation(); interdit('understood'); bandeau.remove() }))
+  bandeau.addEventListener('click', () => interdit('bandeau-cookies'))
+
+  document.body.append(el('div', { id: 'u26' }, accueil, projet), bandeau, calques)
+
+  function ouvrirProjet () {
+    history.pushState(null, '', `/project/0b7c2f1e-fausse${location.search}`)
+    accueil.hidden = true
+    projet.hidden = false
+    maj()
+  }
+
+  // ---- panneau des réglages (« Settings trigger ») ; rôle menu SUPPOSÉ (menu Material, comme la roue
+  // de l'en-tête relevée : div.mat-mdc-menu-content)
+  const panneauReglages = el('div', { class: 'u26-panneau mat-mdc-menu-panel', role: 'menu', id: 'u26-reglages' })
+  panneauReglages.style.cssText = 'right:220px;bottom:180px;width:380px'
+  function radios (groupe, valeurs, actuelle, choisir) {
+    return el('div', { role: 'radiogroup', 'aria-label': groupe }, ...valeurs.map(([v, t]) =>
+      el('button', { type: 'button', role: 'radio', 'aria-checked': String(v === actuelle), texte: t, onclick: () => { choisir(v); maj() } })))
+  }
+  function rendreReglages () {
+    const video = S.type === 'video'
+    const formats = video ? ['16:9', '9:16'] : ['16:9', '4:3', '1:1', '3:4', '9:16']
+    panneauReglages.replaceChildren(
+      radios('Type', [['image', 'image Image'], ['video', 'videocam Video']], S.type, (v) => {
+        S.type = v
+        if (v === 'video' && !['16:9', '9:16'].includes(S.format)) S.format = '16:9'
+      }),
+      ...(video ? [radios('Mode', [['frames', 'crop_free Frames'], ['ingredients', 'chrome_extension Ingredients']], S.sousmode, (v) => { S.sousmode = v })] : []),
+      radios('Aspect ratio', formats.map((f) => [f, `${ICONES[f]} ${f}`]), S.format, (v) => { S.format = v }),
+      bouton(`${video ? S.modeleVideo : '🍌 Nano Banana 2.1'} arrow_drop_down`, 'Select model family', (e) => ouvrirModeles(e.currentTarget), { 'aria-haspopup': 'menu', 'aria-expanded': 'false' }),
+      radios('Outputs', ['x1', 'x2', 'x3', 'x4'].map((x) => [x, x]), S.nombre, (v) => {
+        if (mode === 'x2_bloque' && v === 'x1') return // la radio ne prend pas : le pilote doit s'arrêter avant l'envoi
+        S.nombre = v
+      }))
+  }
+  function ouvrirReglages () {
+    rendreReglages()
+    ouvrirCalque(panneauReglages, { declencheur: declencheurReglages })
+  }
+
+  // Menu des modèles (menuitems relevés, icône « volume_up » devant)
+  function ouvrirModeles (declencheur) {
+    const video = S.type === 'video'
+    const menu = el('div', { class: 'u26-panneau', role: 'menu' })
+    menu.style.cssText = 'right:620px;bottom:200px;width:230px'
+    const noms = video ? [MODELES.omni, MODELES.lite, MODELES.fast, MODELES.quality] : ['🍌 Nano Banana 2.1']
+    for (const nom of noms) {
+      menu.append(el('button', { type: 'button', role: 'menuitem', texte: `${video ? 'volume_up ' : ''}${nom}`, onclick: () => {
+        if (video && q.get('modele_refuse') !== '1') S.modeleVideo = nom
+        fermerCalque(menu)
+        // Non relevé : le panneau des réglages reste-t-il ouvert ? Ouvert par défaut ; modele_ferme / modele_refuse : fermé
+        if (q.get('modele_ferme') === '1' || q.get('modele_refuse') === '1') fermerCalque(panneauReglages)
+        maj()
+      } }))
+    }
+    ouvrirCalque(menu, { declencheur })
+  }
+
+  // PIÈGE : roue « Settings » de l'en-tête = affichage de la grille (relevé), jamais les réglages de création
+  function ouvrirAffichage (declencheur) {
+    interdit('roue-settings')
+    const menu = el('div', { class: 'u26-panneau mat-mdc-menu-panel', role: 'menu' })
+    menu.style.cssText = 'top:50px;right:60px;width:260px'
+    menu.append(el('div', { class: 'mat-mdc-menu-content' },
+      el('div', { role: 'radiogroup', 'aria-label': 'Display mode toggle' }, ...['dashboard Grid', 'campaign_all Batch'].map((t, i) => el('button', { type: 'button', role: 'radio', 'aria-checked': String(!i), texte: t }))),
+      el('div', { role: 'radiogroup', 'aria-label': 'Grid size toggle' }, ...['S', 'M', 'L'].map((t) => el('button', { type: 'button', role: 'radio', 'aria-checked': String(t === 'M'), texte: t }))),
+      ...['Sound on hover toggle', 'Return silent videos toggle', 'Show tile details toggle', 'Clear prompt on submit toggle'].map((t) =>
+        el('button', { type: 'button', role: 'switch', 'aria-label': t, 'aria-checked': 'false' }))))
+    ouvrirCalque(menu, { declencheur })
+  }
+
+  // PIÈGE : « More options » de l'EN-TÊTE : « Download project » (fenêtre de confirmation relevée)
+  function ouvrirMenuProjet (declencheur) {
+    const menu = el('div', { class: 'u26-panneau', role: 'menu' })
+    menu.style.cssText = 'top:50px;right:20px;width:240px'
+    menu.append(el('button', { type: 'button', role: 'menuitem', texte: 'download Download project', onclick: () => {
+      interdit('download-project')
+      fermerCalque(menu)
+      const n = grille.querySelectorAll('flow-video-tile').length
+      const d = el('div', { role: 'dialog', class: 'u26-dialogue mat-mdc-dialog-container' },
+        el('h2', { texte: 'Download project?' }), el('p', { texte: `${n} items in "Oct 30 - 15:05" will be downloaded.` }))
+      d.append(bouton('Cancel', null, () => fermerCalque(d)), bouton('Download', null, () => { interdit('download-project-confirme'); fermerCalque(d) }))
+      ouvrirCalque(d, { fondFerme: false })
+    } }))
+    ouvrirCalque(menu, { declencheur })
+  }
+
+  // ---- cases Start / End (mode Frames) et bibliothèque
+  function maj () {
+    declencheurReglages.textContent = texteReglages()
+    if (ouvert(panneauReglages)) rendreReglages()
+    const frames = S.type === 'video' && S.sousmode === 'frames'
+    const kase = (id, nom) => el('div', { class: 'frame-trigger' }, S[id]
+      ? el('button', { type: 'button', 'aria-label': 'Image ingredient', onclick: () => interdit(`retrait-${id}`) }, el('img', { src: urlDe(S[id]) }), 'cancel')
+      : bouton(nom, null, () => ouvrirBiblio(id)))
+    barre.replaceChildren(...(frames
+      ? [kase('start', 'Start'), bouton('swap_horiz', 'Swap first and last frames', () => { interdit('echange-start-end'); [S.start, S.end] = [S.end, S.start]; maj() }), kase('end', 'End')]
+      : [bouton('add', 'Add ingredients to the prompt box', () => interdit('ingredients'))]))
+  }
+
+  const actifs = [] // bibliothèque du COMPTE (gardée d'une ouverture à l'autre, sélection comprise : relevé)
+  const urlDe = (noms) => actifs.find((a) => a.nom === String(noms).split('+')[0])?.url || ''
+  let caseVisee = null
+  const fichier = el('input', { type: 'file', accept: 'image/*', hidden: true })
+  const liste = el('div', { role: 'listbox', 'aria-label': 'Asset list', 'aria-multiselectable': 'true' })
+  const ajouter = bouton('Add to prompt', null, () => ajouterAuPrompt())
+  const biblio = el('div', { class: 'u26-panneau', id: 'u26-biblio' },
+    bouton('close', 'Close', () => fermerCalque(biblio)),
+    el('div', { role: 'combobox', 'aria-label': 'Select project', texte: 'Oct 30 - 15:05' }),
+    el('div', { role: 'tab', 'aria-selected': 'false', texte: 'drive_folder_upload Uploads', onclick: () => interdit('uploads-onglet') }),
+    bouton('upload Upload media', null, () => { fichier.value = ''; fichier.click() }),
+    el('input', { 'aria-label': 'Search assets' }),
+    el('div', { role: 'combobox', 'aria-label': 'Sort assets', texte: 'Recent' }),
+    liste, ajouter, fichier)
+  biblio.style.cssText = 'top:60px;left:300px;width:640px;min-height:420px'
+  function ouvrirBiblio (id) {
+    caseVisee = id
+    rendreBiblio()
+    ouvrirCalque(biblio, { fond: false })
+  }
+  function rendreBiblio () {
+    liste.replaceChildren(...actifs.map((a) => el('button', { type: 'button', role: 'option', 'aria-selected': String(a.choisi), onclick: () => { a.choisi = !a.choisi; rendreBiblio() } },
+      ...(a.etat === 'pret' ? [el('img', { src: a.url }), ` ${a.nom}`] : [a.etat === 'envoi' ? `Uploading ${a.nom}` : `image ${a.nom}`]))))
+    // Relevé : inactif pendant le téléversement de l'image choisie
+    const choisis = actifs.filter((a) => a.choisi)
+    ajouter.disabled = !choisis.length || choisis.some((a) => a.etat === 'envoi')
+  }
+  fichier.onchange = () => {
+    const f = fichier.files[0]
+    if (!f) return
+    if (S.attestee) { televerser(f); return }
+    // 1er dépôt du compte : attestation (mat-dialog relevé), le fichier part après « I agree »
+    const d = el('div', { role: 'dialog', class: 'u26-dialogue mat-mdc-dialog-container' },
+      el('h2', { texte: 'Rights to use this image' }),
+      el('p', { texte: 'Make sure you have the necessary rights to any image you upload. Don\'t upload images of people without their consent.' }))
+    d.append(bouton('Cancel', null, () => fermerCalque(d)),
+      bouton('I agree', null, () => { S.attestee = true; signaler('attestation'); fermerCalque(d); televerser(f) }))
+    ouvrirCalque(d, { fondFerme: false })
+  }
+  function televerser (f) {
+    // Relevé : la nouvelle image arrive EN TÊTE, sélectionnée seulement si rien d'autre ne l'était
+    const a = { nom: f.name, url: URL.createObjectURL(f), etat: 'envoi', choisi: !actifs.some((x) => x.choisi) }
+    actifs.unshift(a)
+    rendreBiblio()
+    setTimeout(() => { a.etat = 'vignette'; rendreBiblio() }, 300)
+    setTimeout(() => { a.etat = 'pret'; rendreBiblio() }, 600)
+  }
+  function ajouterAuPrompt () {
+    // Relevé : la case reçoit la SÉLECTION de la bibliothèque. Plusieurs images choisies : non relevé ;
+    // la fausse page les garde toutes (« a+b ») pour qu'un test le voie
+    const noms = actifs.filter((a) => a.choisi).map((a) => a.nom)
+    if (!noms.length || !caseVisee) return
+    S[caseVisee] = noms.join('+')
+    fermerCalque(biblio)
+    maj()
+  }
+
+  // ---- envoi et résultat
+  function lancer () {
+    if (envoi.disabled) return
+    const releve = { cle, ui: '2026', mode, type: S.type, sousmode: S.sousmode, modele: S.type === 'video' ? S.modeleVideo : 'Nano Banana 2.1',
+      format: S.format, nombre: S.nombre, duree: S.duree, start: S.start, end: S.end, prompt: champ.innerText.trim(),
+      reglages: texteReglages(), video: S.type === 'video', frames: S.sousmode === 'frames', interdits: [...interdits] }
+    fetch('/envoi', { method: 'POST', body: JSON.stringify(releve) })
+    // Génération en cours : tuile SANS vignette (affichage d'attente non relevé)
+    const tuile = el('flow-video-tile', {}, el('div', { class: 'progression', texte: '0%' }))
+    grille.prepend(el('flow-tile-container', {}, el('div', { class: 'container' }, tuile)))
+    setTimeout(() => finir(tuile, releve.prompt), 400)
+  }
+  function finir (tuile, prompt) {
+    const titre = prompt.slice(0, 32) || 'Generated video'
+    const vignette = el('img', { alt: 'Generated video thumbnail', class: 'thumbnail', draggable: 'false', src: `/vignette.png?n=${Date.now()}` })
+    const plus = bouton('more_vert', 'More options', (e) => ouvrirMenuTuile(tuile, e.currentTarget), { 'aria-haspopup': 'menu', 'aria-expanded': 'false' })
+    // Relevé : boutons de survol déjà dans le DOM, visibles au survol seulement
+    tuile.replaceChildren(vignette,
+      el('div', { class: 'hotbar' }, bouton('favorite', 'Favorite', () => interdit('favorite')), bouton('redo', 'Reuse prompt', () => interdit('reuse-prompt')), plus),
+      el('div', { class: 'pied' }, bouton(`play_circle ${titre}`, titre, () => interdit('lecture'))))
+    // Au survol, la vignette est REMPLACÉE par un aperçu vidéo (relevé)
+    let apercu = null
+    tuile.addEventListener('mouseenter', () => {
+      tuile.classList.add('survol')
+      apercu = el('video', { src: '/apercu.mp4', muted: true, autoplay: true, loop: true })
+      vignette.replaceWith(apercu)
+    })
+    tuile.addEventListener('mouseleave', () => {
+      tuile.classList.remove('survol')
+      apercu?.replaceWith(vignette)
+      apercu = null
+    })
+  }
+
+  // Menu de la tuile (entrées relevées) ; « Download » ouvre un SOUS-menu, refermé dès que la souris
+  // passe sur une autre entrée (menus Material : le trajet de souris « humain » le refermait)
+  function ouvrirMenuTuile (tuile, declencheur) {
+    const r = tuile.getBoundingClientRect()
+    const menu = el('div', { class: 'u26-panneau', role: 'menu' })
+    menu.style.cssText = `left:${Math.round(r.right + 8)}px;top:${Math.round(r.top)}px;width:220px`
+    let sous = null
+    const fermerSous = () => { if (sous) { fermerCalque(sous); sous = null } }
+    const ENTREES = ['favorite Favorite', 'keyboard_return Reuse prompt', 'play_movies Add to scene', 'add_2 Add to prompt', 'download Download',
+      'content_copy Copy', 'edit Rename', 'share Share', 'video_library Publish to YouTube', 'photo_library Set project cover', 'flag Flag output', 'delete Move to trash']
+    for (const t of ENTREES) {
+      const it = el('button', { type: 'button', role: 'menuitem', texte: t })
+      if (t === 'download Download') {
+        const ouvrirSous = () => {
+          if (sous) return
+          const b = it.getBoundingClientRect()
+          sous = el('div', { class: 'u26-panneau', role: 'menu' })
+          sous.style.cssText = `left:${Math.round(b.right + 4)}px;top:${Math.round(b.top)}px;width:200px`
+          for (const [taille, libelle, lien, actif] of [['270p', 'Animated GIF', '/clip.gif', true], ['720p', 'Original size', '/clip.mp4', true], ['1080p', 'Upscaled', '/upscale', false], ['4K', 'Upscaled', '/upscale', false]]) {
+            sous.append(el('button', { type: 'button', role: 'menuitem', disabled: !actif, onclick: () => {
+              signaler(`telechargement:${taille}`)
+              fermerCalque(menu)
+              const a = el('a', { href: lien, download: `flow${lien.slice(lien.lastIndexOf('.'))}` })
+              document.body.append(a); a.click(); a.remove()
+            } }, el('span', { texte: taille }), ' ', el('span', { texte: libelle })))
+          }
+          ouvrirCalque(sous, { fond: false })
+        }
+        it.addEventListener('click', ouvrirSous)
+        it.addEventListener('mouseenter', ouvrirSous)
+      } else {
+        it.addEventListener('mouseenter', fermerSous)
+        it.addEventListener('click', () => { interdit(`menu-tuile:${t}`); fermerCalque(menu) })
+      }
+      menu.append(it)
+    }
+    ouvrirCalque(menu, { declencheur })
+  }
+})()
+</script>
+</body>
+</html>

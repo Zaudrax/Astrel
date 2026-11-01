@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>Gemini (fausse page de test)</title></head>
+<body>
+<!-- FAUSSE page Gemini pour `node --test` (plan P14, lot 1) : mêmes rôles et libellés que la
+     vraie (champ « Enter a prompt for Gemini », bouton « Download full size image »), aucun
+     appel réseau. ?mode=ok|quota|refus|plustard|captcha|login|change|lent|pasimage
+     P40 A3 : menu des modèles (« Modèle A » par défaut, « Modèle B »), &modele=fige (le clic ne
+     change rien), &modele=muet (le bouton ne dit pas lequel est pris) ; pièces jointes par le
+     bouton « Open upload file menu » puis « Upload files » (sélecteur de fichiers), aperçu
+     « Remove file … » par pièce, &pj=sansapercu (aucun aperçu). Relevés : window.joints. -->
+<div id="haut"></div>
+<nav aria-label="Conversations récentes"><a href="#c1">Robot qui n'est pas un robot</a></nav>
+<button id="modeles" aria-haspopup="menu" aria-expanded="false">Modèle A</button>
+<div id="menu-modeles" role="menu" hidden>
+  <div role="menuitemradio" aria-checked="true" tabindex="0">Modèle A</div>
+  <div role="menuitemradio" aria-checked="false" tabindex="0">Modèle B</div>
+</div>
+<div id="pieces"></div>
+<button id="joindre" aria-label="Open upload file menu">+</button>
+<div id="menu-joindre" role="menu" hidden><div role="menuitem" id="upload" tabindex="0">Upload files</div></div>
+<input id="fichier" type="file" multiple accept="image/*" hidden>
+<rich-textarea><div id="champ" contenteditable="true" role="textbox" aria-label="Enter a prompt for Gemini"></div></rich-textarea>
+<div id="fil"></div>
+<script>
+// P40 A3 : menu des modèles et pièces jointes
+const reglage = new URLSearchParams(location.search)
+window.joints = []
+const boutonModeles = document.getElementById('modeles')
+const menuModeles = document.getElementById('menu-modeles')
+boutonModeles.addEventListener('click', () => {
+  menuModeles.hidden = !menuModeles.hidden
+  boutonModeles.setAttribute('aria-expanded', String(!menuModeles.hidden))
+})
+for (const item of menuModeles.querySelectorAll('[role="menuitemradio"]')) {
+  item.addEventListener('click', () => {
+    menuModeles.hidden = true
+    boutonModeles.setAttribute('aria-expanded', 'false')
+    if (reglage.get('modele') === 'fige') return
+    for (const autre of menuModeles.querySelectorAll('[role="menuitemradio"]')) autre.setAttribute('aria-checked', String(autre === item))
+    boutonModeles.textContent = reglage.get('modele') === 'muet' ? '⋯' : item.textContent
+  })
+}
+const menuJoindre = document.getElementById('menu-joindre')
+// 30/10 : &popup=memoire = fenêtre de nouveautés au chargement (No thanks / Allow) : « Allow » est interdit
+if (reglage.get('popup') === 'memoire') {
+  setTimeout(() => {
+    const d = document.createElement('div')
+    d.setAttribute('role', 'dialog')
+    d.innerHTML = '<h2>Let Gemini personalize using memory</h2><p>Gemini can use your past chats.</p><button>No thanks</button><button>Allow</button>'
+    const [non, oui] = d.querySelectorAll('button')
+    non.onclick = () => { window.refusee = true; d.remove() }
+    oui.onclick = () => { fetch('/releve', { method: 'POST', body: JSON.stringify({ site: 'gemini', interdit: 'Allow' }) }); d.remove() }
+    document.body.append(d)
+  }, 30)
+}
+// 30/10 (relevé du vrai site, profil jetable) : &ui=2026 = libellés d'aujourd'hui, « Importation et outils »
+// puis l'entrée « Importer des fichiers. Documents, données, fichiers de code »
+if (reglage.get('ui') === '2026') {
+  document.getElementById('joindre').setAttribute('aria-label', 'Importation et outils')
+  document.getElementById('upload').setAttribute('aria-label', 'Importer des fichiers. Documents, données, fichiers de code')
+  document.getElementById('upload').textContent = 'Importer des fichiers'
+}
+const fichier = document.getElementById('fichier')
+document.getElementById('joindre').addEventListener('click', () => { menuJoindre.hidden = !menuJoindre.hidden })
+document.getElementById('upload').addEventListener('click', () => { menuJoindre.hidden = true; fichier.click() })
+// 30/10 : &attest=1 = fenêtre « Creating content from images and files » au 1er fichier ; aperçus après « Agree »
+function deposer (files) {
+  for (const f of files) {
+    window.joints.push({ name: f.name, size: f.size, type: f.type })
+    if (reglage.get('pj') === 'sansapercu') continue
+    const b = document.createElement('button')
+    b.setAttribute('aria-label', reglage.get('ui') === '2026' ? 'close attachment' : `Remove file ${f.name}`) // 30/10 : nom relevé
+    if (reglage.get('ui') === '2026') b.style.visibility = 'hidden' // 30/10 : visible au survol seulement
+    b.textContent = '×'
+    document.getElementById('pieces').append(b)
+  }
+  // Relevé pour le test (le worker est un autre process) : ce que la page a reçu
+  fetch('/releve', { method: 'POST', body: JSON.stringify({ site: 'gemini', joints: window.joints, attestation: window.attestee || false }) }).catch(() => {})
+}
+fichier.addEventListener('change', () => {
+  const files = [...fichier.files]
+  fichier.value = ''
+  if (reglage.get('attest') !== '1' || window.attestee) { deposer(files); return }
+  const d = document.createElement('div')
+  // 30/10 : structure RELEVÉE sur le vrai site (calque fixe > mat-dialog-container > … > rangée de boutons)
+  d.className = 'cdk-overlay-container'
+  d.style.position = 'fixed'
+  d.innerHTML = '<mat-dialog-container role="dialog"><div class="consent-dialog-container"><h2>Creating content from images and files</h2>' +
+    '<p>Make sure you have the necessary rights to any images or files you upload.</p><mat-dialog-actions class="mat-mdc-dialog-actions">' +
+    '<button aria-label="Cancel (Closes dialog box and does not enable MMGen)">Cancel</button>' +
+    '<button aria-label="Agree (Closes dialog box and gives disclaimer)">Agree</button></mat-dialog-actions></div></mat-dialog-container>'
+  const [annuler, accepter] = d.querySelectorAll('button')
+  annuler.onclick = () => d.remove()
+  // 30/10 (vrai site) : « Agree » ferme la fenêtre SANS garder le fichier : il faut le redéposer
+  accepter.onclick = () => { window.attestee = true; d.remove() }
+  document.body.append(d)
+})
+</script>
+<script>
+// P40 A2 : gestes de la souris relevés pour les tests (humain.mjs) : mouvements, clics, molette.
+window.souris = { mouvements: 0, clics: [], molette: 0 }
+addEventListener('mousemove', () => { window.souris.mouvements++ }, true)
+addEventListener('wheel', () => { window.souris.molette++ }, true)
+addEventListener('mousedown', (e) => {
+  const r = e.target.getBoundingClientRect()
+  window.souris.clics.push({ cible: e.target.id || e.target.tagName, x: e.clientX, y: e.clientY, cx: r.x + r.width / 2, cy: r.y + r.height / 2, w: r.width, h: r.height })
+}, true)
+const mode = new URLSearchParams(location.search).get('mode') || 'ok'
+const champ = document.getElementById('champ')
+if (mode === 'login') {
+  document.getElementById('haut').innerHTML = '<a href="#connexion">Sign in</a>'
+  champ.parentElement.remove()
+}
+if (mode === 'change') champ.parentElement.remove()
+if (mode === 'captcha') {
+  document.body.innerHTML = '<p>Our systems have detected unusual traffic from your computer network.</p>'
+}
+champ.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return
+  e.preventDefault()
+  envoyer(champ.innerText)
+})
+function envoyer (texte) {
+  document.title = `envoyé : ${texte}`
+  // Bulle du prompt, comme sur la vraie page (texte de l'utilisateur : jamais lu comme un captcha)
+  const bulle = document.createElement('user-query')
+  bulle.textContent = texte
+  document.getElementById('fil').append(bulle)
+  const rep = document.createElement('model-response')
+  document.getElementById('fil').append(rep)
+  const stop = document.createElement('button')
+  stop.setAttribute('aria-label', 'Stop response')
+  stop.textContent = 'stop'
+  document.body.append(stop)
+  setTimeout(() => {
+    if (mode === 'lent') return
+    stop.remove()
+    const fichier = mode === 'pasimage' ? '/pas-une-image.png' : '/image.png'
+    if (mode === 'ok' || mode === 'pasimage') {
+      rep.innerHTML = `<p>Voici ton image.</p><img src="/image.png" alt="image générée" width="64" height="64">
+        <a role="button" aria-label="Download full size image" href="${fichier}" download="Gemini_Generated_Image.png">télécharger</a>`
+    } else if (mode === 'quota') {
+      rep.textContent = "You've reached your limit for creating images right now. Try again after 3:00 PM."
+    } else if (mode === 'refus') {
+      rep.textContent = "I can't create images like that. Try asking for something else."
+    } else if (mode === 'plustard') {
+      rep.textContent = 'Je ne peux pas créer cette image pour le moment. Réessayez plus tard.'
+    }
+  }, 300)
+}
+</script>
+</body>
+</html>

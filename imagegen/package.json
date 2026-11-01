@@ -1,0 +1,12 @@
+{
+  "name": "astrel-imagegen",
+  "private": true,
+  "description": "Génération d'images IA par le navigateur (plan P14) : worker jetable, Chrome sans fenêtre, version FIXÉE (jamais @latest).",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "playwright-core": "1.64.1"
+  }
+}

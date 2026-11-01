@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Bing Image Creator (fausse page de test)</title></head>
+<body>
+<!-- FAUSSE page Bing Image Creator pour `node --test` (plan P40 lot A3) : rôles et libellés
+     publics connus, JAMAIS relevés sur le vrai site. Images générées servies en local sous
+     /th/id/OIG1.<n> (même chemin que chez Bing). Aucun appel réseau extérieur.
+     ?mode=ok|deux|refus|login|lent|recentes|casse|defi|redirection|saut|doublons|interdite ; &cookies=1 : bandeau de cookies
+     (Accept / Reject) devant la page. Relevé : window.cookies ('accepte' | 'refuse' | ''). -->
+<header><a href="#connexion">Sign in</a></header>
+<div id="bandeau"></div>
+<form id="gen" onsubmit="return false">
+  <textarea name="q" aria-label="Describe what you'd like to create"></textarea>
+  <a role="button" id="creer" href="#">Create</a>
+</form>
+<section id="recentes"></section>
+<div id="grille"></div>
+<script>
+const p = new URLSearchParams(location.search)
+const mode = p.get('mode') || 'ok'
+window.cookies = ''
+if (p.get('cookies')) {
+  const b = document.getElementById('bandeau')
+  b.innerHTML = '<p>We use cookies</p><button id="ok">Accept</button><button id="non">Reject</button>'
+  const releve = () => fetch('/releve', { method: 'POST', body: JSON.stringify({ site: 'bing', cookies: window.cookies }) }).catch(() => {})
+  document.getElementById('ok').onclick = () => { window.cookies = 'accepte'; b.remove(); releve() }
+  document.getElementById('non').onclick = () => { window.cookies = 'refuse'; b.remove(); releve() }
+}
+if (mode === 'login') document.getElementById('creer').textContent = 'Join & Create'
+if (mode === 'recentes') {
+  document.getElementById('recentes').innerHTML = '<img src="/th/id/OIG1.ancienne?w=270&h=270" alt="ancienne" width="64" height="64">'
+}
+const img = (n) => `<img src="/th/id/OIG1.${n}?w=270&h=270&c=6&pid=ImgGn" alt="image ${n}" width="64" height="64">`
+document.getElementById('creer').addEventListener('click', (e) => {
+  e.preventDefault()
+  if (mode === 'login') return
+  document.title = `envoyé : ${document.querySelector('textarea').value}`
+  setTimeout(() => {
+    const g = document.getElementById('grille')
+    if (mode === 'ok' || mode === 'recentes') g.innerHTML = [1, 2, 3, 4].map((n) => img(`v${n}`)).join('')
+    else if (mode === 'deux') g.innerHTML = img('v1') + img('v2')
+    else if (mode === 'casse') g.innerHTML = img('casse') + img('v2')
+    else if (mode === 'redirection') g.innerHTML = img('redir') // taille réelle : 302 vers un AUTRE hôte
+    else if (mode === 'saut') g.innerHTML = img('saute') // taille réelle : 302 vers le même hôte (permis)
+    // Même image v1 en vignette ET en aperçu agrandi (autre ?w=) : une seule image, 3 en tout
+    else if (mode === 'doublons') g.innerHTML = img('v1') + '<img src="/th/id/OIG1.v1?w=1024&h=1024" alt="aperçu" width="96" height="96">' + img('v2') + img('v3')
+    else if (mode === 'interdite') g.innerHTML = img('refusee') // taille réelle : HTTP 403
+    else if (mode === 'refus') g.innerHTML = '<div id="girer" role="alert">This prompt has been blocked. Our system automatically flagged this prompt because it may conflict with our content policy.</div>'
+    else if (mode === 'defi') document.body.innerHTML = '<p>Please verify you are human to continue.</p>'
+  }, 300)
+})
+</script>
+</body>
+</html>

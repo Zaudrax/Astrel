@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>ChatGPT (fausse page de test)</title></head>
+<body>
+<!-- FAUSSE page ChatGPT pour `node --test` (plan P40 lot A3) : rôles et libellés publics connus
+     (champ #prompt-textarea « Message ChatGPT », messages data-message-author-role, bouton
+     « Download this image »), JAMAIS relevés sur le vrai site. Aucun appel réseau.
+     ?mode=ok|quota|refus|login|historique|lent|captcha ; pièces jointes par « Add photos and files »
+     (sélecteur de fichiers direct, un seul fichier à la fois : pas d'attribut multiple), aperçu
+     « Remove file … ». Relevés : window.joints. -->
+<header><button id="modeles" aria-haspopup="menu" aria-expanded="false">ChatGPT</button></header>
+<main id="fil"></main>
+<div id="pieces"></div>
+<button id="joindre" aria-label="Add photos and files">+</button>
+<input id="fichier" type="file" accept="image/*" hidden>
+<div id="prompt-textarea" contenteditable="true" role="textbox" aria-label="Message ChatGPT"></div>
+<script>
+const mode = new URLSearchParams(location.search).get('mode') || 'ok'
+window.joints = []
+const champ = document.getElementById('prompt-textarea')
+const fil = document.getElementById('fil')
+const fichier = document.getElementById('fichier')
+document.getElementById('joindre').addEventListener('click', () => fichier.click())
+fichier.addEventListener('change', () => {
+  for (const f of fichier.files) {
+    window.joints.push({ name: f.name, size: f.size, type: f.type })
+    const b = document.createElement('button')
+    b.setAttribute('aria-label', `Remove file ${f.name}`)
+    b.textContent = '×'
+    document.getElementById('pieces').append(b)
+  }
+  fichier.value = ''
+  fetch('/releve', { method: 'POST', body: JSON.stringify({ site: 'chatgpt', joints: window.joints }) }).catch(() => {})
+})
+if (mode === 'login') {
+  champ.remove()
+  document.querySelector('header').insertAdjacentHTML('beforeend', '<button>Log in</button><button>Sign up for free</button>')
+}
+if (mode === 'historique') {
+  // Conversation reprise : une image d'avant, avec son bouton, ne doit pas passer pour le résultat
+  fil.innerHTML = `<div data-message-author-role="assistant"><img src="/image.png" alt="ancienne" width="64" height="64">
+    <a role="button" aria-label="Download this image" href="/ancienne.png" download="old.png">dl</a></div>`
+}
+champ.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return
+  e.preventDefault()
+  const texte = champ.innerText
+  document.title = `envoyé : ${texte}`
+  const moi = document.createElement('div')
+  moi.setAttribute('data-message-author-role', 'user')
+  moi.textContent = texte
+  fil.append(moi)
+  const rep = document.createElement('div')
+  rep.setAttribute('data-message-author-role', 'assistant')
+  fil.append(rep)
+  const stop = document.createElement('button')
+  stop.setAttribute('aria-label', 'Stop streaming')
+  stop.textContent = '■'
+  document.body.append(stop)
+  setTimeout(() => {
+    if (mode === 'lent') return
+    stop.remove()
+    if (mode === 'ok' || mode === 'historique') {
+      rep.innerHTML = `<img src="/image.png" alt="Generated image" width="64" height="64">
+        <a role="button" aria-label="Download this image" href="/image.png" download="ChatGPT Image.png">dl</a>`
+    } else if (mode === 'quota') {
+      rep.textContent = "You've hit the free plan limit for image generation requests. You can create more images when the limit resets in 23 hours and 59 minutes."
+    } else if (mode === 'captcha') {
+      // Défi anti-robot affiché APRÈS l'envoi : arrêt, jamais contourné
+      document.body.innerHTML = '<p>Verify you are human by completing the action below.</p>'
+    } else if (mode === 'refus') {
+      rep.textContent = "I can't create that image because the request violates our content policies."
+    }
+  }, 300)
+})
+</script>
+</body>
+</html>

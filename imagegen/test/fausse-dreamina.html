@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="fr">
+<!-- FAUSSE page Dreamina (plan P41 lot B5, 29/10/2026) pour `node --test`, bâtie sur les pages
+     ENREGISTRÉES du relevé (/home/user/Projets/Videos-IA/releves/dreamina/dreamina-*.html) :
+     mêmes textes, mêmes rôles et aria, classes à suffixe codé, mêmes enchaînements : barre de
+     création (onglets à bascule, éditeur tiptap « Invite », combobox « Modèle », bouton
+     « 16:9 · 720P » et sa bulle Format/Résolution, bouton « 5s » et « Durée totale », prix « 25 »
+     et « 55 » barré, « Générer ») → « Avant de continuer » (role dialog, Annuler / Confirmer) →
+     /ai-tool/generate (history.pushState) : fiche de la génération, badge « N% », animation
+     d'attente → vidéo → au survol ↓ … ☆ → fenêtre « Supprime les filigranes IA » + fichier.
+     Ce qui n'est PAS relevé est SUPPOSÉ ici (rôles des options et de la bulle, bouton ↓ sans
+     nom, page non connectée, message d'erreur) : la fausse page ne prouve rien sur ces points.
+     Mode par ?mode= : ok, gratuit (0 et 55 barré), reglages (Image, 9:16 · 1080P, 10s, modèle
+     « rapide » au départ), credits (solde 20), cout (prix catalogue 80 en 720p), session (pas
+     connecté), change (plus d'éditeur « Invite »), alerte (message d'état sans fiche), sans_video
+     (progression puis plus rien), lent (reste à 7 %), ancien (génération d'avant, même prompt),
+     dl_rate (↓ ne donne aucun fichier), nom_dl (↓ nommé « Télécharger »), sans_confirmation.
+     Chaque clic d'envoi (/envoi), chaque « Confirmer » (/confirme) et tout geste interdit
+     (interrupteur des filigranes, « Enregistrer la préférence », « S'abonner », lien « Vidéo »
+     du menu, « Générer à nouveau » : /interdit) sont signalés au serveur, et la croix « Fermer »
+     des filigranes (/ferme). -->
+<head>
+<meta charset="utf-8">
+<title>Dreamina: Create realistic talking avatars with AI avatar generator</title>
+<style>
+  body { font-family: sans-serif; margin: 0; background: #16181d; color: #eee; }
+  button, [role="button"], [role="option"], [role="combobox"] { cursor: pointer; }
+  .top-actions-Hk3Lq1 { display: flex; gap: 12px; justify-content: flex-end; padding: 8px; }
+  aside { position: fixed; left: 0; top: 50px; width: 150px; }
+  main { margin-left: 160px; padding: 10px; }
+  .modes-Rr5t7u button[aria-pressed="true"] { background: #fff; color: #000; }
+  .layout-Qe4rT2 { background: #2a2f38; padding: 10px; width: 900px; position: relative; }
+  .tiptap { min-height: 40px; border: 1px solid #555; padding: 4px; }
+  .rich-placeholder-Bv8nM2 { color: #888; }
+  .toolbar-Wd2s9K { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .original-credits-Ty6uI1 { text-decoration: line-through; color: #888; }
+  .popover-Kl0pM9 { position: absolute; top: 120px; left: 300px; background: #333; padding: 8px; z-index: 5; }
+  .popover-Kl0pM9 .item-Xc3vB8 { display: inline-block; padding: 6px; margin: 2px; border: 1px solid #555; }
+  #lv-select-popup-4 { position: absolute; top: 120px; left: 10px; background: #333; padding: 6px; list-style: none; z-index: 5; }
+  #lv-select-popup-4 li { padding: 4px; }
+  #lv-select-popup-1 { position: absolute; top: 120px; left: 200px; background: #333; padding: 6px; list-style: none; z-index: 5; }
+  [aria-disabled="true"] { opacity: .4; }
+  .film-grid-Pq2wE4 video { width: 306px; height: 172px; background: #000; display: inline-block; }
+  .video-card-Ab9cD1 { position: relative; width: 480px; }
+  .video-card-Ab9cD1 video, .loading-animation-Zz8xY7 { width: 480px; height: 270px; background: #000; display: block; }
+  .controls-tr-Mn4bV6 { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
+  .controls-tr-Mn4bV6 .icones-Op1lK2 { display: none; }
+  .video-card-Ab9cD1:hover .controls-tr-Mn4bV6 .icones-Op1lK2 { display: flex; gap: 6px; }
+  .icones-Op1lK2 [role="button"] { width: 24px; height: 24px; background: #444; text-align: center; }
+  .lv-modal-wrapper { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 20; }
+  .lv-modal { background: #222; padding: 20px; width: 420px; }
+  .lv-modal-close-icon svg { width: 18px; height: 18px; }
+  .toast-Fr5tG7 { position: fixed; top: 10px; left: 40%; background: #a33; padding: 8px; z-index: 30; }
+</style>
+</head>
+<body>
+<div id="root">
+  <header>
+    <div class="top-actions-Hk3Lq1 top-actions-logged-in-Jd8sK2" id="haut">
+      <button class="credit-mall-action-Re4tY6" type="button">Acheter des crédits</button>
+      <button class="top-action-icon-Gh7jK8" type="button" aria-label="Crédits gratuits">🎁</button>
+      <div class="credit-display-container-Ui9oP0 row-mode-Aa1sS2">
+        <div class="credit-amount-container-Dd3fF4"><div class="credit-amount-text-Gg5hH6 row-mode-Aa1sS2" id="solde">216</div></div>
+        <div class="upgrade-text-Jj7kK8">Passer au niveau supérieur</div>
+      </div>
+      <div class="avatar-container-Ll9zZ0" id="js-side-menu-entry-avatar-container" tabindex="0" aria-expanded="false">B</div>
+    </div>
+  </header>
+  <aside>
+    <button class="navigation-item-expanded-Xx1cC2" type="button" aria-current="page">Créer</button>
+    <button class="navigation-item-expanded-Xx1cC2" type="button" id="nav-video" aria-expanded="false"><span>Vidéo</span></button>
+  </aside>
+  <main id="accueil">
+    <h1>Génère <b>tout</b> ce que tu imagines</h1>
+    <div class="modes-Rr5t7u">
+      <button class="mode-Vv3bB4" type="button" aria-pressed="false"><span>Agent</span></button>
+      <button class="mode-Vv3bB4" type="button" aria-pressed="false" id="m-image"><span>Image</span></button>
+      <button class="mode-Vv3bB4" type="button" aria-pressed="true" id="m-video"><span>Vidéo</span></button>
+      <button class="mode-Vv3bB4" type="button" aria-pressed="false"><span>Contenu audio</span></button>
+    </div>
+    <div class="layout-Qe4rT2 main-frame-2026-Nn5mM6" role="region" aria-label="Générer" id="barre">
+      <div class="reference-upload-Pp7oO8" role="button" tabindex="0" aria-label="Référence" aria-disabled="false"><div class="label-Qq9wW0">Référence</div></div>
+      <div class="prompt-editor-ILzlzs" id="editeur-boite">
+        <div class="tiptap ProseMirror" contenteditable="true" role="textbox" aria-label="Invite" aria-multiline="true" tabindex="0" id="prompt"><p class="is-editor-empty"><span class="rich-placeholder-Bv8nM2 ProseMirror-widget" contenteditable="false">Décris ta vidéo ou utilise <button class="lv-btn lv-btn-secondary lv-btn-size-mini" tabindex="0" type="button">@</button> pour mentionner des éléments</span></p></div>
+        <div class="prompt-editor-sizer-Ee1rR2" aria-hidden="true" style="position:absolute;visibility:hidden;height:0;overflow:hidden"><div><div class="tiptap ProseMirror" contenteditable="true" role="textbox" tabindex="0"><p class="is-editor-empty"></p></div></div></div>
+      </div>
+      <div class="toolbar-Wd2s9K main-frame-2026-Nn5mM6">
+        <div class="lv-select toolbar-select-Tt3yY4" role="combobox" aria-haspopup="listbox" aria-autocomplete="list" aria-expanded="false" tabindex="0" aria-label="Modèle" aria-controls="lv-select-popup-4" id="b-modele"><span class="lv-select-view-value"><span class="model-label-Uu5iI6" id="modele-label">Dreamina Seedance 2.0 Mini</span></span></div>
+        <div class="lv-select toolbar-select-Tt3yY4" role="combobox" aria-haspopup="listbox" aria-expanded="false" tabindex="0" aria-controls="lv-select-popup-1" id="b-ref"><span id="ref-texte">Références de tout type</span></div>
+        <div><button class="lv-btn lv-btn-secondary lv-btn-size-default" type="button" id="b-format"><span class="button-text-Oo7pP8"><span id="format-texte">16:9</span><div class="divider-Aa9sS0"></div><div class="commercial-content-Dd1fF2" id="res-texte">720P</div></span></button></div>
+        <button class="lv-btn lv-btn-secondary lv-btn-size-default" type="button" id="b-duree"><span id="duree-texte">5s</span></button>
+        <span class="lv-badge" tabindex="0"><button class="lv-btn lv-btn-secondary" type="button">@</button></span>
+        <div class="toolbar-actions-Gg3hH4">
+          <span class="credit-price-display-Jj5kK6 commercial-button-content-Ll7zZ8"><span class="actual-credits-Xx9cC0" id="cout-debite">25</span><span class="original-credits-Ty6uI1" id="cout-liste">55</span></span>
+          <span class="trigger-Vv1bB2"><div><button class="lv-btn lv-btn-primary lv-btn-size-default" aria-label="Générer" aria-busy="false" type="button" disabled id="envoi">↑</button></div></span>
+        </div>
+      </div>
+      <ul role="listbox" id="lv-select-popup-1" hidden></ul>
+      <ul role="listbox" id="lv-select-popup-4" hidden>
+        <div class="header-Mm3nN4">Générer avec : <span id="entete-modele">Dreamina Seedance 2.0 Mini</span> by Seed</div>
+      </ul>
+      <div class="popover-Kl0pM9" id="bulle-format" hidden>
+        <div class="title-Bb5nN6">Format</div>
+        <div id="formats"></div>
+        <div class="title-Bb5nN6">Résolution</div>
+        <div id="resolutions"></div>
+      </div>
+      <div class="popover-Kl0pM9" id="bulle-duree" hidden>
+        <div class="title-Bb5nN6">Durée totale</div>
+        <input type="range" min="0" max="15" step="1" id="curseur" value="5">
+        <input type="number" min="1" max="15" id="duree-champ" value="5"> <span>s</span>
+      </div>
+    </div>
+    <section class="films-Ff1gG2" aria-labelledby="films-titre">
+      <h2 id="films-titre">Short Films</h2>
+      <div class="grid-Hh3jJ4 film-grid-Pq2wE4" role="list" aria-label="Short Films">
+        <video class="video-Kk5lL6" muted></video>
+        <video class="video-Kk5lL6" muted></video>
+      </div>
+    </section>
+  </main>
+  <main id="generation" hidden>
+    <div class="record-list-container-Zz7xX8 with-sidebar-Cc9vV0">
+      <div class="record-list-Bb1nN2 record-virtual-list" id="fiches">
+        <div class="content-Mm3qQ4 ai-generated-record-content-Ww5eE6"><div class="group-title-Rr7tT8">Aujourd'hui</div></div>
+      </div>
+    </div>
+    <section class="inspiration-Yy9uU0" aria-label="Inspiration">
+      <video class="video-Kk5lL6" muted id="inspiration"></video>
+      <div class="inspiration-footer-Ii1oO2"><button class="lv-btn lv-btn-text" type="button">Plus</button></div>
+    </section>
+    <div class="task-indicator-Pp3aA4"><span class="progress-Ss5dD6"><span>0</span>/<span>1</span></span> <span id="tache">Génération en cours…</span></div>
+    <div class="layout-Qe4rT2" role="region" aria-label="Générer">
+      <div class="tiptap ProseMirror" contenteditable="true" role="textbox" aria-label="Invite" aria-multiline="true" tabindex="0" id="prompt2"></div>
+      <button class="lv-btn lv-btn-primary" aria-label="Générer" aria-busy="false" type="button">↑</button>
+    </div>
+  </main>
+  <div id="DndLiveRegion-0" role="status" aria-live="assertive" aria-atomic="true" style="position:fixed;width:1px;height:1px;overflow:hidden"></div>
+</div>
+<script>
+const q = new URLSearchParams(location.search)
+const mode = q.get('mode') || 'ok'
+const cle = q.get('cle') || ''
+const $ = (id) => document.getElementById(id)
+const envoyer = (chemin, corps) => fetch(chemin, { method: 'POST', body: JSON.stringify({ cle, mode, ...corps }) })
+// Menu relevé le 29/10 (10 modèles) : [nom, description, résolutions permises, prix catalogue par
+// seconde et par résolution (relevé), permis en « Références de tout type »]
+const MODELES = [
+  ['Brouillon Dreamina Seedance 2.5', 'Crée des brouillons en 480p pour tester tes idées avant d’utiliser plus de crédits', ['480P'], { '480P': 15 }, true],
+  ['Dreamina Seedance 2.5', 'Des vidéos plus réalistes, plus longues, avec une édition précise. Jusqu’à 50 références.', ['480P', '720P', '1080P'], { '480P': 15, '720P': 32 }, true],
+  ['Dreamina Seedance 2.0 Mini', 'Plus rentable, résultats plus rapides. Les visages humains réels ne sont pas pris en charge.', ['720P', '1080P', '2K', '4K'], { '720P': 11, '1080P': 16 }, true],
+  ['Dreamina Seedance 2.0 rapide', 'Génération rapide, coût réduit. Les visages humains réels ne sont pas pris en charge.', ['720P', '1080P', '2K', '4K'], { '720P': 12 }, true],
+  ['Dreamina Seedance 2.0', 'Extrêmement polyvalent, avec un contrôle digne d’un(e) réalisateur(-trice).', ['720P', '1080P', '4K'], { '720P': 15 }, true],
+  ['Dreamina Seedance 1.5 Pro', 'Génère des vidéos avec un son naturel synchronisé.', ['720P', '1080P'], { '720P': 18 }, false],
+  ['Dreamina Seedance 1.0', 'Des performances de premier ordre, des visuels d’une clarté extrême.', ['1080P'], { '1080P': 25 }, false],
+  ['Dreamina Seedance 1.0 rapide', 'Performances dignes d’un film, plus grande rapidité et moins de crédits.', ['720P', '1080P'], { '720P': 5, '1080P': 8 }, false],
+  ['HappyHorse 1.1', 'Mouvement fluide, fidélité de l’image, contenu audio natif', ['720P', '1080P'], { '720P': 27 }, true],
+  ['Wan 3.0', 'Génération vidéo par Tongyi Lab', ['720P', '1080P'], { '720P': 16 }, true]
+]
+const infos = (nom) => MODELES.find((m) => m[0] === nom)
+const REFERENCES = ['Références de tout type', 'Première et dernière image', 'Images multiples', 'Édition intelligente', 'Vidéo longue']
+const FORMATS = ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16']
+const etat = { modele: 'Dreamina Seedance 2.0 Mini', ref: REFERENCES[0], format: '16:9', res: '720P', duree: 5, solde: mode === 'credits' ? 20 : 216 }
+if (mode === 'reglages') Object.assign(etat, { modele: 'Dreamina Seedance 2.0 rapide', format: '9:16', res: '1080P', duree: 10 })
+if (mode === 'reglages_1x') Object.assign(etat, { modele: 'Dreamina Seedance 1.0 rapide', ref: REFERENCES[1], res: '1080P', duree: 10 })
+if (mode === 'riche') etat.solde = 999
+const nbsp = (s) => s.replace(/ /g, ' ') // libellés du site : espaces insécables
+const permis = (nom) => infos(nom)[4] || etat.ref !== REFERENCES[0] // 1.x grisés en « tout type »
+
+function prix () {
+  const base = infos(etat.modele)[3][etat.res] || 14 // prix relevés ; 14/s inventé ailleurs
+  const liste = base * etat.duree + (mode === 'cout' ? 25 : 0)
+  const debite = mode === 'gratuit' ? 0 : Math.max(0, liste - 30)
+  return { liste, debite }
+}
+function maj () {
+  if (!infos(etat.modele)[2].includes(etat.res)) etat.res = infos(etat.modele)[2][0] // comme le site
+  $('ref-texte').textContent = etat.ref
+  $('modele-label').textContent = nbsp(etat.modele)
+  $('entete-modele').textContent = nbsp(etat.modele)
+  $('format-texte').textContent = etat.format
+  $('res-texte').textContent = etat.res
+  $('duree-texte').textContent = `${etat.duree}s`
+  const p = prix()
+  $('cout-debite').textContent = String(p.debite)
+  $('cout-liste').textContent = String(p.liste)
+  $('solde').textContent = String(etat.solde)
+  $('envoi').disabled = !$('prompt').innerText.trim()
+}
+const textePrompt = () => $('prompt').innerText.replace(/\s+/g, ' ').trim()
+
+// Onglets à bascule
+for (const b of document.querySelectorAll('.modes-Rr5t7u button')) {
+  b.onclick = () => { for (const x of document.querySelectorAll('.modes-Rr5t7u button')) x.setAttribute('aria-pressed', String(x === b)) }
+}
+if (mode === 'reglages') { $('m-video').setAttribute('aria-pressed', 'false'); $('m-image').setAttribute('aria-pressed', 'true') }
+$('nav-video').onclick = () => envoyer('/interdit', { geste: 'lien Vidéo du menu' })
+
+// Page non connectée (supposée) ; page changée
+if (mode === 'session') {
+  $('haut').innerHTML = '<button class="login-button-Qa2wS3" type="button">Connexion</button>'
+}
+if (mode === 'change') $('editeur-boite').innerHTML = '<div class="nouvel-editeur-Zx3cV4">Écris ici</div>'
+
+// Éditeur : le gabarit s'efface à la première frappe
+$('prompt').addEventListener('focus', () => {
+  const p = $('prompt').querySelector('.is-editor-empty')
+  if (p) { $('prompt').innerHTML = '<p><br></p>'; const r = document.createRange(); r.setStart($('prompt').firstChild, 0); getSelection().removeAllRanges(); getSelection().addRange(r) }
+})
+$('prompt').addEventListener('input', maj)
+
+// Liste des modèles (combobox)
+const liste = $('lv-select-popup-4')
+for (const [nom, desc] of MODELES) {
+  const li = document.createElement('li')
+  li.setAttribute('role', 'option')
+  li.className = 'lv-select-option option-Ty3uI5'
+  li.innerHTML = `<div class="name-Op5aS6">${nbsp(nom)}</div><div class="desc-Df7gH8">${desc}</div>`
+  li.onclick = () => { if (!permis(nom)) return; etat.modele = nom; fermer(); maj() } // grisé : rien
+  liste.append(li)
+}
+// Mode des références (second combobox, sans aria-label, relevé le 29/10)
+const refs = $('lv-select-popup-1')
+for (const r of REFERENCES) {
+  const li = document.createElement('li')
+  li.setAttribute('role', 'option')
+  li.textContent = r
+  li.onclick = () => {
+    etat.ref = r
+    if (!permis(etat.modele)) etat.modele = 'Dreamina Seedance 2.0 Mini' // modèle grisé : le site en change
+    fermer(); maj()
+  }
+  refs.append(li)
+}
+function fermer () {
+  liste.hidden = true; $('b-modele').setAttribute('aria-expanded', 'false')
+  refs.hidden = true; $('b-ref').setAttribute('aria-expanded', 'false')
+  $('bulle-format').hidden = true; $('bulle-duree').hidden = true
+}
+$('b-modele').onclick = () => {
+  const ouvrir = liste.hidden
+  fermer()
+  if (!ouvrir) return
+  for (const [i, li] of [...liste.querySelectorAll('li')].entries()) {
+    li.setAttribute('aria-selected', String(MODELES[i][0] === etat.modele))
+    li.setAttribute('aria-disabled', String(!permis(MODELES[i][0])))
+  }
+  liste.hidden = false; $('b-modele').setAttribute('aria-expanded', 'true')
+}
+$('b-ref').onclick = () => {
+  const ouvrir = refs.hidden
+  fermer()
+  if (!ouvrir) return
+  for (const li of refs.querySelectorAll('li')) li.setAttribute('aria-selected', String(li.textContent === etat.ref))
+  refs.hidden = false; $('b-ref').setAttribute('aria-expanded', 'true')
+}
+// Bulle Format / Résolution (sans rôles : supposé) ; résolutions permises par le modèle
+for (const f of FORMATS) {
+  const d = document.createElement('div'); d.className = 'item-Xc3vB8'; d.innerHTML = `<span class="icon-Rt5yU6">▭</span><span>${f}</span>`
+  d.onclick = () => { etat.format = f; maj() }
+  $('formats').append(d)
+}
+$('b-format').onclick = () => {
+  const o = $('bulle-format').hidden
+  fermer()
+  $('resolutions').replaceChildren(...infos(etat.modele)[2].map((r) => {
+    const d = document.createElement('div'); d.className = 'item-Xc3vB8'; d.textContent = r
+    d.onclick = () => { etat.res = r; maj() }
+    return d
+  }))
+  $('bulle-format').hidden = !o
+}
+// Durée totale : curseur et champ numérique
+$('b-duree').onclick = () => { const o = $('bulle-duree').hidden; fermer(); $('bulle-duree').hidden = !o; $('duree-champ').value = etat.duree }
+const poserDuree = (v) => { const n = Math.max(4, Math.min(30, Number(v) || 5)); etat.duree = n; $('curseur').value = n; maj() }
+$('duree-champ').addEventListener('change', () => poserDuree($('duree-champ').value))
+$('duree-champ').addEventListener('keydown', (e) => { if (e.key === 'Enter') poserDuree($('duree-champ').value) })
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { fermer(); for (const m of document.querySelectorAll('.lv-modal-wrapper')) if (m.dataset.echap) m.parentElement.remove() } })
+
+// Fil « Short Films » : vidéos chargées plus tard (paresseuses), comme sur le site
+setTimeout(() => { for (const v of document.querySelectorAll('.film-grid-Pq2wE4 video')) v.src = '/feed.mp4?n=' + Math.random() }, 50)
+
+// Envoi
+$('envoi').onclick = () => {
+  const p = prix()
+  envoyer('/envoi', { modele: etat.modele, ref: etat.ref, format: etat.format, res: etat.res, duree: etat.duree, prompt: textePrompt(),
+    debite: p.debite, liste: p.liste, video: $('m-video').getAttribute('aria-pressed') === 'true' })
+  if (mode === 'gratuit') {
+    const b = document.createElement('div'); b.className = 'tooltip-Lp2kO3'; b.textContent = '1 utilisation gratuite restante'
+    document.body.append(b); setTimeout(() => b.remove(), 800)
+  }
+  if (mode === 'sans_confirmation') { lancer(); return }
+  const w = document.createElement('div')
+  w.innerHTML = `<div class="lv-modal-mask" aria-hidden="true"></div><div class="lv-modal-wrapper lv-modal-wrapper-align-center"><div class="lv-modal lv-modal-Ss1dD2 modal-Ff3gG4 aigc-compliance-confirmation-Hh5jJ6" role="dialog" aria-modal="true" aria-labelledby="arco-dialog-2"><div tabindex="0"></div><div tabindex="-1"><div class="lv-modal-header-Kk7lL8"><div class="lv-modal-title" id="arco-dialog-2"><span>Avant de continuer</span></div></div><div class="lv-modal-content">Tu confirmes disposer de l'ensemble des droits nécessaires relatifs au contenu téléversé, que tu n'enfreindras aucun droit de tiers et que tu ne téléverseras ni de données personnelles sensibles ni de contenu inapproprié.</div><div class="lv-modal-footer-Zz9xX0"><button class="lv-btn lv-btn-secondary lv-btn-size-default" type="button"><span>Annuler</span></button><button class="lv-btn lv-btn-primary lv-btn-size-default" type="button"><span>Confirmer</span></button></div></div><div tabindex="0"></div></div></div>`
+  const [annuler, confirmer] = w.querySelectorAll('button')
+  annuler.onclick = () => w.remove()
+  confirmer.onclick = () => { envoyer('/confirme', {}); w.remove(); lancer() }
+  document.body.append(w)
+}
+
+function fiche (prompt, labels) {
+  const f = document.createElement('div')
+  f.className = 'content-Mm3qQ4 ai-generated-record-content-Ww5eE6'
+  f.innerHTML = `<div class="record-Ab1cD2 standard-Ef3gH4 video-record-Ij5kL6"><div class="record-header-Mn7oP8"><div class="prompt-suffix-labels-Qr9sT0" tabindex="0"><span class="prompt-Uv1wX2"><span class="prompt-value-container-Yz3aB4"><span></span></span></span><span class="labels-Cd5eF6">${labels.map((l) => `<span class="label-Gh7iJ8">${nbsp(l)}</span>`).join('')}<span class="label-Gh7iJ8"><span class="more-info-label-Kl9mN0"><span class="more-info-label-inner-Op1qR2">Détails</span></span></span></span></div></div><div class="body-St3uV4 inset-Wx5yZ6"><div class="video-record-content-Ab7cD8"><div class="responsive-video-grid-Ef9gH0"></div></div></div><div class="record-bottom-slots-Ij1kL2"><div class="card-bottom-button-view-Mn3oP4" role="button" tabindex="0">Éditer l'invite</div><div class="card-bottom-button-view-Mn3oP4 regenerer" role="button" tabindex="0">Générer à nouveau</div><div class="operation-button-Qr5sT6" role="button" tabindex="0" aria-label="Afficher plus"></div></div></div>`
+  f.querySelector('.prompt-value-container-Yz3aB4 span').textContent = prompt
+  f.querySelector('.regenerer').onclick = () => envoyer('/interdit', { geste: 'Générer à nouveau' })
+  return f
+}
+
+function carteVideo (src) {
+  const w = document.createElement('div')
+  w.className = 'video-card-wrapper-Uv7wX8'
+  w.innerHTML = `<div class="context-menu-trigger-Yz9aB0"><div class="slot-card-container-Cd1eF2"><div class="video-card-container-Gh3iJ4" role="button" tabindex="0" aria-roledescription="draggable"><div class="video-card-Ab9cD1"><div class="video-container-Kl5mN6 video-player-wrapper-Op7qR8"><div class="video-wrapper-St9uV0"><video muted></video></div><div class="controls-tr-Mn4bV6"><div class="icones-Op1lK2"><div role="button" tabindex="0" class="dl"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16" stroke="#fff" fill="none"/></svg></div><div role="button" tabindex="0">…</div><div role="button" tabindex="0">☆</div></div></div></div></div></div></div></div>`
+  w.querySelector('video').src = src
+  const dl = w.querySelector('.dl')
+  if (mode === 'nom_dl') dl.setAttribute('aria-label', 'Télécharger')
+  dl.onclick = () => {
+    filigrane()
+    if (mode === 'dl_rate') return // aucun fichier (téléchargements bloqués par Chrome, vu le 29/10)
+    const a = document.createElement('a')
+    a.href = src.split('?')[0]; a.download = 'dreamina-2026-10-29-1234-un-chat.mp4' // la vidéo de CETTE carte
+    document.body.append(a); a.click(); a.remove()
+  }
+  return w
+}
+
+function filigrane () {
+  const w = document.createElement('div')
+  w.innerHTML = `<div class="lv-modal-mask" aria-hidden="true"></div><div class="lv-modal-wrapper lv-modal-wrapper-align-center watermark-setting-modal-Ab3cD4" data-echap="1"><div class="lv-modal lv-modal-Ss1dD2 lv-modal-closable" role="dialog" aria-modal="true" aria-labelledby="arco-dialog-3"><div tabindex="0"></div><div tabindex="-1"><div class="lv-modal-header-Kk7lL8"><div class="lv-modal-title" id="arco-dialog-3"><span>Supprime les filigranes IA</span></div></div><div class="lv-modal-content"><div class="watermark-setting-container-Ef5gH6"><p class="paragraph-Ij7kL8"><span>La plateforme Dreamina (la « Plateforme ») fournit des services de génération de contenu par l'IA.</span></p><div class="switch-row-Mn9oP0"><button class="lv-switch lv-switch-small" role="switch" aria-checked="false" type="button"><div class="lv-switch-dot"></div></button><div class="switch-label-Qr1sT2">Supprimer les filigranes</div></div><div class="footer-Uv3wX4"><button class="lv-btn lv-btn-primary" type="button"><span>Enregistrer la préférence</span></button></div></div></div><span class="lv-modal-close-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" role="button" tabindex="0" aria-label="Fermer"><path d="M5 5l14 14M19 5 5 19" stroke="#fff"/></svg></span></div><div tabindex="0"></div></div></div><div class="bulle-Yz5aB6">Supprime le filigrane Dreamina. Abonne-toi pour télécharger des images et vidéos sans le filigrane Dreamina <button type="button">S'abonner</button></div>`
+  w.querySelector('[role="switch"]').onclick = () => envoyer('/interdit', { geste: 'interrupteur des filigranes' })
+  w.querySelector('.footer-Uv3wX4 button').onclick = () => envoyer('/interdit', { geste: 'Enregistrer la préférence' })
+  w.querySelector('.bulle-Yz5aB6 button').onclick = () => envoyer('/interdit', { geste: 'S\'abonner' })
+  w.querySelector('[aria-label="Fermer"]').onclick = () => { envoyer('/ferme', {}); w.remove() }
+  document.body.append(w)
+}
+
+function lancer () {
+  const prompt = textePrompt()
+  history.pushState({}, '', `/ai-tool/generate?workspace=20927953627908&mode=${mode}&cle=${cle}`)
+  $('accueil').hidden = true
+  $('generation').hidden = false
+  $('prompt2').textContent = prompt
+  setTimeout(() => { $('inspiration').src = '/feed.mp4?n=' + Math.random() }, 120) // fil d'inspiration paresseux
+  if (mode === 'alerte') { // supposé : rien n'est relevé des messages d'erreur
+    const t = document.createElement('div'); t.className = 'toast-Fr5tG7'; t.setAttribute('role', 'alert')
+    t.textContent = 'Une erreur est survenue. Réessaie plus tard.'
+    document.body.append(t)
+    return
+  }
+  const labels = [etat.modele, `${etat.duree}s`, etat.format, etat.res]
+  if (mode === 'ancien') { // génération d'avant, même prompt, déjà finie (en haut de la liste)
+    const a = fiche(prompt, labels)
+    a.querySelector('.responsive-video-grid-Ef9gH0').append(carteVideo('/ancien.mp4'))
+    $('fiches').append(a)
+  }
+  const f = fiche(prompt, labels)
+  const grille = f.querySelector('.responsive-video-grid-Ef9gH0')
+  grille.innerHTML = '<div class="video-card-wrapper-Uv7wX8"><div class="progress-badge-Wq1eR2 loading-progress-badge-Ty3uI4">0%</div></div><div class="loading-container-Op5aS6"><div class="animation-wrapper-Df7gH8"><video class="loading-animation-Zz8xY7" muted loop autoplay src="/attente.mp4"></video></div></div>'
+  $('fiches').append(f)
+  const badge = grille.querySelector('.progress-badge-Wq1eR2')
+  const etapes = ['7%', '40%', '93%']
+  let i = 0
+  const pas = setInterval(() => {
+    if (i < etapes.length) { badge.textContent = etapes[i++]; return }
+    if (mode === 'lent') return
+    clearInterval(pas)
+    grille.innerHTML = ''
+    $('tache').textContent = 'Génération terminée'
+    if (mode === 'sans_video') return
+    grille.append(carteVideo('/clip.mp4?n=' + Date.now()))
+  }, mode === 'lent' ? 100 : 150)
+}
+maj()
+</script>
+</body>
+</html>
