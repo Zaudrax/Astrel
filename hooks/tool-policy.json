@@ -1,0 +1,9 @@
+{
+  "_aide": "Politique d'outils lue par le garde-fou (plan P12, lot 6). mcp : serveur -> outil (ou *) -> libre | sensible | critique ; une gravité critique du code n'est jamais abaissée. refuser : noms d'outils (mcp__serveur__* permis) refusés d'office, sans carte. Après modification : ./run.sh doctor --accept, depuis le terminal de l'utilisateur.",
+  "mcp": {
+    "context7": {
+      "*": "libre"
+    }
+  },
+  "refuser": []
+}
