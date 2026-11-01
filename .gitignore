@@ -1,0 +1,62 @@
+# ⚠️ Git ne connaît pas les commentaires en fin de ligne : un « motif  # note »
+# cherche un fichier qui s'appelle littéralement ainsi. Commentaires sur leur
+# propre ligne uniquement (la version d'origine n'excluait pas la clé API).
+
+# Secrets
+.env
+.env.*
+config/secrets.json
+**/token*.json
+**/client_secret*.json
+*credentials*.json
+
+# Données personnelles accumulées par l'assistant
+vault/
+memory/*.json
+memory/*.db
+
+# Généré à l'exécution
+runtime/
+logs/
+models/
+.venv/
+# Passerelle des fournisseurs à clé (plan P11, LiteLLM, ~270 Mo), installée à la demande
+.venv-passerelle/
+# markitdown (plan P12, lot 1), installée par tools/lire-document.sh --installer
+.venv-markitdown/
+# rtk-oss 1.0.1 (plan P12, lot 2, essai), binaire téléchargé, somme vérifiée
+.rtk/
+__pycache__/
+*.py[cod]
+
+# Hors dépôt, conservé localement (ancien Astrel)
+.legacy/
+
+# Dépendances web (réinstallées par install.sh) ; le HUD compilé, lui, est versionné
+hud/node_modules/
+hud/dist/*.map
+# Icônes récupérées d'elles-mêmes pour les connecteurs du compte (astrel/icones.py, 19/10)
+hud/assets/icons/auto/
+mcp-servers/node_modules/
+
+# Réglages personnels : copiés depuis config/*.example.json par install.py, jamais
+# suivis (un `git pull` ne doit jamais entrer en conflit avec eux).
+config/reflexes.json
+config/channels.json
+config/mic_profiles.json
+config/profile.json
+
+# Empreinte du garde-fou : propre à chaque machine, recréée par
+# `--doctor --accept` en fin d'installation.
+hooks/empreinte.json
+
+# Outils
+.pytest_cache/
+*.part
+
+# Pont WhatsApp (plan P1) : dépendances réinstallées par `cd whatsapp && npm ci`
+whatsapp/node_modules/
+# Images IA par le navigateur (plan P14) : `cd imagegen && npm ci`
+imagegen/node_modules/
+
+.eveil-donnees/

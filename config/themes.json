@@ -1,0 +1,56 @@
+{
+  "_doc": "Thèmes d'Astrel (21/10, plan P17) : liste UNIQUE lue par astrel/theme.py (bulle), hud/src/theme.js (HUD, importé au build) et comparée à hud/styles.css par tests/test_themes.py. Premium = sobre, à la manière d'Apple, clair ou sombre ; seul thème depuis le 25/10 (plan P35). Classique = les couleurs d'origine, toujours sombre : plus sélectionnable (« selectable »: false), palette gardée pour les icônes (tools/logo.py) et les états de l'orbe (hud/src/theme.js STATE). Les couleurs de Total (orange) et de la levée du garde-fou (rouge, la plus alarmante) ne dépendent pas du thème.",
+  "version": 1,
+  "default": {"theme": "premium", "mode": "auto", "accent": "bleu"},
+  "modes": ["auto", "light", "dark"],
+  "semantics": {"total": "#ff8c00", "levee": "danger"},
+  "themes": {
+    "classique": {
+      "label": "Classique",
+      "selectable": false,
+      "modes": ["dark"],
+      "palettes": {
+        "dark": {
+          "bg": "#04060c", "glass": "9, 14, 26", "line": "90, 170, 255", "hi": "255, 255, 255",
+          "ink": "#d7e6ff", "ink_2": "#6f84a8", "accent": "#3ad6ff", "accent_ink": "#3ad6ff",
+          "ok": "#34e3a4", "warn": "#ffb547", "danger": "#ff5a6e", "violet": "#9d7bff"
+        }
+      },
+      "states": {
+        "booting": ["#7d93b8", "#4e5f7d"], "sleeping": ["#3aa8ff", "#2a5bd8"],
+        "listening": ["#3dffc5", "#18b3f0"], "thinking": ["#9d7bff", "#5a3cf2"],
+        "working": ["#c47bff", "#6a4cff"], "speaking": ["#5ae1ff", "#338cff"],
+        "asking": ["#ffb547", "#ff6b2e"], "off": ["#6b7280", "#3a3f4a"]
+      }
+    },
+    "premium": {
+      "label": "Premium",
+      "modes": ["dark", "light"],
+      "font": "Inter Astrel",
+      "palettes": {
+        "dark": {
+          "bg": "#1c1c1e", "glass": "44, 44, 46", "line": "255, 255, 255", "hi": "255, 255, 255",
+          "ink": "#f5f5f7", "ink_2": "#aeaeb2", "ink_title": "#98989d", "on_fill": "#000000",
+          "field_border": "#7c7c80",
+          "ok": "#30d158", "warn": "#ffd60a", "danger": "#ff6961", "violet": "#da8fff"
+        },
+        "light": {
+          "bg": "#f5f5f7", "glass": "255, 255, 255", "line": "0, 0, 0", "hi": "0, 0, 0",
+          "ink": "#1d1d1f", "ink_2": "#636366", "ink_title": "#6e6e73", "on_fill": "#ffffff",
+          "field_border": "#86868b",
+          "ok": "#1f7a35", "warn": "#a05a00", "danger": "#d70015", "violet": "#8944ab"
+        }
+      },
+      "accents": {
+        "bleu": {"label": "Bleu", "dark": "#0a84ff", "dark_ink": "#409cff", "light": "#0071e3", "light_ink": "#0071e3"},
+        "graphite": {"label": "Graphite", "dark": "#8e8e93", "dark_ink": "#aeaeb2", "light": "#6e6e73", "light_ink": "#6e6e73"},
+        "vert": {"label": "Vert", "dark": "#30d158", "dark_ink": "#30d158", "light": "#1f7a35", "light_ink": "#1f7a35"},
+        "orange": {"label": "Orange", "dark": "#ff9f0a", "dark_ink": "#ff9f0a", "light": "#c93400", "light_ink": "#c93400"}
+      },
+      "states": {
+        "booting": "ink_2", "sleeping": "accent", "listening": "accent", "thinking": "accent",
+        "working": "accent", "speaking": "accent", "asking": "warn", "off": "ink_2"
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "_aide": "Réglages PAR MICRO, choisis par un morceau du nom du micro (le plus long gagne, « default » complète). gain : amplification ; vad : seuil de détection de la parole ; wake : seuil du mot de réveil ; channels : canaux gardés (facultatif). Le plus simple : ./run.sh --calibrate, qui mesure et enregistre le profil du micro branché.",
+  "default": {
+    "gain": 2.0,
+    "vad": 0.35,
+    "wake": 0.4
+  },
+  "profiles": {}
+}

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Astrel
+Comment=Tableau de bord de l'assistant Astrel : orbe, graphe neuronal, conversation
+Exec=@ROOT@/hud.sh
+Icon=astrel-hud
+Terminal=false
+Categories=Utility;
+StartupWMClass=AstrelHUD

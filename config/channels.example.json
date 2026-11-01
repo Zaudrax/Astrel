@@ -1,0 +1,19 @@
+{
+  "_aide": "Canaux du HUD, un par projet. Ajouter un projet = ajouter une entrée ici, sans relancer Astrel (recharger le HUD suffit). id : court, sans espace ; label : nom affiché ; color : facultative ; keywords : mots qui désignent le projet (le nom et l'id comptent déjà). Voir docs/UTILISATION.md, « Canaux ».",
+  "default": "general",
+  "channels": [
+    {
+      "id": "general",
+      "label": "Général",
+      "color": "#3ad6ff"
+    },
+    {
+      "id": "exemple",
+      "label": "Mon projet",
+      "color": "#34e3a4",
+      "keywords": [
+        "exemple"
+      ]
+    }
+  ]
+}

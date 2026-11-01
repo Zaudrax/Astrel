@@ -1,0 +1,7 @@
+{
+  "_lisez_moi": "Copier en config/tarifs.json pour corriger ou ajouter un tarif (plan P19). Dollars US par MILLION de tokens. Chaque modèle remplace champ par champ celui de astrel/tarifs_defaut.json. Sans date `verifie` (AAAA-MM-JJ), le coût est affiché « estimé ». Clé « fournisseur:modèle » (ex. « openrouter:openai/gpt-5 ») pour un prix propre à un fournisseur, sinon le nom du modèle seul. Les noms commençant par « _ » sont ignorés.",
+  "modeles": {
+    "gpt-5": {"entree": 1.25, "sortie": 10.0, "cache_lecture": 0.125, "verifie": "2026-10-21"},
+    "openrouter:openai/gpt-5": {"entree": 1.25, "sortie": 10.0, "cache_lecture": 0.125, "verifie": null}
+  }
+}

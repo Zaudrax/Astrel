@@ -1,0 +1,26 @@
+[Unit]
+Description=Astrel - assistant vocal local (Claude Code)
+# Démarre avec la session graphique : sans elle, ni micro, ni portail d'écran.
+After=graphical-session.target pipewire.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+Environment=PYTHONUNBUFFERED=1
+# Le service n'hérite pas du PATH du shell : claude (~/.local/bin) et node (nvm)
+# doivent y être explicitement.
+Environment=PATH=@PATH@
+# Dossier des projets (cwd de Claude) : choisi à l'installation (install.py --projets).
+Environment=ASTREL_WORKDIR=@WORKDIR@
+# Voix : celle retenue dans runtime/voice.txt (HUD), sinon Edge Rémy.
+# ASTREL_TTS_ENGINE=… ici forcerait une voix et ignorerait le choix du HUD.
+# Modèle : celui retenu dans runtime/model.txt (HUD), sinon Sonnet ; même règle
+# pour ASTREL_CLAUDE_MODEL.
+ExecStartPre=/bin/sleep 6
+ExecStart=@ROOT@/.venv/bin/python -m astrel
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

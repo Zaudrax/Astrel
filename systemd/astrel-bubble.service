@@ -1,0 +1,19 @@
+[Unit]
+Description=Astrel - bulle flottante (indépendante du service Astrel)
+# Unité À PART, jamais dans le cgroup de astrel.service : la bulle est alors reconnue comme lancée
+# par l'utilisateur (ses clics Oui/Non sont acceptés) et survit aux relances d'Astrel.
+# 29/10 : SEUL lanceur de la bulle au démarrage (plus d'autostart GNOME, qui en ouvrait une deuxième).
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=/bin/sleep 8
+ExecStart=@ROOT@/.venv/bin/python -m astrel.bubble
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

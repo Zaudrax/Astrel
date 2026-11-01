@@ -1,0 +1,46 @@
+# Astrel — dépendances Python (versions vérifiées le 26/09/2026, Python 3.13, Debian 13).
+# Linux : GTK (bulle) et GStreamer (capture d'écran) viennent du SYSTÈME,
+# l'environnement se crée avec --system-site-packages (voir install.py).
+# macOS / Windows (P2, lot 5) : roues NON VÉRIFIÉES sur une vraie machine au
+# 17/10/2026 (mediapipe, opencv, piper, onnxruntime surtout) ; la CI le mesure.
+
+# Oreille : mot de réveil, fin de phrase, reconnaissance vocale sur GPU
+openwakeword==0.4.0
+onnxruntime==1.24.4
+faster-whisper==1.2.1
+# ⚠️ libcublas/libcudnn n'existent que via ces paquets sur cette machine
+# (préchargés par astrel/listener.py). Linux seulement : le préchargement ne
+# sait charger que des .so ; ailleurs la transcription passe sur le processeur
+# (repli CPU int8 de listener.py), sans ces ~1 Go inutiles.
+nvidia-cublas-cu12==12.9.2.10 ; sys_platform == "linux"
+nvidia-cudnn-cu12==9.26.0.51 ; sys_platform == "linux"
+
+# Son hors Linux (astrel/platform/son.py) : PortAudio est livré dans la roue
+# macOS/Windows. JAMAIS sous Linux, où PortAudio manque (piège 1 du CLAUDE.md).
+sounddevice==0.5.6 ; sys_platform != "linux"
+
+# Voix
+piper-tts==1.8.0
+edge-tts==7.3.1
+google-genai==2.25.0
+
+# Serveur du HUD, outils MCP
+aiohttp==3.14.3
+mcp==2.2.0
+# Épinglés : la version système de httpcore exige h11<0.15 et casse httpx.
+httpx==0.28.1
+httpcore==1.0.9
+h11==0.16.0
+
+# Connecteurs (agenda CalDAV, transports, DeepL) : httpx suffit. dateutil déplie
+# les récurrences quand le serveur CalDAV ne le fait pas (déjà fourni par Debian).
+python-dateutil==2.9.0
+
+# Sens : webcam, visage, gestes, état système
+opencv-python-headless==5.0.0.93
+mediapipe==1.0.1
+psutil==7.0.0
+numpy==2.4.3
+
+# Tests
+pytest==9.1.1

@@ -1,0 +1,6 @@
+{
+  "_aide": "Ton profil, à copier en config/profile.json (non suivi). nom : ton prénom, cité par l'invite système d'Astrel (vide : « l'utilisateur ») ; systeme : ton ordinateur, par exemple « Ubuntu, GNOME » (vide : Linux, macOS ou Windows) ; projets : dossier de tes projets, où travaille Claude (vide : ~/Projets ; la variable ASTREL_WORKDIR prime). Pris en compte à la prochaine session d'Astrel (reset).",
+  "nom": "",
+  "systeme": "",
+  "projets": ""
+}

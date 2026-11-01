@@ -1,0 +1,27 @@
+{
+  "_lisez_moi": "Tarifs par défaut du panneau Consommation (plan P19). Dollars US par MILLION de tokens, palier standard. `verifie` = date du relevé à 2 sources (page officielle + table de LiteLLM) ; null = tarif NON vérifié (une seule source) : coût affiché « estimé ». Plus de 90 jours après `verifie` : « estimé » aussi. Les modèles Claude n'y sont pas : leur coût vient du CLI (`costUSD` de `modelUsage`). Surcharge par l'utilisateur : config/tarifs.json (même format, voir config/tarifs.example.json).",
+  "_notes": [
+    "Relevé du 21/10/2026, note du coffre P19-lot0-tarifs-2026-10-21 (chercheur du lot 0).",
+    "Gemini 2.5 Pro et Grok : au-delà de 200 k tokens par requête, prix plus haut (`au_dela_200k`, donné pour information) ; le compteur ne voit que des cumuls et applique le palier standard.",
+    "Gemini : stockage du cache facturé en plus (4,50 $/M/h Pro, 1,00 $/M/h Flash), non compté.",
+    "Batch (-50 %) non relevé, non compté.",
+    "Cache Claude Sonnet 5.5 en lecture : 0,10 $/M, UNE seule source (LiteLLM) : non retenu ici, le CLI donne le coût Claude."
+  ],
+  "unite": "USD par million de tokens",
+  "modeles": {
+    "gpt-5": {"fournisseur": "openai", "entree": 1.25, "sortie": 10.0, "cache_lecture": 0.125, "verifie": "2026-10-21"},
+    "gpt-5-mini": {"fournisseur": "openai", "entree": 0.25, "sortie": 2.0, "cache_lecture": 0.025, "verifie": "2026-10-21"},
+    "gpt-4.1": {"fournisseur": "openai", "entree": 2.0, "sortie": 8.0, "cache_lecture": 0.5, "verifie": "2026-10-21"},
+    "gpt-5.1": {"fournisseur": "openai", "entree": 1.25, "sortie": 10.0, "cache_lecture": 0.125, "verifie": "2026-10-21",
+                "note": "absent du catalogue du code, ajouté par ASTREL_FOURNISSEUR_MODELES"},
+    "gemini-2.5-pro": {"fournisseur": "gemini", "entree": 1.25, "sortie": 10.0, "cache_lecture": 0.125, "verifie": "2026-10-21",
+                       "au_dela_200k": {"entree": 2.5, "sortie": 15.0, "cache_lecture": 0.25}},
+    "gemini-2.5-flash": {"fournisseur": "gemini", "entree": 0.3, "sortie": 2.5, "cache_lecture": 0.03, "verifie": "2026-10-21"},
+    "grok-4.3": {"fournisseur": "xai", "entree": 1.25, "sortie": 2.5, "cache_lecture": 0.2, "verifie": "2026-10-21",
+                 "au_dela_200k": {"entree": 2.5, "sortie": 5.0, "cache_lecture": 0.4}},
+    "grok-4.20": {"fournisseur": "xai", "entree": 1.25, "sortie": 2.5, "cache_lecture": 0.2, "verifie": "2026-10-21",
+                  "au_dela_200k": {"entree": 2.5, "sortie": 5.0, "cache_lecture": 0.4}},
+    "grok-code-fast-1": {"fournisseur": "xai", "entree": 1.0, "sortie": 2.0, "cache_lecture": 0.2, "verifie": null,
+                         "note": "NON CONFIRMÉ : une seule source ; la page officielle affiche « Grok Build 0.1 » aux mêmes prix"}
+  }
+}
