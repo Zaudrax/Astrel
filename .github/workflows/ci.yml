@@ -1,0 +1,78 @@
+# Intégration continue d'Astrel (P2, lot 3).
+#
+# - « linux » (à chaque push et pull request) : contrôle de la machine, tests
+#   Python (et Node du HUD), rendu du HUD en Chrome headless. Doit être VERT.
+# - « portage » (macOS et Windows, à la demande et une fois par semaine) : MESURE
+#   où en est le portage ; un échec n'est pas bloquant (continue-on-error).
+#   Pourquoi pas à chaque push : sur un dépôt PRIVÉ, GitHub décompte une minute
+#   macOS pour 10 et une minute Windows pour 2 sur le quota gratuit
+#   (2 000 min/mois en offre Free). Un passage complet ≈ 10 à 15 min par OS.
+#
+# Aucun vrai Claude ici : tools/ci/faux-claude répond à `--version` et
+# `auth status`, les tests du cerveau utilisent des enregistrements
+# (tests/fixtures). Le micro, la bulle et les raccourcis ne se testent que sur
+# une vraie machine.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * 1"   # lundi 5 h UTC : mesure hebdomadaire du portage
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Faux Claude Code dans le PATH
+        run: echo "$GITHUB_WORKSPACE/tools/ci/faux-claude" >> "$GITHUB_PATH"
+      - name: Contrôle de la machine (avant installation)
+        run: python tools/check_install.py --ci
+      - name: Dépendances Python (sans les ~1 Go de CUDA, inutiles aux tests)
+        run: |
+          grep -v '^nvidia-' requirements.txt > /tmp/requirements-ci.txt
+          python -m pip install --upgrade pip
+          python -m pip install -r /tmp/requirements-ci.txt websockets
+      - name: Tests Python (dont ceux du HUD en Node, par tests/test_hud_markdown.py)
+        run: python -m pytest -q
+      - name: Rendu du HUD en Chrome headless
+        run: python tools/hud_check_rendu.py
+
+  portage:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Faux Claude Code dans le PATH
+        shell: bash
+        run: echo "$GITHUB_WORKSPACE/tools/ci/faux-claude" >> "$GITHUB_PATH"
+      - name: Contrôle de la machine (avant installation)
+        run: python tools/check_install.py --ci
+      - name: "Dépendances complètes (mesure : quelles roues manquent ?)"
+        run: python -m pip install -r requirements.txt websockets
+      - name: Tests de la couche plateforme, de l'installation et du canal local (plan P6)
+        run: python -m pytest -q -p no:cacheprovider tests/test_platform.py tests/test_install.py tests/test_ipc.py
+      - name: Suite complète (mesure)
+        if: always()
+        run: python -m pytest -q -p no:cacheprovider
