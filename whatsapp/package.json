@@ -1,0 +1,14 @@
+{
+  "name": "astrel-whatsapp",
+  "private": true,
+  "description": "Pont WhatsApp d'Astrel (Baileys, chat « message à soi-même »), à version FIXÉE (jamais @latest).",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "baileys": "7.0.0-rc14",
+    "pino": "9.14.0",
+    "qrcode-terminal": "0.12.0"
+  }
+}

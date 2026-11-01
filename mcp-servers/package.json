@@ -1,0 +1,8 @@
+{
+  "name": "astrel-mcp-servers",
+  "private": true,
+  "description": "Serveurs MCP tiers d'Astrel, à version FIXÉE (pas de npx @latest au démarrage).",
+  "dependencies": {
+    "@playwright/mcp": "0.0.82"
+  }
+}
