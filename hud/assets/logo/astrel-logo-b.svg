@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>Astrel (Premium sombre)</title>
+<defs><linearGradient id="fond" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2c2c2e"/><stop offset="1" stop-color="#1c1c1e"/></linearGradient></defs>
+<rect x="30.72" y="30.72" width="962.56" height="962.56" rx="216.58" fill="url(#fond)"/>
+<rect x="36.86" y="36.86" width="950.27" height="950.27" rx="210.43" fill="none" stroke="#ffffff" stroke-opacity="0.140" stroke-width="12.29"/>
+<circle cx="512" cy="512" r="335.36" fill="none" stroke="#f5f5f7" stroke-width="46.08"/>
+<circle cx="512" cy="512" r="76.8" fill="#0a84ff"/>
+</svg>

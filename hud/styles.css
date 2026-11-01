@@ -1,0 +1,1953 @@
+:root {
+  --bg: #04060c;
+  --panel: rgba(var(--rgb-glass), 0.72);
+  --panel-border: rgba(var(--rgb-line), 0.14);
+  --ink: #d7e6ff;
+  --muted: #6f84a8;
+  --cyan: #3ad6ff;
+  --violet: #9d7bff;
+  --amber: #ffb547;
+  --green: #34e3a4;
+  --red: #ff5a6e;
+  --radius: 14px;
+  --font: "Inter", "Cantarell", "Noto Sans", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", monospace;
+  --accent: var(--cyan);
+  /* 15/10 (demande : « tout est collé ») : mise en page sur des mesures communes.
+     --edge : marge au bord de la fenêtre ; --gap : gouttière entre deux blocs ;
+     --head-h : bas de la tête (barre + bandeaux), mesuré par main.js. */
+  --edge: 16px;
+  --gap: 16px;
+  --right-w: 320px;
+  --head-h: 72px;
+  --alert-h: 40px;  /* 19/10 : ligne Total / levée (26 px) en surimpression sous la tête, avec sa marge */
+  /* 23/10 (demande de l'utilisateur) : plus de panneau gauche, la conversation part du bord */
+  --col-l: var(--edge);
+  --col-r: calc(var(--edge) + var(--right-w) + var(--gap));
+}
+/* === P17 jetons : début === */
+/* 21/10 (plan P17, demande : « changer le thème de l'app et de sa bulle via les réglages ») :
+   jetons de thème. Valeurs de repli, celles de l'ancien thème Classique (abandonné le 25/10,
+   plan P35 : data-theme="premium" en dur dans index.html). Le thème Premium les redéfinit dans le bloc
+   « P17 thèmes » en fin de fichier ; référence commune : config/themes.json (tests/test_themes.py).
+   Familles « r, g, b » : rgba(var(--rgb-x), alpha), l'opacité reste écrite dans chaque règle. */
+:root {
+  --rgb-accent: 58, 214, 255;
+  --rgb-line: 90, 170, 255;
+  --rgb-glass: 9, 14, 26;
+  --rgb-hi: 255, 255, 255;
+  --rgb-ok: 52, 227, 164;
+  --rgb-warn: 255, 181, 71;
+  --rgb-danger: 255, 90, 110;
+  --rgb-violet: 157, 123, 255;
+  /* textes : survol, titres, code, citations, teintes d'état */
+  --ink-hi: #fff;
+  --ink-head: #eaf2ff;
+  --ink-strong: #f2f7ff;
+  --ink-title: #8296bb;
+  --ink-code: #cfe3ff;
+  --ink-quote: #b6c7e6;
+  --ink-danger: #ffd0d6;
+  --ink-violet: #d9ccff;
+  --ink-warn: #ffe2b5;
+  --ink-cmd: #ffd9a0;
+  --ink-ok: #c9f7e6;
+  --ink-ok-strong: #eafff6;
+  --on-fill: #04060c;
+  --on-warn: #1a1100;
+  /* fonds particuliers */
+  --confirm-bg: rgba(20, 14, 4, 0.92);
+  --choice-bg: rgba(20, 14, 4, 0.88);
+  --shimmer-from: rgba(48, 34, 96, 0.92);
+  --shimmer-to: rgba(10, 36, 58, 0.92);
+  --backdrop: rgba(2, 4, 10, 0.55);
+  --vignette-edge: rgba(0, 0, 0, 0.55);
+  --option-bg: #0b1222;
+  /* jetons communs du plan (servis par le thème Premium) */
+  --surface-1: var(--panel);
+  --surface-2: rgba(var(--rgb-hi), 0.03);
+  --border: var(--panel-border);
+  --ink-2: var(--muted);
+  --ok: var(--green);
+  --warn: var(--amber);
+  --danger: var(--red);
+  --r-1: 8px;
+  --r-2: 12px;
+  --r-3: 20px;
+  --shadow-1: 0 8px 30px rgba(0, 0, 0, 0.25);
+  --blur: 16px;
+  --dur-1: 150ms;
+  --dur-2: 250ms;
+  --dur-3: 400ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-spring: linear(0, 0.156, 0.408, 0.62, 0.769, 0.864, 0.922, 0.956, 0.976, 0.987, 1);
+  --press: 0.96;
+}
+/* === P17 jetons : fin === */
+@media (min-width: 1800px) {
+  :root { --edge: 20px; --gap: 20px; --right-w: 340px; }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.45 var(--font); overflow: hidden; }
+button { font: inherit; color: inherit; cursor: pointer; }
+input { font: inherit; color: inherit; }
+.muted { color: var(--muted); }
+.small { font-size: 11px; }
+.hidden { display: none !important; }
+
+/* 15/10 : icônes vectorielles (hud/src/icons.js) à la place des émojis. Trait fin,
+   couleur du texte (currentColor) : les couleurs d'état s'appliquent seules. Taille
+   suivant le texte ; `lead` = devant un texte sans `gap`, `trail` = après. */
+.ico { width: 1.2em; height: 1.2em; flex: none; display: inline-block; vertical-align: -0.24em; overflow: visible; }
+.ico.lead { margin-right: 0.42em; }
+.ico.trail { margin-left: 0.5em; opacity: 0.7; }
+.chip .ico { width: 14px; height: 14px; }
+.round .ico { width: 17px; height: 17px; }
+.usage button .ico { width: 16px; height: 16px; }
+.close .ico { width: 13px; height: 13px; vertical-align: middle; }
+.modal-x .ico { width: 15px; height: 15px; vertical-align: middle; }
+.copy-btn .ico { width: 13px; height: 13px; vertical-align: -2px; }
+.msg .src .ico { width: 12px; height: 12px; vertical-align: -2px; }
+
+.vignette {
+  position: fixed; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, var(--vignette-edge) 100%);
+}
+
+/* --- tête : barre du haut + bandeaux, alignée sur les panneaux (15/10) --- */
+#head {
+  position: fixed; top: var(--edge); left: var(--edge); right: var(--edge); z-index: 29;
+  display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none;
+}
+#head > * { pointer-events: auto; }
+#topbar {
+  align-self: stretch; display: flex; align-items: center; gap: 20px; padding: 8px 10px 8px 20px;
+  background: var(--panel); border: 1px solid var(--panel-border); border-radius: 18px;
+  backdrop-filter: blur(14px); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+}
+.brand { font-size: 14px; font-weight: 700; letter-spacing: 0.32em; display: flex; align-items: center; gap: 10px; flex: none; }
+/* 23/10 (plan P31, choix de l'utilisateur) : nom affiché configurable (« Astrel » par défaut, écrit tel
+   que réglé, mis en capitales ici) ; plus de « OS » à côté. */
+.brand-name { text-transform: uppercase; }
+/* 19/10 : le logo est l'état de la connexion (#conn), texte au survol. 23/10 (plan P31) : étoile à
+   4 branches d'Astrel (SVG en currentColor) au lieu de la pastille ronde, sans flou ni lueur : PLEINE et
+   verte en ligne, CREUSE (contour épais) et rouge hors ligne. La forme dit l'état sans distinguer les
+   couleurs ; opacité 1 (relecture P31 : à 0,6 le rouge tombait sous 3:1 sur la barre). */
+.brand-mark { display: inline-flex; flex: none; width: 20px; height: 20px; color: var(--accent); transition: color 0.4s; }
+.brand-mark svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.brand-mark.conn { color: var(--red); cursor: help; }
+.brand-mark.conn:not(.on) svg path { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linejoin: round; }
+.brand-mark.conn.on { color: var(--green); }
+/* les groupes passent à la ligne d'un bloc, jamais un bouton seul */
+.top-actions { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; justify-content: flex-end; }
+.tgroup {
+  display: flex; align-items: center; gap: 6px; padding: 3px; flex: none;
+  border-radius: 999px; background: rgba(var(--rgb-hi), 0.025); border: 1px solid rgba(var(--rgb-line), 0.08);
+}
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 28px;
+  background: rgba(var(--rgb-accent), 0.06); border: 1px solid var(--panel-border); border-radius: 999px;
+  padding: 3px 12px; font-size: 12px; white-space: nowrap;
+}
+/* 19/10 : bouton en icône seule (Guide, Réglages ; nom dans title et aria-label). 28/10 (T10) : Éteindre
+   retiré de la barre (décision de l'utilisateur). */
+.chip.icon-only { width: 30px; min-width: 30px; padding: 0; justify-content: center; }
+.chip.on, .chip:hover { border-color: var(--accent); color: var(--ink-hi); }
+.chip.estop:hover { border-color: var(--red); color: var(--red); }
+.chip.estop.on { border-color: var(--red); color: var(--ink-hi); background: rgba(var(--rgb-danger), 0.25); }
+#context.warn { color: var(--amber); }
+/* 21/10 (plan P20) : ligne « Mémoire » sous « Contexte » (jetons seulement : Premium suit),
+   ambre en attention, rouge en blocage ; clic = classement des gros consommateurs */
+#memory { cursor: pointer; border-radius: 6px; }
+#memory:hover, #memory:focus-visible { color: var(--ink-hi); outline: none; }
+#memory:focus-visible { box-shadow: 0 0 0 1px var(--accent); }
+#memory.warn { color: var(--amber); }
+#memory.crit { color: var(--red); font-weight: 600; }
+#memory-banner { background: rgba(var(--rgb-danger), 0.88); border: 1px solid var(--red);
+  box-shadow: 0 0 14px rgba(var(--rgb-danger), 0.45); }
+.memory-top .mem-sum { margin: 0 0 10px; }
+.memory-top .mem-sum.attention { color: var(--amber); }
+.memory-top .mem-sum.blocage { color: var(--red); }
+.memory-top .mem-list { margin: 0; padding-left: 22px; }
+.memory-top .mem-row { padding: 3px 0; }
+.memory-top .mem-row > span + span { margin-left: 8px; }
+.memory-top .mem-name { color: var(--ink-hi); unicode-bidi: isolate; overflow-wrap: anywhere; }
+.memory-top .mem-size { font-variant-numeric: tabular-nums; }
+.memory-top .mem-extra { color: var(--muted); }
+
+/* --- panneaux --- */
+.panel {
+  position: fixed; top: calc(var(--head-h) + var(--gap)); bottom: var(--edge); width: var(--right-w); padding: 18px;
+  background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius);
+  backdrop-filter: blur(16px); overflow-y: auto; z-index: 4;
+  scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.2) transparent;
+}
+#right { right: var(--edge); width: var(--right-w); }
+/* une section par intertitre, séparée d'un filet */
+.panel-title {
+  font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-title); font-weight: 600;
+  margin: 20px 0 10px; padding-top: 16px; border-top: 1px solid rgba(var(--rgb-line), 0.09);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.panel-title:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+/* 15/10 : une ligne trop longue (chemin, titre d'agent) se coupe au lieu d'élargir le
+   panneau (le bouton Stop des tâches sortait à droite, défilement horizontal) */
+.tasks, .sensors, .grants, .quota, .mission { grid-template-columns: minmax(0, 1fr); }
+/* 22/10 : ↻ du panneau « Abonnement » (relevé du quota), tourne pendant le relevé */
+#quota-refresh { padding: 0 2px; cursor: pointer; line-height: 1; }
+#quota-refresh:hover, #quota-refresh:focus-visible { color: var(--accent); }
+#quota-refresh[aria-busy="true"] { cursor: progress; }
+#quota-refresh[aria-busy="true"] .ico { animation: quota-spin 0.9s linear infinite; }
+@keyframes quota-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #quota-refresh[aria-busy="true"] .ico { animation: none; opacity: 0.5; } }
+.close { background: none; border: none; font-size: 16px; color: var(--muted); }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: 0 0 8px currentColor; }
+/* --- orbe et présence --- */
+#orb-wrap { position: relative; display: grid; justify-items: center; }
+/* 25/10 (plan P35) : seule orbe, le disque de verre 2D (hud/src/orb_premium.js) ; l'orbe WebGL
+   du thème Classique (#orb) est retirée avec ce thème */
+#orb-premium { width: 260px; height: 260px; display: block; }
+#state-label {
+  margin-top: -6px; font-size: 12px; letter-spacing: 0.3em; text-transform: uppercase; font-weight: 600;
+  color: var(--accent); text-shadow: 0 0 12px var(--accent); transition: color 0.4s;
+}
+.presence { font-size: 11px; color: var(--green); margin-top: 4px; }
+.presence.away { color: var(--muted); }
+.paused-note {
+  margin-top: 6px; padding: 3px 10px; border-radius: 999px; font-size: 11px; cursor: pointer;
+  color: var(--amber); border: 1px solid rgba(var(--rgb-warn), 0.5); background: rgba(var(--rgb-warn), 0.08);
+}
+.paused-note:hover { background: rgba(var(--rgb-warn), 0.16); }
+#state-detail { font-size: 11px; min-height: 16px; text-align: center; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badges { display: flex; gap: 6px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+.badge {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; padding: 3px 8px; border-radius: 6px;
+  border: 1px solid var(--panel-border); color: var(--muted); cursor: default;
+}
+#model-badge, #voice-badge, #mic-badge, #effort-badge { cursor: pointer; }
+#model-badge:hover, #voice-badge:hover, #mic-badge:hover, #effort-badge:hover { color: var(--ink-hi); border-color: var(--accent); }
+/* 20/10 (plan P11) : cerveau hors abonnement Claude (autre fournisseur, clé API) */
+#model-badge.ext { color: var(--amber); border-color: var(--amber); }
+/* 23/10 (plan P28) : effort sans effet maintenant (Haiku, mode léger, autre fournisseur, variable) */
+#effort-badge.off { opacity: 0.55; }
+.effort-menu .effort-note { padding: 6px 10px 2px; max-width: 260px; }
+#mic-badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sensors { display: grid; gap: 6px; }
+.sensor {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 8px; padding: 7px 10px;
+  border-radius: 10px; border: 1px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.02);
+  cursor: pointer; transition: border-color 0.2s, background 0.2s;
+}
+.sensor b { font-family: var(--mono); letter-spacing: 0.18em; font-size: 12px; }
+.sensor .st { font-size: 10px; color: var(--muted); text-align: right; }
+.sensor .desc { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
+.sensor.on { border-color: rgba(var(--rgb-ok), 0.6); background: rgba(var(--rgb-ok), 0.07); }
+.sensor.on .st { color: var(--green); }
+.sensor.wanted .st { color: var(--amber); }
+
+.quota { display: grid; gap: 8px; }
+.bar { height: 6px; border-radius: 999px; background: rgba(var(--rgb-hi), 0.06); overflow: hidden; }
+.bar > div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--cyan), var(--violet)); transition: width 0.6s; }
+.bar.warn > div { background: linear-gradient(90deg, var(--amber), var(--red)); }
+.quota .row { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+
+/* --- conversation --- */
+/* 15/10 : la colonne du milieu, entre les deux panneaux (gouttière --gap de chaque
+   côté), centrée et plafonnée en largeur ; jamais plus haute que l'espace sous la tête :
+   c'est le fil qui rétrécit (carte de confirmation, dictée, pièces jointes comprises) */
+#dialog {
+  position: fixed; left: var(--col-l); right: var(--col-r); bottom: var(--edge); z-index: 6;
+  /* 23/10 : 1200 px au plus (960 avant) : la place du panneau gauche retiré va à la conversation */
+  width: min(1200px, calc(100vw - var(--col-l) - var(--col-r))); margin: 0 auto;
+  max-height: calc(100vh - var(--head-h) - var(--gap) - var(--edge));
+  display: flex; flex-direction: column;
+}
+/* 19/10 : la ligne Total / levée flotte au-dessus du fil ; le fil au maximum s'arrête dessous */
+body.alert-on #dialog { max-height: calc(100vh - var(--head-h) - var(--gap) - var(--edge) - var(--alert-h)); }
+#dialog > * { flex-shrink: 0; }
+/* hauteur réglable en tirant la poignée (--chat-h, retenue dans localStorage) */
+#dialog > #transcript { flex: 0 1 auto; min-height: 60px; }
+#transcript {
+  max-height: var(--chat-h, 55vh);
+  overflow-y: auto; padding: 0 4px 12px; display: flex; flex-direction: column; gap: 8px;
+  scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.2) transparent;
+}
+/* 16/10 (demande : « le premier message est rogné ») : le fondu du haut ne signale que
+   des messages cachés AU-DESSUS (fil défilé, classe posée par main.js). Toujours présent,
+   il effaçait les 40 premiers pixels d'un fil d'un ou deux messages, qui tient sans défiler. */
+#transcript.fade { mask-image: linear-gradient(to bottom, transparent, #000 40px); }
+#chat-grip {
+  height: 12px; margin: 0 auto 2px; width: 90px; cursor: ns-resize; display: grid; place-items: center;
+}
+#chat-grip::before {
+  content: ""; width: 48px; height: 4px; border-radius: 999px;
+  background: var(--panel-border); transition: background 0.2s;
+}
+#chat-grip:hover::before, #chat-grip.dragging::before { background: var(--accent); }
+#jump-btn {
+  /* 19/10 : au-dessus du bas du FIL, mesuré par main.js (--jump-b) : la barre de saisie
+     grandit avec le texte et le bouton passait dessus */
+  position: absolute; right: 14px; bottom: var(--jump-b, 66px); z-index: 1;
+  background: var(--panel); backdrop-filter: blur(10px); color: var(--accent);
+}
+/* seul le texte du fil se sélectionne : sans ça, une sélection qui déborde un peu
+   au-dessus du fil s'étend jusqu'au début de la page et le fait défiler */
+#dialog { user-select: none; }
+#transcript, #ask { user-select: text; }
+/* et les vides autour du fil (marges, entre les onglets) laissent passer la souris
+   jusqu'au fond de la page : survolés pendant une sélection, ils l'étendaient aussi */
+#dialog, #channels { pointer-events: none; }
+#chat-grip, .channel-tab, #transcript, #composer, #jump-btn, #confirm, #dictation, #attachments, #image-panel { pointer-events: auto; }
+#dialog.selecting #chat-grip, #dialog.selecting .channel-tab { pointer-events: none; }
+.msg { padding: 9px 14px; border-radius: 12px; max-width: 85%; backdrop-filter: blur(10px); }
+.msg.user { align-self: flex-end; background: rgba(var(--rgb-accent), 0.12); border: 1px solid rgba(var(--rgb-accent), 0.25);
+  white-space: pre-wrap; }  /* lignes tapées avec Maj+Entrée */
+.msg.astrel { align-self: flex-start; background: var(--panel); border: 1px solid var(--panel-border); }
+/* curseur d'écriture : au bout du dernier bloc rendu (15/10, markdown) */
+.msg.astrel.live .md:empty::after,
+.msg.astrel.live .md > :is(p, h3, h4, h5):last-child::after,
+.msg.astrel.live .md > :is(ul, ol):last-child > li:last-child::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; }
+.msg.astrel { position: relative; }
+/* 15/10 : réponses en markdown sûr (hud/src/markdown.js), un seul thème (sombre) */
+.md { overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 6px; }
+.md :is(h3, h4, h5) { margin: 10px 0 4px; font-weight: 600; line-height: 1.3; color: var(--ink-head); }
+.md h3 { font-size: 14px; }
+.md h4 { font-size: 13px; }
+.md h5 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.md :is(ul, ol) { margin: 2px 0 6px; padding-left: 22px; }
+.md li { margin: 2px 0; }
+.md li > :is(ul, ol) { margin: 2px 0; }
+.md ul > li::marker { color: var(--accent); }
+.md ol > li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
+.md strong { font-weight: 650; color: var(--ink-strong); }
+.md del { opacity: 0.6; }
+.md code {
+  font-family: var(--mono); font-size: 12px; padding: 1px 5px; border-radius: 5px;
+  background: rgba(var(--rgb-line), 0.10); border: 1px solid rgba(var(--rgb-line), 0.14); color: var(--ink-code);
+}
+.md pre {
+  margin: 4px 0 8px; padding: 8px 10px; border-radius: 8px; overflow-x: auto; max-height: 360px;
+  background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(var(--rgb-line), 0.12);
+  scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.2) transparent;
+}
+.md pre code { padding: 0; border: none; background: none; white-space: pre; font-size: 12px; line-height: 1.45; }
+/* 19/10 : bloc de code avec bouton « Copier » discret (survol ou focus) ; schémas ASCII :
+   espaces gardés (white-space: pre), interligne resserré pour que les traits se touchent */
+.md .code-block { position: relative; margin: 4px 0 8px; }
+.md .code-block > pre { margin: 0; }
+.md .code-block > pre code { line-height: 1.35; font-variant-ligatures: none; }
+.md .code-copy {
+  position: absolute; top: 5px; right: 6px; z-index: 1; padding: 0 7px; height: 20px; border-radius: 6px;
+  font-size: 11px; color: var(--muted); background: rgba(var(--rgb-glass), 0.9); border: 1px solid var(--panel-border);
+  opacity: 0; transition: opacity 0.15s; user-select: none;
+}
+/* premier bloc du message : laisse la place au bouton Copier du message, en haut à droite */
+.md > .code-block:first-child .code-copy { right: 26px; }
+.md .code-block:hover .code-copy, .md .code-copy:focus-visible { opacity: 1; }
+.md .code-copy:hover { color: var(--ink-hi); border-color: var(--accent); }
+/* 19/10 : tableaux sobres, lignes alternées, défilement horizontal s'ils sont larges */
+.md .table-wrap {
+  margin: 4px 0 8px; overflow-x: auto; max-width: 100%; border-radius: 8px; border: 1px solid rgba(var(--rgb-line), 0.14);
+  scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.2) transparent;
+}
+.md table { border-collapse: collapse; font-size: 12.5px; line-height: 1.4; min-width: 100%; }
+.md :is(th, td) { padding: 5px 10px; text-align: left; vertical-align: top; overflow-wrap: normal; word-break: normal;
+  border-bottom: 1px solid rgba(var(--rgb-line), 0.08); }
+.md th { font-weight: 600; color: var(--ink-head); white-space: nowrap; background: rgba(var(--rgb-line), 0.08);
+  border-bottom-color: rgba(var(--rgb-line), 0.2); }
+.md td { min-width: 4em; max-width: 360px; }
+.md tbody tr:nth-child(even) { background: rgba(var(--rgb-hi), 0.025); }
+.md tbody tr:last-child td { border-bottom: none; }
+.md :is(th, td).al-center { text-align: center; }
+.md :is(th, td).al-right { text-align: right; font-variant-numeric: tabular-nums; }
+.md td code { white-space: nowrap; }
+.md blockquote { margin: 4px 0 6px; padding: 2px 0 2px 10px; border-left: 2px solid var(--panel-border); color: var(--ink-quote); }
+.md hr { border: none; border-top: 1px solid var(--panel-border); margin: 8px 0; }
+.md a { color: var(--accent); text-decoration: underline; text-decoration-color: rgba(var(--rgb-accent), 0.4); text-underline-offset: 2px; }
+.md a:hover { text-decoration-color: var(--accent); }
+/* copier le texte brut : discret, visible au survol */
+.copy-btn {
+  position: absolute; top: 4px; right: 4px; padding: 0 6px; border-radius: 6px; font-size: 12px; line-height: 18px;
+  color: var(--muted); background: rgba(var(--rgb-glass), 0.85); border: 1px solid var(--panel-border);
+  opacity: 0; transition: opacity 0.15s; user-select: none;
+}
+.msg.astrel:hover .copy-btn, .copy-btn:focus-visible { opacity: 1; }
+.copy-btn:hover { color: var(--ink-hi); border-color: var(--accent); }
+.md ~ .read-btn { margin: 6px 0 0; }
+.msg .src { font-size: 10px; color: var(--muted); margin-right: 6px; }
+/* 23/10 (demande de l'utilisateur) : heure de chaque message, discrète (heure.js) ; hors sélection copiée */
+.msg-time {
+  display: block; margin-top: 2px; font-size: 10px; line-height: 12px; color: var(--muted); text-align: right;
+  font-variant-numeric: tabular-nums; user-select: none;
+}
+/* compte rendu de tâche de fond : lu d'un clic sur « Lire » (en attente = liseré ambre) */
+.msg.astrel.to-read { border-color: rgba(var(--rgb-warn), 0.55); box-shadow: 0 0 14px rgba(var(--rgb-warn), 0.12); }
+.read-btn {
+  margin-left: 8px; padding: 0 8px; border-radius: 999px; font-size: 11px; line-height: 18px; vertical-align: 1px;
+  color: var(--muted); background: rgba(var(--rgb-hi), 0.04); border: 1px solid var(--panel-border); white-space: nowrap;
+}
+.read-btn:hover { color: var(--ink-hi); border-color: var(--accent); }
+.read-btn.pending { color: var(--amber); border-color: rgba(var(--rgb-warn), 0.6); background: rgba(var(--rgb-warn), 0.10); }
+.read-btn.pending:hover { background: rgba(var(--rgb-warn), 0.2); color: var(--ink-hi); }
+/* 16/10 : message (ou dictée) qui n'est PAS parti chez Astrel : liseré pointillé ambre */
+.msg.user.unsent { border: 1px dashed rgba(var(--rgb-warn), 0.7); background: rgba(var(--rgb-warn), 0.07); }
+.unsent-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; white-space: normal; }
+.unsent-box .read-btn { margin-left: 0; }
+.unsent-note { font-size: 11px; color: var(--amber); }
+.msg.user.resent .unsent-note { color: var(--muted); }
+@keyframes blink { 50% { opacity: 0; } }
+/* 15/10 (idée 3) : compte rendu typé — badge, liseré ; « décision requise » ressort d'un coup d'œil */
+.report-badge {
+  display: inline-block; margin: 0 0 4px; padding: 0 8px; border-radius: 999px; font-size: 10px; line-height: 17px;
+  font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid; user-select: none;
+}
+.report-badge.decision { color: var(--on-warn); background: var(--amber); border-color: var(--amber); box-shadow: 0 0 10px rgba(var(--rgb-warn), 0.45); }
+.report-badge.blocage { color: var(--red); background: rgba(var(--rgb-danger), 0.12); border-color: rgba(var(--rgb-danger), 0.6); }
+.report-badge.resultat { color: var(--green); background: rgba(var(--rgb-ok), 0.10); border-color: rgba(var(--rgb-ok), 0.5); }
+.msg.astrel.report-decision { border-color: rgba(var(--rgb-warn), 0.8); border-left: 3px solid var(--amber);
+  box-shadow: 0 0 18px rgba(var(--rgb-warn), 0.18); }
+.msg.astrel.report-blocage { border-color: rgba(var(--rgb-danger), 0.55); border-left: 3px solid var(--red); }
+.msg.astrel.report-resultat { border-left: 3px solid rgba(var(--rgb-ok), 0.7); }
+.report-files { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 6px; }
+.report-files-head { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+.report-file {
+  font-family: var(--mono); font-size: 11px; padding: 1px 7px; border-radius: 6px; max-width: 100%;
+  overflow-wrap: anywhere; text-align: left; color: var(--ink-code);
+  background: rgba(var(--rgb-line), 0.08); border: 1px solid rgba(var(--rgb-line), 0.18);
+}
+.report-file:hover { border-color: var(--accent); color: var(--ink-hi); }
+/* point ambre sur l'onglet : une décision attend l'utilisateur dans ce canal */
+.channel-tab .decision-mark { width: 7px; height: 7px; border-radius: 50%; background: var(--amber);
+  box-shadow: 0 0 6px var(--amber); flex: none; }
+
+/* 15/10 (idée 9) : question à choix dans le fil */
+.msg.choice {
+  /* P21 (fiche 5) : 320 px au plus la largeur du fil, sinon le fil défile en largeur à 700 px */
+  align-self: flex-start; display: grid; gap: 8px; min-width: min(320px, 100%);
+  background: var(--choice-bg); border: 1px solid rgba(var(--rgb-warn), 0.6);
+  box-shadow: 0 0 22px rgba(var(--rgb-warn), 0.15);
+}
+.msg.choice.waiting { opacity: 0.6; box-shadow: none; }
+.msg.choice.answered { background: var(--panel); border-color: var(--panel-border); box-shadow: none; }
+.choice-head { color: var(--amber); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 700; }
+.msg.choice.answered .choice-head { color: var(--muted); }
+.msg.choice.cancelled { opacity: 0.6; }
+.msg.choice.cancelled .choice-question { text-decoration: line-through; text-decoration-color: var(--muted); }
+.choice-question { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.choice-options { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.msg.choice > * { min-width: 0; }
+.choice-btn {
+  max-width: 100%; overflow-wrap: anywhere;
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 10px;
+  background: rgba(var(--rgb-hi), 0.04); border: 1px solid var(--panel-border); text-align: left;
+}
+.choice-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--ink-hi); }
+.choice-btn.recommended { border-color: var(--green); color: var(--ink-ok-strong); background: rgba(var(--rgb-ok), 0.14); font-weight: 600; }
+.choice-btn.recommended:hover:not(:disabled) { background: rgba(var(--rgb-ok), 0.24); border-color: var(--green); }
+.choice-btn:disabled { cursor: default; opacity: 0.6; }
+.choice-key { margin: 0; padding: 0 4px; border-radius: 4px; border: 1px solid var(--panel-border); opacity: 0.8; }
+.choice-rec { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--green); font-weight: 700; }
+/* P21 (fiche 3) : seul le libellé se coupe ; la lettre et « recommandé » restent d'un bloc. */
+.choice-key, .choice-rec { flex: none; white-space: nowrap; }
+.choice-other {
+  padding: 6px 10px; border-radius: 9px; border: 1px solid var(--panel-border); outline: none;
+  background: rgba(var(--rgb-hi), 0.04); font-size: 13px;
+}
+.choice-other:focus { border-color: var(--accent); }
+/* 21/10 (plan P21) : « Autre » est une entrée de la liste (bord en tirets) qui déplie un champ
+   multiligne ; entrées = boutons radio (anneau au focus clavier, entrée cochée soulignée). */
+textarea.choice-other { font: inherit; font-size: 13px; color: inherit; resize: vertical; min-height: 3.2em; max-height: 40vh; }
+.choice-btn.other { border-style: dashed; }
+.choice-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.choice-btn[aria-checked="true"]:not(.recommended) { border-color: var(--accent); }
+/* P21 (fiche 5) : « Répondu : <URL collée dans Autre> » se coupe n'importe où, comme le libellé */
+.choice-status { min-width: 0; overflow-wrap: anywhere; }
+.choice-status.done { color: var(--green); font-size: 12px; }
+
+/* 21/10 (plan P14) : carte d'une image IA dans le fil. Animation de chargement en transform
+   SEUL (balayage d'un reflet, aucun repeint de mise en page), coupée par prefers-reduced-motion. */
+.msg.image-job {
+  align-self: flex-start; display: grid; gap: 8px; width: min(420px, 85%);
+  background: var(--panel); border: 1px solid rgba(var(--rgb-violet), 0.45);
+}
+.msg.image-job.image-fini { border-color: var(--panel-border); }
+.msg.image-job.image-echec { border-color: rgba(var(--rgb-danger), 0.5); }
+.image-head { color: var(--violet); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 700; }
+.image-prompt { font-size: 13px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.image-loading { display: grid; gap: 6px; }
+.image-shimmer {
+  position: relative; overflow: hidden; aspect-ratio: 16 / 9; border-radius: 10px;
+  background: linear-gradient(135deg, var(--shimmer-from), var(--shimmer-to));
+  border: 1px solid rgba(var(--rgb-violet), 0.25);
+}
+.image-shimmer::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(100deg, transparent 20%, rgba(var(--rgb-violet), 0.22) 45%, rgba(var(--rgb-accent), 0.18) 55%, transparent 80%);
+  animation: image-sweep 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes image-sweep { to { transform: translateX(100%); } }
+.image-step { font-size: 12px; color: var(--muted); }
+.image-grid { display: grid; gap: 6px; }
+.image-grid.n2, .image-grid.n3, .image-grid.n4 { grid-template-columns: 1fr 1fr; }
+.image-view { display: block; padding: 0; border: 1px solid var(--panel-border); border-radius: 10px; overflow: hidden;
+  background: rgba(var(--rgb-hi), 0.03); cursor: zoom-in; }
+.image-view img { display: block; width: 100%; height: auto; max-height: 360px; object-fit: contain; }
+.image-view:hover { border-color: var(--accent); }
+.image-view:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.image-credit { font-size: 11px; color: var(--muted); }
+.image-error { font-size: 13px; color: var(--ink-danger); }
+.image-ai-label { font-size: 11px; color: var(--muted); }
+.image-ai-text { margin: 0; padding: 6px 10px; border-left: 2px solid var(--panel-border); font-size: 12px;
+  color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.image-retry {
+  justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 10px;
+  background: rgba(var(--rgb-hi), 0.04); border: 1px solid var(--panel-border);
+}
+.image-retry:hover:not(:disabled) { border-color: var(--accent); color: var(--ink-hi); }
+.image-retry:disabled { opacity: 0.6; cursor: default; }
+/* 28/10 (plan P40 lot A5) : « Essayer avec X » (autre moteur, clic de l'utilisateur) et pièces jointes de la demande */
+.image-other { color: var(--accent); border-color: rgba(var(--rgb-accent), 0.45); }
+.image-pieces { font-size: 11px; color: var(--muted); }
+/* panneau « Images » sous la barre de chat (images.js) : même carte que la barre */
+.image-panel {
+  display: grid; gap: 8px; margin-top: 8px; padding: 8px 10px 10px;
+  background: var(--panel); border: 1px solid var(--panel-border); border-radius: 16px; backdrop-filter: blur(16px);
+}
+.ip-head { display: flex; align-items: center; gap: 10px; }
+.ip-title { font-size: 12px; font-weight: 600; color: var(--ink-hi); display: inline-flex; align-items: center; gap: 6px; }
+.ip-mode, .ip-kind { display: flex; border: 1px solid var(--panel-border); border-radius: 999px; overflow: hidden; }
+.ip-mode button, .ip-kind button { background: none; border: none; padding: 4px 12px; font-size: 11px; color: var(--muted); }
+.ip-mode button:hover, .ip-kind button:hover { color: var(--ink-hi); }
+.ip-mode button.on, .ip-kind button.on { color: var(--ink-hi); background: rgba(var(--rgb-accent), 0.16); }
+.ip-mode button:focus-visible, .ip-kind button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ip-head .ip-settings { margin-left: auto; }
+.ip-mode[hidden], .ip-field[hidden] { display: none; } /* onglet Vidéo (P41 B4) : champs des images masqués */
+.ip-prompt {
+  display: block; width: 100%; resize: vertical; min-height: 44px; max-height: 160px; padding: 6px 10px;
+  font: inherit; line-height: 19px; color: inherit; background: rgba(var(--rgb-hi), 0.03);
+  border: 1px solid var(--panel-border); border-radius: 10px; outline: none; user-select: text;
+}
+.ip-prompt:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--rgb-accent), 0.15); }
+.ip-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.ip-field { display: grid; gap: 2px; min-width: 0; flex: 1 1 160px; }
+.ip-label { font-size: 10px; letter-spacing: 0.04em; color: var(--muted); }
+.ip-select {
+  min-width: 0; width: 100%; padding: 6px 8px; border-radius: 8px; font: inherit; font-size: 12px; color: var(--ink);
+  background: rgba(var(--rgb-hi), 0.03); border: 1px solid var(--panel-border);
+}
+.ip-select option { background: var(--option-bg); }
+.ip-select:disabled { opacity: 0.7; }
+.ip-select:focus { border-color: var(--accent); outline: none; }
+.ip-attach:disabled { opacity: 0.45; cursor: not-allowed; }
+.ip-send { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-color: var(--accent); color: var(--accent); }
+.ip-send:hover:not(:disabled) { background: rgba(var(--rgb-accent), 0.12); }
+.ip-send:disabled { opacity: 0.5; cursor: not-allowed; }
+.ip-send[aria-busy="true"] { opacity: 0.6; }
+.ip-pieces { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* 30/10 : onglet Vidéo, image de début et image de fin étiquetées ; « Inverser début et fin » */
+.att-role { flex: none; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+  color: var(--accent); border: 1px solid rgba(var(--rgb-accent), 0.45); }
+.ip-swap { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; }
+.ip-note { font-size: 11px; color: var(--muted); }
+.ip-note.lv-warn { color: var(--amber); }
+.ip-note.lv-error { color: var(--red); }
+#images-btn.on { color: var(--accent); border-color: var(--accent); }
+/* Réglages › Images : comptes dans l'ordre du repli */
+.img-accounts { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.img-account { display: grid; gap: 6px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--panel-border);
+  background: rgba(var(--rgb-hi), 0.02); }
+.img-account-head { display: flex; align-items: baseline; gap: 8px; }
+.img-alias { font-size: 13px; color: var(--ink-hi); }
+.img-provider { font-size: 11px; color: var(--muted); }
+.img-account .setting-action.icon-only { padding: 5px 8px; display: inline-flex; }
+.img-up .ico { transform: rotate(-90deg); }
+.img-down .ico { transform: rotate(90deg); }
+.setting[data-key^="images."] .setting-action { display: inline-flex; align-items: center; gap: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  .image-shimmer::after { animation: none; transform: none; opacity: 0.5; }
+}
+
+/* --- canaux : un fil par projet --- */
+.channels { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 4px 10px; }
+/* 19/10 : place pour Recadrer / Orbite au bout de la rangée d'onglets (boutons retirés le 23/10,
+   plan P28 : marge laissée telle quelle, la mise en page ne bouge pas) */
+#channels { padding-right: 72px; }
+.channel-tab {
+  --chan: var(--cyan);
+  display: flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px;
+  font-size: 11px; letter-spacing: 0.06em; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--panel-border); backdrop-filter: blur(10px);
+}
+.channel-tab .dot { width: 6px; height: 6px; color: var(--chan); background: var(--chan); box-shadow: none; opacity: 0.5; }
+.channel-tab:hover { color: var(--ink); }
+.channel-tab.on { color: var(--ink-hi); border-color: var(--chan); }
+.channel-tab.on .dot { opacity: 1; box-shadow: 0 0 8px var(--chan); }
+.channel-tab .unread {
+  font-family: var(--mono); font-size: 10px; line-height: 14px; min-width: 16px; padding: 0 4px; border-radius: 999px;
+  text-align: center; color: var(--bg); background: var(--chan); font-weight: 600;
+}
+.channel-tab .to-read-mark { display: inline-flex; color: var(--amber); filter: drop-shadow(0 0 4px rgba(var(--rgb-warn), 0.8)); }
+.channel-tab .to-read-mark .ico { width: 12px; height: 12px; }
+/* 19/10 : glisser-déposer des onglets ; le trait dit où l'onglet va tomber */
+.channel-tab.dragging { opacity: 0.4; }
+.channel-tab.drop-before { box-shadow: -3px 0 0 -1px var(--cyan); }
+.channel-tab.drop-after { box-shadow: 3px 0 0 -1px var(--cyan); }
+.menu .menu-head { padding: 4px 10px 6px; }
+.menu .item .dot { display: inline-block; margin-right: 8px; box-shadow: none; }
+.task .chan { font-size: 10px; letter-spacing: 0.06em; margin-right: 6px; }
+.toast.clickable { cursor: pointer; }
+
+/* 19/10 (l'utilisateur, « comme ChatGPT ») : carte sur deux étages. Le texte en haut, pleine
+   largeur ; la rangée de boutons en bas, hauteur fixe. #dialog est ancré en bas : quand le
+   texte grandit, seul l'étage du haut monte, la rangée ne bouge pas (et le fil rétrécit). */
+#composer {
+  display: flex; flex-direction: column; gap: 4px; padding: 6px 8px 8px;
+  background: var(--panel); border: 1px solid var(--panel-border); border-radius: 20px; backdrop-filter: blur(16px);
+}
+.composer-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 34px; flex: none; }
+.composer-tools, .composer-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* 15/10 : barre multiligne (Maj+Entrée), grandit jusqu'à 8 lignes (fitAsk) */
+#ask { display: block; width: 100%; flex: none; background: none; border: none; outline: none; padding: 6px 10px;
+  font: inherit; color: inherit;
+  resize: none; line-height: 19px; height: 31px; max-height: 164px; overflow-y: hidden; white-space: pre-wrap; }
+#ask { scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.3) transparent; }  /* 19/10 : même barre fine que le reste du HUD */
+#ask::-webkit-scrollbar { width: 6px; }
+#ask::-webkit-scrollbar-track { background: transparent; }
+#ask::-webkit-scrollbar-thumb { background: rgba(var(--rgb-line), 0.3); border-radius: 3px; }
+#ask::-webkit-scrollbar-thumb:hover { background: rgba(var(--rgb-line), 0.55); }
+#ask.sending { opacity: 0.55; }
+#ask::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }  /* barre étroite : une ligne */
+.round {
+  width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--panel-border);
+  background: rgba(var(--rgb-hi), 0.03); display: grid; place-items: center; flex: none;
+}
+.round:hover { border-color: var(--accent); }
+#mic-btn.muted, #mute-all-btn.muted { color: var(--red); border-color: rgba(var(--rgb-danger), 0.5); background: rgba(var(--rgb-danger), 0.12); }
+/* voix coupée = mode Silencieux : même ambre que sa pastille et la note du panneau de droite */
+#voice-btn.muted { color: var(--amber); border-color: rgba(var(--rgb-warn), 0.55); background: rgba(var(--rgb-warn), 0.12); }
+#wake-btn.on { color: var(--green); border-color: rgba(var(--rgb-ok), 0.6); }
+
+/* modes d'usage : trois segments, le mode actif nommé (14/10) */
+.usage { display: flex; border: 1px solid var(--panel-border); border-radius: 999px; overflow: hidden; flex: none; }
+.usage button { background: none; border: none; padding: 6px 9px; color: var(--muted); display: flex; gap: 5px; align-items: center; }
+.usage button span { display: none; font-size: 11px; }
+.usage button.on { color: var(--ink-hi); background: rgba(var(--rgb-accent), 0.14); }
+.usage button.on span { display: inline; }
+/* 16/10 : fenêtre étroite, le mode actif garde son icône seule (nom dans l'infobulle).
+   19/10 : le texte a son propre étage, la rangée de boutons a la place : icône seule
+   sous 1360 px seulement, comme les boutons du haut. */
+@media (max-width: 1359px) { .usage button.on span { display: none; } }
+.usage button:hover { color: var(--ink-hi); }
+[data-usage="silencieux"] .usage button.on { background: rgba(var(--rgb-warn), 0.18); color: var(--amber); }
+[data-usage="dictee"] .usage button.on { background: rgba(var(--rgb-ok), 0.16); color: var(--green); }
+.usage-note {
+  margin-top: 6px; padding: 3px 10px; border-radius: 999px; font-size: 11px; cursor: pointer; text-align: center;
+  color: var(--amber); border: 1px solid rgba(var(--rgb-warn), 0.5); background: rgba(var(--rgb-warn), 0.08);
+}
+[data-usage="dictee"] .usage-note { color: var(--green); border-color: rgba(var(--rgb-ok), 0.5); background: rgba(var(--rgb-ok), 0.08); }
+.dictation {
+  display: flex; gap: 8px; align-items: center; margin: 0 0 8px; padding: 6px 10px; border-radius: 12px;
+  background: var(--panel); border: 1px solid rgba(var(--rgb-ok), 0.4); backdrop-filter: blur(12px);
+}
+.dict-head { color: var(--green); font-size: 11px; white-space: nowrap; }
+.dict-text { flex: 1; max-height: 4.5em; overflow-y: auto; white-space: pre-wrap; user-select: text; }
+.mini { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--panel-border); background: none; color: var(--muted); }
+.mini:hover, .mini.done { color: var(--ink-hi); border-color: var(--accent); }
+
+/* autorisations « 30 min » en cours */
+.grants { display: grid; gap: 4px; }
+.grant { display: flex; gap: 8px; align-items: center; font-size: 11px; padding: 4px 8px; border-radius: 8px;
+  border: 1px solid rgba(var(--rgb-ok), 0.35); background: rgba(var(--rgb-ok), 0.05); }
+.grant span:first-child { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grant .time { font-family: var(--mono); color: var(--muted); }
+/* 26/10 (plan P33 lot 3) : volet « Courrier » des agents, lecture seule (caché en Simple) */
+.courrier { display: grid; gap: 4px; }
+.courrier-row { display: flex; gap: 8px; align-items: center; font-size: 11px; padding: 4px 8px; border-radius: 8px;
+  border: 1px solid var(--panel-border); cursor: pointer; }
+.courrier-row:hover { color: var(--ink-hi); border-color: var(--accent); }
+.courrier-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.courrier-row span:first-child { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.courrier-row .time { flex: 1 1 auto; min-width: 0; text-align: right; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: var(--muted); }
+.courrier-panel .courrier-list { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.courrier-panel .courrier-head { font-size: 11px; color: var(--muted); }
+.courrier-panel .courrier-text { white-space: pre-wrap; }
+/* === P38 todo (26/10, plan P38 lot 2, hud/src/todo.js) : aperçu du panneau droit, vue « Tâches » en
+   4 colonnes (2 × 2 sous 900 px), détail d'une tâche ; caché en Simple (bloc « P23 affichage ») === */
+.todo-apercu { display: grid; gap: 4px; }
+.todo-apercu-row { display: flex; gap: 8px; align-items: center; font-size: 11px; padding: 4px 8px; border-radius: 8px;
+  border: 1px solid var(--panel-border); cursor: pointer; }
+.todo-apercu-row:hover { color: var(--ink-hi); border-color: var(--accent); }
+.todo-apercu-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.todo-apercu-name { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-apercu-row .time { flex: 1 1 auto; min-width: 0; text-align: right; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: var(--muted); }
+.modal.wide.todo { width: min(1280px, calc(100vw - 40px)); height: min(860px, calc(100vh - 60px)); padding: 20px 22px 18px; gap: 12px; }
+.modal.todo .modal-body { display: flex; flex-direction: column; gap: 12px; overflow: hidden; padding-right: 0; }
+.todo-add { padding: 5px 14px; font-size: 12px; display: inline-flex; align-items: center; }
+.todo-status { margin: 0; color: var(--muted); }
+.todo-status.err { color: var(--red); }
+.todo-filters { display: flex; flex-wrap: wrap; gap: 6px; flex: none; }
+.todo-filter {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--panel-border); background: none; color: var(--muted); font-size: 12px;
+}
+.todo-filter:hover { color: var(--ink-hi); border-color: rgba(var(--rgb-line), 0.35); }
+.todo-filter.on { color: var(--ink-hi); border-color: var(--accent); background: rgba(var(--rgb-accent), 0.1); }
+.todo-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.todo-filter-n { font-size: 10px; font-variant-numeric: tabular-nums; opacity: 0.75; }
+.todo-main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.2) transparent; }
+.todo-board { flex: 1 1 auto; min-height: 280px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr); gap: 12px; }
+.todo-col { display: flex; flex-direction: column; min-height: 0; border-radius: 12px;
+  border: 1px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.02); }
+.todo-col-head { margin: 0; display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px; font-size: 12px; font-weight: 650;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--panel-border); }
+.todo-col.c-cours .todo-col-head { color: var(--accent); }
+.todo-col.c-fini .todo-col-head { color: var(--green); }
+.todo-col-n { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; opacity: 0.8; }
+.todo-col-list { flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 8px; padding: 8px;
+  scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.2) transparent; }
+.todo-card {
+  display: grid; gap: 6px; text-align: left; padding: 9px 11px; border-radius: 10px; color: inherit; min-width: 0;
+  border: 1px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.03);
+}
+.todo-card:hover { border-color: rgba(var(--rgb-line), 0.35); background: rgba(var(--rgb-accent), 0.05); }
+.todo-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.todo-card[draggable="true"] { cursor: grab; }
+.todo-card.dragging { opacity: 0.45; } /* T26 : carte glissée vers sa nouvelle priorité */
+.todo-card.e-fini, .todo-card.e-abandonne { opacity: 0.75; }
+.todo-card-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.todo-card-id { flex: none; font-family: var(--mono); font-size: 11px; color: var(--accent); }
+.todo-card-title { min-width: 0; font-size: 13px; line-height: 1.4; color: var(--ink-head); overflow-wrap: anywhere; }
+.todo-badges { display: flex; flex-wrap: wrap; gap: 5px; }
+.todo-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; padding: 1px 7px; border-radius: 999px;
+  white-space: nowrap; border: 1px solid var(--panel-border); color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.todo-tag .ico { width: 11px; height: 11px; }
+.todo-plan { font-family: var(--mono); }
+.todo-plan.s-pending { color: var(--amber); border-color: currentColor; }
+.todo-plan.s-revising { color: var(--violet); border-color: currentColor; }
+.todo-plan.s-validated { color: var(--green); border-color: currentColor; }
+.todo-plan.s-rejected { color: var(--red); border-color: currentColor; }
+.todo-wait { color: var(--amber); border-color: rgba(var(--rgb-warn), 0.55); background: rgba(var(--rgb-warn), 0.08); }
+.todo-agent { color: var(--accent); border-color: rgba(var(--rgb-accent), 0.5); background: rgba(var(--rgb-accent), 0.08); }
+.todo-ready { color: var(--green); border-color: rgba(var(--rgb-ok), 0.5); background: rgba(var(--rgb-ok), 0.08); } /* P38 lot 3 */
+.todo-empty { margin: 2px; color: var(--muted); font-size: 12px; }
+.todo-more, .todo-keys { margin: 0 2px; color: var(--muted); font-size: 11px; }
+.todo-intro { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.todo-dropped { flex: none; border-top: 1px solid var(--panel-border); padding-top: 8px; }
+.todo-dropped > summary { cursor: pointer; font-size: 12px; color: var(--muted); padding: 2px 0; }
+.todo-dropped > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.todo-dropped-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; margin-top: 8px; }
+.todo-detail { display: grid; gap: 18px; align-content: start; max-width: 860px; padding: 2px 4px 12px 2px; }
+.todo-back { justify-self: start; display: inline-flex; align-items: center; padding: 5px 12px; font-size: 12px; font-weight: 500;
+  border-color: var(--panel-border); color: var(--muted); }
+.todo-back:hover, .todo-back:focus-visible { color: var(--ink-hi); border-color: var(--accent); outline: none; }
+.todo-back .ico { transform: scaleX(-1); }
+.todo-detail-head { display: grid; gap: 8px; }
+.todo-detail-top { display: flex; align-items: baseline; gap: 12px; }
+.todo-detail-title { margin: 0; flex: 1; min-width: 0; font-size: 18px; font-weight: 650; line-height: 1.35; color: var(--ink-head);
+  overflow-wrap: anywhere; }
+.todo-state { flex: none; font-size: 10px; letter-spacing: 0.05em; padding: 1px 8px; border-radius: 999px; font-weight: 600;
+  border: 1px solid currentColor; color: var(--muted); }
+.todo-state.e-cours { color: var(--accent); }
+.todo-state.e-fini { color: var(--green); }
+.todo-state.e-abandonne { color: var(--red); }
+.todo-detail-meta { font-size: 12px; color: var(--muted); }
+.todo-reason { margin: 0; padding: 9px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+  color: var(--ink-danger); border: 1px solid rgba(var(--rgb-danger), 0.5); background: rgba(var(--rgb-danger), 0.08); }
+.todo-section { display: grid; gap: 10px; }
+.todo-section-title { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent);
+  padding-bottom: 6px; border-bottom: 1px solid var(--panel-border); }
+.todo-note { margin: 0; font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.todo-actions-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.todo-actions-row .btn { padding: 7px 14px; font-size: 13px; display: inline-flex; align-items: center; }
+.todo-move { border-color: var(--panel-border); color: var(--ink); }
+.todo-move:hover:not(:disabled) { border-color: var(--accent); color: var(--ink-hi); }
+.todo-actions-row .btn:disabled { opacity: 0.5; cursor: default; }
+.todo-error { margin: 0; color: var(--red); font-size: 13px; }
+.todo-retry { justify-self: start; padding: 5px 12px; font-size: 12px; display: inline-flex; align-items: center; }
+.todo-hist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.todo-hist-row { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; padding: 6px 10px; border-radius: 8px;
+  border-left: 2px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.025); }
+.todo-hist-when { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+.todo-hist-reason { flex-basis: 100%; color: var(--muted); white-space: pre-wrap; }
+@media (max-width: 899px) {
+  .todo-board { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(200px, 1fr)); min-height: 440px; }
+}
+/* 26/10 (P38 lot 2, fiche 2 du testeur) : avec « Tâches », la barre du haut passait sur deux lignes de
+   1440 à 1556 px (FR). Sous 1600 px, « Tâches » et « Journal » deviennent icône (+ compteur) : le nom
+   reste lu par le lecteur d'écran (texte masqué à l'œil, pas display:none) et dans l'infobulle (title).
+   Mesuré : une ligne dès 1440 en FR et en EN ; 1280 restait déjà sur deux lignes avant P38. */
+@media (max-width: 1599px) {
+  :is(#todo-chip, #audit-chip) { position: relative; min-width: 30px; padding: 3px 8px; gap: 4px; justify-content: center; }
+  :is(#todo-chip, #audit-chip) > span[data-i18n] {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #todo-chip .chip-count { margin-left: 0; }
+}
+/* === P38 todo : fin === */
+.channel-tab.add { font-weight: 700; padding: 2px 9px; }
+#pause-btn.paused { color: var(--amber); border-color: rgba(var(--rgb-warn), 0.6); background: rgba(var(--rgb-warn), 0.10); }
+
+/* --- activité --- */
+#activity { right: var(--col-r); width: 340px; z-index: 7; }
+.act { font-size: 12px; padding: 6px 8px; border-left: 2px solid var(--panel-border); margin: 4px 0; }
+.act .t { color: var(--muted); font-family: var(--mono); font-size: 10px; margin-right: 6px; }
+.act.tool { border-color: var(--violet); }
+.act.ok { border-color: var(--green); }
+.act.err { border-color: var(--red); }
+.act.confirm { border-color: var(--amber); }
+
+/* --- confirmation : carte au-dessus de la barre, sans voile ni prise du clavier (14/10) --- */
+#confirm { margin: 0 0 8px; animation: toast-in 0.25s ease-out; }
+.confirm-card {
+  padding: 14px 16px; border-radius: 16px; display: grid; gap: 10px;
+  background: var(--confirm-bg); border: 1px solid rgba(var(--rgb-warn), 0.55);
+  box-shadow: 0 0 60px rgba(var(--rgb-warn), 0.25);
+}
+.confirm-head { color: var(--amber); letter-spacing: 0.2em; text-transform: uppercase; font-size: 12px; font-weight: 700; }
+#confirm-question { font-size: 15px; }
+#confirm-cmd { font-family: var(--mono); font-size: 12px; background: rgba(0, 0, 0, 0.4); padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; color: var(--ink-cmd); }
+.confirm-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.btn { padding: 9px 18px; border-radius: 10px; border: 1px solid; background: none; font-weight: 600; }
+.btn.ok { border-color: var(--green); color: var(--green); }
+.btn.ok:hover { background: rgba(var(--rgb-ok), 0.12); }
+.btn.ghost { border-style: dashed; font-weight: 500; }
+/* interrupteurs à état visible (14/10) : pastille + OUI/NON */
+.chip.toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.chip.toggle .sw {
+  width: 22px; height: 12px; border-radius: 999px; background: rgba(var(--rgb-hi), 0.12); position: relative; flex: none;
+  transition: background 0.2s;
+}
+.chip.toggle .sw::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--muted); transition: transform 0.2s, background 0.2s;
+}
+.chip.toggle .val { font-size: 10px; letter-spacing: 0.08em; font-weight: 700; }
+.chip.toggle.on { color: var(--ink-hi); border-color: rgba(var(--rgb-ok), 0.6); background: rgba(var(--rgb-ok), 0.12); }
+.chip.toggle.on .sw { background: rgba(var(--rgb-ok), 0.5); }
+.chip.toggle.on .sw::after { transform: translateX(10px); background: var(--green); box-shadow: 0 0 6px var(--green); }
+.chip.toggle.on .val { color: var(--green); }
+#autonomy-chip.prudent .val { color: var(--amber); }
+/* 15/10 : Autonome TOTAL, impossible à rater quand il est actif ; 21/10 : ORANGE, le rouge
+   est réservé à la levée du garde-fou, plus risquée */
+.chip.toggle.total.on { color: var(--ink-hi); border-color: rgb(255, 140, 0); background: rgba(255, 140, 0, 0.28);
+  animation: total-pulse 1.6s ease-in-out infinite; }
+.chip.toggle.total.on .sw { background: rgba(255, 140, 0, 0.6); }
+.chip.toggle.total.on .sw::after { background: #fff; box-shadow: 0 0 6px rgb(255, 140, 0); }
+.chip.toggle.total.on .val { color: var(--ink-hi); }
+@keyframes total-pulse { 50% { box-shadow: 0 0 14px rgba(255, 140, 0, 0.8); } }
+/* 19/10 (demande : les bandeaux Total et levée s'empilaient sous la barre et poussaient les
+   panneaux) : UNE ligne fine en surimpression, à la hauteur du haut des panneaux, entre eux
+   (à droite, la place des anciens outils du graphe, gardée au retrait du 23/10). Hors de la tête
+   mesurée : rien ne bouge. */
+#head > #alert-line {
+  position: fixed; top: calc(var(--head-h) + var(--gap)); left: var(--col-l); right: var(--col-r);
+  padding: 0 72px 0 8px; height: var(--alert-h); z-index: 8;
+  display: flex; justify-content: center; align-items: flex-start; gap: 6px; pointer-events: none;
+}
+#alert-line[hidden], .alert-seg[hidden], #lift-files[hidden] { display: none; }
+/* 22/10 (relecture P23, 700 px et 1280 px avec trois alertes) : les pastilles se chevauchaient et
+   cachaient Couper / Rétablir. Elles passent à la ligne (main.js fitAlertLine réserve la place) ;
+   une pastille seule plus large que la ligne rétrécit son heure et ses fichiers, jamais son titre
+   ni son bouton. Une seule rangée : rien ne bouge. */
+#head > #alert-line { flex-wrap: wrap; align-content: flex-start; row-gap: 4px; height: auto; }
+.alert-seg { max-width: 100%; }
+.alert-seg {
+  pointer-events: auto; min-width: 0; height: 26px; padding: 0 3px 0 10px; border-radius: 999px;
+  display: flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; color: #fff;
+}
+/* 25/10 (plan P35, fiches 1 à 3) : à 700 px en Avancé, « MÉMOIRE PRESQUE PLEINE » rognait sa pastille
+   (257 px pour 250) et cachait « Voir ». Espacement des lettres à 0 (250/250) ; et en DERNIER recours
+   le titre se termine par « … » : l'heure et les fichiers ont un rétrécissement 100 000 fois plus fort,
+   ils tombent à 0 avant que le titre ne cède un pixel. Mesuré en Chrome headless (640, 700, 1280 px) :
+   titre entier à 700 et 1280, bouton entier partout (avant : 3 pastilles rognées à 640). */
+.alert-seg b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 650; letter-spacing: 0; }
+.alert-seg .ico.lead { width: 13px; height: 13px; margin-right: 0.35em; }
+.alert-since { flex: 0 100000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: 0.85; }
+.alert-seg button { flex: none; background: rgba(0, 0, 0, 0.3); color: #fff; border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px; padding: 0 9px; height: 20px; font-size: 11.5px; cursor: pointer; }
+.alert-seg button:hover { background: rgba(0, 0, 0, 0.5); border-color: #fff; }
+#total-banner {
+  background: rgba(150, 70, 0, 0.94); border: 1px solid rgb(255, 140, 0); box-shadow: 0 0 14px rgba(255, 140, 0, 0.5);
+}
+#total-frame[hidden] { display: none; }
+#total-frame { position: fixed; inset: 0; pointer-events: none; z-index: 28;
+  box-shadow: inset 0 0 0 3px rgb(255, 140, 0), inset 0 0 40px rgba(255, 140, 0, 0.3); }
+/* 18/10 (plan P7) : levée du garde-fou ; 21/10 : ROUGE (plus risquée que Total, orange ;
+   la mission est violette) */
+.chip.lift { color: var(--ink-hi); border-color: var(--red); background: rgba(var(--rgb-danger), 0.25); cursor: pointer;
+  animation: lift-pulse 2s ease-in-out infinite; }
+.chip.lift[hidden], #lift-frame[hidden] { display: none; }
+@keyframes lift-pulse { 50% { box-shadow: 0 0 12px rgba(var(--rgb-danger), 0.8); } }
+#lift-banner {
+  background: rgba(150, 20, 40, 0.94); border: 1px solid var(--red); box-shadow: 0 0 14px rgba(var(--rgb-danger), 0.5);
+}
+/* fichiers du garde-fou modifiés depuis la levée : dépliant sous la ligne */
+#lift-files { position: relative; flex: 0 100000 auto; min-width: 0; }  /* rétrécit (…) avant le titre et Rétablir (P35) */
+#lift-files > summary { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#lift-files > summary { list-style: none; cursor: pointer; padding: 0 6px; border-radius: 999px; font-size: 11.5px;
+  text-decoration: underline dotted rgba(255, 255, 255, 0.6); text-underline-offset: 3px; }
+#lift-files > summary::-webkit-details-marker { display: none; }
+#lift-files > summary::after { content: ""; display: inline-block; margin-left: 5px; vertical-align: 2px; opacity: 0.75;
+  border: 4px solid transparent; border-top-color: currentColor; border-bottom: 0; }
+#lift-files[open] > summary::after { border-top: 0; border-bottom: 4px solid currentColor; }
+#lift-files > summary:hover, #lift-files > summary:focus-visible { background: rgba(0, 0, 0, 0.3); outline: none; }
+#lift-files > ul {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 31; margin: 0; padding: 6px 10px 6px 24px;
+  min-width: 220px; max-width: 420px; max-height: 40vh; overflow: auto; white-space: normal;
+  font: 12px/1.5 var(--mono); color: var(--ink); background: rgba(var(--rgb-glass), 0.97);
+  border: 1px solid var(--red); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+#lift-files > ul > li::marker { color: var(--red); }
+#head > #lift-frame { position: fixed; inset: 0; pointer-events: none; z-index: 27;
+  box-shadow: inset 0 0 0 3px var(--red), inset 0 0 40px rgba(var(--rgb-danger), 0.35); }
+body.total-on #head > #lift-frame { inset: 4px; }  /* les deux cadres restent visibles */
+.btn.danger { border-color: var(--red); color: var(--red); }
+.btn.danger:hover { background: rgba(var(--rgb-danger), 0.12); }
+/* 15/10 : mission autonome — bandeau (sous celui de Total s'il est là), panneau. 28/10 (T10) : bouton
+   « Mission » retiré de la barre (décision de l'utilisateur). */
+#mission-banner {
+  max-width: 100%;  /* dans la tête (#head), sous le bandeau Total s'il est là */
+  padding: 5px 10px 5px 16px; border-radius: 10px; font-size: 13px; color: #fff;
+  background: rgba(60, 36, 130, 0.92); border: 1px solid var(--violet); box-shadow: 0 0 22px rgba(var(--rgb-violet), 0.45);
+  display: flex; align-items: center; gap: 10px; white-space: nowrap;
+}
+#mission-banner.paused { background: rgba(90, 60, 10, 0.92); border-color: var(--amber); box-shadow: 0 0 18px rgba(var(--rgb-warn), 0.35); }
+#mission-banner[hidden] { display: none; }
+#mission-banner-info { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#mission-banner button { background: rgba(0, 0, 0, 0.3); color: #fff; border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px; padding: 2px 10px; font-size: 12px; cursor: pointer; flex: none; }
+.mission { display: grid; gap: 6px; font-size: 12px; padding: 8px 10px; border-radius: 10px;
+  background: rgba(var(--rgb-violet), 0.06); border: 1px solid rgba(var(--rgb-violet), 0.35); }
+.mission.paused { border-color: rgba(var(--rgb-warn), 0.5); background: rgba(var(--rgb-warn), 0.05); }
+.mission:is(.done, .blocked, .stopped, .budget) { opacity: 0.8; border-color: var(--panel-border); background: none; }
+.mission .row { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.mission .row b { font-weight: 600; overflow-wrap: anywhere; }
+.mission .pill { font-size: 10px; letter-spacing: 0.06em; padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid var(--panel-border); color: var(--muted); }
+.mission .pill.active { color: var(--violet); border-color: var(--violet); }
+.mission .pill.paused { color: var(--amber); border-color: var(--amber); }
+.mission .pill.done { color: var(--green); border-color: var(--green); }
+.mission .pill:is(.blocked, .budget, .stopped) { color: var(--red); border-color: rgba(var(--rgb-danger), 0.6); }
+.mission .step { color: var(--ink); }
+.mission-last, .mission-reason { overflow-wrap: anywhere; }
+.mission-reason { color: var(--amber); }
+.mission-budget .row { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+.mission-budget .time { font-family: var(--mono); font-size: 10px; }
+.mission-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.mini.ok { color: var(--green); border-color: rgba(var(--rgb-ok), 0.5); }
+.mini.danger { color: var(--red); border-color: rgba(var(--rgb-danger), 0.5); }
+kbd { font-family: var(--mono); font-size: 10px; opacity: 0.6; margin-left: 6px; }
+
+/* --- notifications --- */
+#toasts { position: fixed; top: calc(var(--head-h) + var(--gap)); left: 50%; transform: translateX(-50%); display: grid; gap: 8px; z-index: 30; }
+body.alert-on #toasts { top: calc(var(--head-h) + var(--gap) + var(--alert-h)); }
+.toast {
+  padding: 8px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--panel-border);
+  backdrop-filter: blur(12px); animation: toast-in 0.25s ease-out; max-width: 520px;
+}
+.toast.warning { border-color: rgba(var(--rgb-warn), 0.6); }
+.toast.error { border-color: rgba(var(--rgb-danger), 0.6); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } }
+
+/* --- sélecteur de voix --- */
+.menu {
+  position: fixed; z-index: 40; min-width: 260px; padding: 6px; border-radius: 12px;
+  background: rgba(var(--rgb-glass), 0.96); border: 1px solid var(--panel-border); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+.menu .item { padding: 7px 10px; border-radius: 8px; cursor: pointer; }
+.menu .item:hover { background: rgba(var(--rgb-accent), 0.1); }
+.menu .item.active { color: var(--accent); }
+
+
+/* --- en cours : agents et tâches de fond --- */
+.tasks { display: grid; gap: 6px; }
+.task {
+  background: rgba(var(--rgb-hi), 0.03); border: 1px solid var(--panel-border); border-left: 2px solid var(--accent);
+  border-radius: 8px; padding: 7px 9px; font-size: 12px; animation: task-pulse 2.4s ease-in-out infinite;
+}
+.task .row { display: flex; justify-content: space-between; gap: 8px; }
+.task b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task .time { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; }
+.task .step { font-size: 11px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes task-pulse { 50% { border-left-color: transparent; } }
+/* 15/10 (idée 10) : coût par agent, alerte sans voix, arrêt */
+.task .task-right { display: flex; align-items: center; gap: 6px; flex: none; }
+.task .row > b { min-width: 0; }  /* le titre se coupe (…) plutôt que de pousser Stop hors du panneau */
+.task .cost { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 2px; }
+.task .alert-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); box-shadow: 0 0 8px var(--red); flex: none; }
+.task.alert { border-color: rgba(var(--rgb-danger), 0.5); border-left-color: var(--red); }
+.task.alert .cost { color: var(--red); }
+.task .task-stop { padding: 0 6px; font-size: 10px; line-height: 16px; }
+/* 21/10 (plan P18) : ligne cliquable = détail d'agent ; tâche finie gardée 10 min, grisée, sans pulsation */
+/* Relecture P18 : le rôle « button » et le focus sont sur le titre (.task-open), pas sur la ligne qui
+   contient Stop ; le contour reste dessiné autour de la ligne, comme avant. */
+.task.openable { cursor: pointer; }
+.task.openable:hover { background: rgba(var(--rgb-hi), 0.05); }
+.task.openable:has(.task-open:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.task .task-open:focus-visible { outline: none; }
+.task.done { animation: none; border-left-color: var(--muted); }
+.task.done b { color: var(--ink-2); }
+.task.done.failed { border-left-color: var(--red); }
+.quota-forecast { font-size: 11px; color: var(--amber); }
+
+/* --- détail d'agent (21/10, plan P18, openTaskDetail de hud/src/main.js) : données d'agent en texte --- */
+.modal.wide.agent-detail { width: min(760px, calc(100vw - 40px)); }
+.modal.agent-detail .modal-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ad-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ad-state, .ad-chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--panel-border); color: var(--muted); }
+.ad-state { font-weight: 600; color: var(--ink-head); }
+.ad-state.running { border-color: var(--accent); }
+.ad-state.ok { border-color: rgba(var(--rgb-ok), 0.6); }
+.ad-state.fail { border-color: rgba(var(--rgb-danger), 0.6); color: var(--ink-danger); }
+.ad-section { display: grid; gap: 6px; }
+/* 23/10 (plan P28) : effort de l'agent, bloc gardé entre deux rafraîchissements, le reste refait dessous */
+.ad-rest { display: grid; align-content: start; gap: 10px; }
+.ad-effort-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+.ad-effort-row[hidden], .ad-effort .ad-note[hidden] { display: none; }
+.ad-effort-help { font-size: 11px; }
+.ad-effort-label { color: var(--ink-2); }
+.ad-title { margin: 6px 0 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-title); }
+:root[data-theme="premium"] .ad-title { font-size: 12px; text-transform: none; letter-spacing: 0.01em; }
+/* contenu de l'agent : un U+202E ou un retour à la ligne ne déborde jamais sur le reste de la fenêtre */
+.ad-data { unicode-bidi: isolate; overflow-wrap: anywhere; }
+.ad-block {
+  white-space: pre-wrap; font-size: 12px; line-height: 1.5; padding: 8px 10px; border-radius: 8px; max-height: 220px; overflow-y: auto;
+  background: rgba(var(--rgb-hi), 0.03); border: 1px solid var(--panel-border);
+}
+:root[data-theme="premium"] .ad-block { background: var(--sunken); border-color: transparent; }
+.ad-error { border-left: 2px solid var(--red); font-family: var(--mono); font-size: 11px; }
+.ad-errors { display: grid; gap: 6px; }
+.ad-note { margin: 0; font-size: 12px; color: var(--muted); }
+.ad-foot { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+.ad-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.ad-count { font-size: 12px; }
+.ad-steps { display: grid; gap: 4px; }
+.ad-progress { margin: 2px 0 4px; }
+.ad-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 12px; }
+.ad-todo li { position: relative; padding-left: 16px; }
+.ad-todo li::before {
+  content: ""; position: absolute; left: 2px; top: 0.45em; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--muted);
+}
+.ad-todo.completed li { color: var(--ink-2); }
+.ad-todo.completed li::before { background: var(--green); border-color: var(--green); }
+.ad-todo.in_progress li::before { background: var(--accent); border-color: var(--accent); }
+.ad-act { display: grid; grid-template-columns: 8px minmax(48px, max-content) 1fr auto; gap: 8px; align-items: baseline; }
+.ad-mark { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); align-self: center; }
+.ad-act.ok .ad-mark { background: var(--green); }
+.ad-act.fail .ad-mark { background: var(--red); }
+.ad-act.running .ad-mark { background: var(--accent); }
+.ad-act.none .ad-mark { background: transparent; border: 1px solid var(--muted); }
+.ad-tool { font-weight: 500; font-family: var(--mono); font-size: 11px; }
+.ad-desc { min-width: 0; color: var(--ink); }
+.ad-act.fail .ad-desc { color: var(--ink-danger); }
+.ad-when { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.ad-files li { font-family: var(--mono); font-size: 11px; }
+.ad-fields { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 10px; }
+.ad-fields dt { font-size: 11px; color: var(--muted); padding-top: 9px; }
+.ad-fields dd { margin: 0; }
+@media (prefers-reduced-motion: reduce) { .ad-progress > div { transition: none; } }
+
+/* --- pièces jointes (14/10) : miniatures avant envoi --- */
+.attachments { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.att {
+  display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 4px; border-radius: 10px; max-width: 260px;
+  background: var(--panel); border: 1px solid var(--panel-border); backdrop-filter: blur(12px);
+}
+.att img { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; }
+.att-view { display: flex; padding: 0; border: none; background: none; border-radius: 6px; cursor: zoom-in; flex: none; }
+.att-view:hover img { filter: brightness(1.12); }
+.att-view:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.att-icon { padding: 0 6px; display: inline-flex; color: var(--muted); }
+.att-icon .ico { width: 22px; height: 22px; }
+.att-name { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 22/10 (demande : « le collé d'image n'est pas instantané ») : la vignette s'affiche AVANT la
+   réduction et l'encodage ; pendant ce temps elle est un peu pâle et « préparation… » remplace le poids. */
+.att.att-pending img { opacity: 0.55; }
+.att.att-pending .att-name { color: var(--muted); }
+.att-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.att-chip { font-size: 10px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--panel-border); color: var(--muted); }
+/* 19/10 : image partie = vignette dans le fil (hauteur fixe : le fil ne saute pas au chargement) */
+.att-list { align-items: flex-end; }
+.att-thumb { border: 1px solid var(--panel-border); border-radius: 8px; overflow: hidden; background: rgba(var(--rgb-hi), 0.03); }
+.att-thumb img { display: block; height: 72px; width: auto; min-width: 40px; max-width: 160px; object-fit: cover; }
+.att-thumb:hover { border-color: var(--accent); }
+body.dropping #composer { border-color: var(--green); box-shadow: 0 0 18px rgba(var(--rgb-ok), 0.35); }
+
+/* --- boîte de dialogue du HUD (15/10) : remplace confirm()/prompt() du navigateur --- */
+.modal-back {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+  background: var(--backdrop); backdrop-filter: blur(3px); animation: modal-fade 0.15s ease-out;
+}
+.modal {
+  width: min(480px, calc(100vw - 40px)); max-height: calc(100vh - 80px); overflow-y: auto;
+  padding: 18px 20px 16px; border-radius: 16px; display: grid; gap: 10px;
+  background: rgba(var(--rgb-glass), 0.97); border: 1px solid rgba(var(--rgb-line), 0.28);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(var(--rgb-accent), 0.08);
+  animation: toast-in 0.2s ease-out; user-select: text;
+}
+.modal.danger { border-color: rgba(var(--rgb-danger), 0.55); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(var(--rgb-danger), 0.18); }
+.modal-title { font-size: 16px; font-weight: 650; color: var(--ink-head); }
+.modal.danger .modal-title { color: var(--ink-danger); }
+.modal-text { margin: 0; font-size: 14px; line-height: 1.5; }
+.modal-items { margin: -2px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; line-height: 1.45; }
+.modal-items li::marker { color: var(--red); }
+.modal:not(.danger) .modal-items li::marker { color: var(--accent); }
+.modal-note { margin: 0; font-size: 12px; color: var(--muted); }
+.modal-fields { display: grid; gap: 12px; margin: 4px 0 0; }
+.modal-field { display: grid; gap: 5px; }
+.modal-label { font-size: 12px; color: var(--muted); letter-spacing: 0.02em; }
+.modal-field input, .modal-field textarea {
+  padding: 8px 10px; border-radius: 9px; border: 1px solid var(--panel-border);
+  background: rgba(var(--rgb-hi), 0.04); outline: none; font-size: 14px; font-family: inherit; color: inherit;
+}
+.modal-field textarea { resize: vertical; min-height: 2.6em; }
+.modal-field :is(input, textarea):focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--rgb-accent), 0.15); }
+.modal-hint { font-size: 11px; color: var(--muted); }
+.modal-error { color: var(--red); font-size: 12px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+.modal-cancel { border-color: var(--panel-border); color: var(--ink); font-weight: 500; }
+.modal-cancel:hover { border-color: var(--muted); background: rgba(var(--rgb-hi), 0.05); }
+.modal .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.danger.strong { background: rgba(var(--rgb-danger), 0.85); border-color: var(--red); color: #fff; }
+.btn.danger.strong:hover { background: var(--red); }
+@keyframes modal-fade { from { opacity: 0; } }
+
+/* --- fenêtre large persistante (openPanel) et page « Réglages » (15/10) --- */
+.modal.wide {
+  width: min(720px, calc(100vw - 40px)); height: min(760px, calc(100vh - 80px));
+  display: flex; flex-direction: column; gap: 10px; overflow: hidden; outline: none;
+}
+.modal-head { display: flex; align-items: center; gap: 10px; flex: none; }
+.modal-head .modal-title { flex: 1; }
+.modal-x { background: none; border: 1px solid transparent; border-radius: 8px; color: var(--muted); font-size: 18px; line-height: 1; padding: 3px 8px; }
+.modal-x:hover, .modal-x:focus-visible { color: var(--ink-hi); border-color: var(--panel-border); outline: none; }
+.modal-body {
+  flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 10px; padding-right: 4px;
+  scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.2) transparent;
+}
+/* --- visionneuse d'image (19/10, hud/src/viewer.js) : fond sombre, image réduite à la fenêtre --- */
+.panel-back:has(> .modal.viewer) { background: rgba(0, 0, 0, 0.86); }
+.modal.wide.viewer {
+  width: auto; height: auto; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px);
+  padding: 10px 12px 12px; gap: 8px;
+}
+.modal.viewer .modal-title { font-size: 13px; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal.viewer .modal-body { display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 0; }
+.viewer-img {
+  display: block; max-width: calc(100vw - 56px); max-height: calc(100vh - 92px);
+  width: auto; height: auto; object-fit: contain; border-radius: 8px; user-select: none;
+}
+.settings-status { margin: 0; color: var(--muted); }
+.settings-status.err { color: var(--red); }
+.settings-banner {
+  display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 9px 12px; border-radius: 10px;
+  background: rgba(var(--rgb-warn), 0.12); border: 1px solid rgba(var(--rgb-warn), 0.45); color: var(--ink-warn);
+  position: sticky; top: 0; z-index: 1; backdrop-filter: blur(6px);
+}
+.settings-apply { padding: 5px 12px; border-color: var(--amber); color: var(--amber); }
+.settings-apply:hover { background: rgba(var(--rgb-warn), 0.15); }
+.settings-groups { display: grid; gap: 8px; }
+.settings-group { border: 1px solid var(--panel-border); border-radius: 12px; background: rgba(var(--rgb-hi), 0.02); }
+.settings-group-title {
+  cursor: pointer; padding: 9px 12px; font-weight: 650; color: var(--ink-head); display: flex; align-items: center; gap: 10px;
+  border-radius: 12px; outline: none;
+}
+.settings-group-title:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.settings-group-title::marker { color: var(--accent); }
+.settings-group[open] > .settings-group-title { border-bottom: 1px solid var(--panel-border); border-radius: 12px 12px 0 0; }
+/* 19/10 (demande : « des icônes dans les Réglages ») : pastille d'icône devant la section, chevron
+   à droite à la place du triangle ; icône de réglage alignée sur le libellé, aide et contrôles
+   larges décalés d'autant pour tomber sous le libellé. */
+.settings-group-title { list-style: none; padding: 8px 12px 8px 10px; }
+.settings-group-title::-webkit-details-marker { display: none; }
+.settings-group-title:hover { background: rgba(var(--rgb-hi), 0.03); }
+.settings-group-ico {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 8px;
+  color: var(--accent); background: rgba(var(--rgb-accent), 0.08); border: 1px solid rgba(var(--rgb-accent), 0.2);
+}
+.settings-group-ico .ico { width: 16px; height: 16px; }
+.settings-group-name { flex: 0 1 auto; min-width: 0; }
+.settings-group-chevron { margin-left: auto; width: 16px; height: 16px; color: var(--muted); transition: transform 0.15s ease-out; }
+.settings-group[open] > .settings-group-title .settings-group-chevron { transform: rotate(90deg); color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .settings-group-chevron { transition: none; } }
+.setting-ico { width: 16px; height: 16px; color: var(--accent); opacity: 0.85; }
+.setting.with-ico > :not(.setting-head):not(.setting-switch):not(.setting-number):not(.setting-select) { margin-left: 24px; }
+.setting {
+  display: grid; grid-template-columns: 1fr auto; column-gap: 16px; row-gap: 4px; align-items: center;
+  padding: 10px 12px; border-top: 1px solid rgba(var(--rgb-line), 0.07);
+}
+.settings-group-title + .setting { border-top: none; }
+.setting.wide { grid-template-columns: 1fr; }
+.setting > :not(.setting-head):not(.setting-switch):not(.setting-number):not(.setting-select) { grid-column: 1 / -1; }
+.setting.wide > * { grid-column: 1 / -1; }
+.setting-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.setting-label { font-size: 13px; color: var(--ink); }
+.setting-help { font-size: 11px; color: var(--muted); }
+.setting-pending {
+  font-size: 10px; letter-spacing: 0.04em; padding: 1px 8px; border-radius: 999px; font-weight: 600;
+  color: var(--amber); border: 1px solid rgba(var(--rgb-warn), 0.5); background: rgba(var(--rgb-warn), 0.1);
+}
+.setting-error { font-size: 12px; color: var(--red); }
+.setting-lock { font-size: 11px; color: var(--muted); font-style: italic; }
+.setting.locked .setting-label, .setting.locked .setting-help { opacity: 0.55; }
+.setting.locked :is(input, select, button, label) { opacity: 0.45; cursor: not-allowed; }
+.setting-switch:disabled:hover { border-color: var(--panel-border); color: var(--muted); }
+.setting-number { display: flex; align-items: center; gap: 6px; }
+.setting-number input, .setting-select {
+  padding: 5px 8px; border-radius: 8px; border: 1px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.04);
+  color: inherit; font: inherit; outline: none;
+}
+.setting-number input { width: 130px; text-align: right; font-family: var(--mono); font-size: 12px; }
+.setting-text input { width: 200px; text-align: left; font-family: inherit; font-size: 13px; }  /* P31 : nom affiché */
+.setting-select { min-width: 160px; }
+.setting-select option { background: var(--option-bg); }
+.setting-number input:focus, .setting-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--rgb-accent), 0.15); }
+.setting-unit { font-size: 11px; color: var(--muted); min-width: 3em; }
+.setting-flags { display: flex; flex-wrap: wrap; gap: 6px; }
+.setting-flag {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 6px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--panel-border); color: var(--muted); font-size: 12px;
+}
+.setting-flag input { accent-color: var(--green); margin: 0; }
+.setting-flag.on { color: var(--ink-hi); border-color: rgba(var(--rgb-ok), 0.5); background: rgba(var(--rgb-ok), 0.08); }
+.setting-flag:has(input:focus-visible) { box-shadow: 0 0 0 2px var(--accent); }
+/* 19/10 (plan P10) : icône du service (SVG local en masque, teint par la couleur de la
+   marque, posée en style par settings.js) ; sans icône, pastille à lettre de même couleur. */
+.setting-flag-ico {
+  flex: none; width: 14px; height: 14px; display: inline-grid; place-items: center;
+  -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat;
+}
+.setting-flag-ico.letter {
+  -webkit-mask: none; mask: none; border-radius: 50%; color: var(--bg); font-size: 9px; font-weight: 700; line-height: 1;
+}
+.setting-flag:not(.on) .setting-flag-ico { opacity: 0.55; }
+.setting-tri { display: grid; gap: 4px; }
+.tri-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tri-name { font-size: 12px; font-family: var(--mono); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tri-seg { display: inline-flex; border: 1px solid var(--panel-border); border-radius: 999px; overflow: hidden; flex: none; }
+.tri-opt { position: relative; padding: 2px 10px; font-size: 11px; color: var(--muted); cursor: pointer; }
+.tri-opt + .tri-opt { border-left: 1px solid var(--panel-border); }
+.tri-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.tri-opt:hover { color: var(--ink-hi); }
+.tri-opt:has(input:focus-visible) { box-shadow: inset 0 0 0 2px var(--accent); }
+.tri-opt.on { color: var(--on-fill); font-weight: 650; background: var(--green); }
+.tri-opt.on.s-name-only { background: var(--amber); }
+.tri-opt.on.s-off { background: rgba(var(--rgb-danger), 0.85); color: #fff; }
+.setting-raw { font-family: var(--mono); font-size: 12px; color: var(--muted); word-break: break-all; }
+/* 17/10 (plan P4, lot 1) : lignes d'état, boutons d'action, bloc copiable, résultat */
+.setting-info { display: grid; gap: 8px; }
+.info-lines { margin: 0; display: grid; gap: 3px; }
+.info-line { display: grid; grid-template-columns: minmax(110px, 30%) 1fr; gap: 10px; font-size: 12px; }
+.info-line dt { color: var(--muted); }
+.info-line dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.info-line.lv-ok dd, .setting-result.lv-ok { color: var(--green); }
+.info-line.lv-warn dd, .setting-result.lv-warn { color: var(--amber); }
+.info-line.lv-error dd, .setting-result.lv-error { color: var(--red); }
+.setting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.setting-action { padding: 5px 12px; }
+.setting-action.danger { border-color: rgba(var(--rgb-danger), 0.6); color: var(--red); }
+.setting-action:disabled { opacity: 0.45; cursor: not-allowed; }
+.setting-action-why { font-size: 11px; color: var(--muted); font-style: italic; }
+.setting-link { font-size: 12px; color: var(--accent); overflow-wrap: anywhere; }
+.setting-block { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: start; }
+.setting-block pre {
+  margin: 0; max-height: 220px; overflow: auto; padding: 8px; border-radius: 8px; font-family: var(--mono); font-size: 11px;
+  color: var(--ink); background: rgba(0, 0, 0, 0.3); border: 1px solid var(--panel-border); white-space: pre-wrap; user-select: text;
+}
+.setting-copy { padding: 4px 10px; font-size: 11px; }
+.setting-result { display: grid; gap: 6px; font-size: 12px; padding: 8px 10px; border-radius: 8px; background: rgba(var(--rgb-hi), 0.03); }
+
+/* --- page « Plans » (15/10, mode plan ; hud/src/plans.js) : liste à gauche, plan à droite --- */
+.chip-count {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: inline-grid; place-items: center;
+  font-size: 10px; font-weight: 700; line-height: 1; color: var(--on-fill); background: var(--amber); margin-left: 2px;
+}
+#plans-chip.attn { border-color: rgba(var(--rgb-warn), 0.55); }
+.modal.wide.plans { width: min(1180px, calc(100vw - 40px)); height: min(860px, calc(100vh - 60px)); padding: 20px 22px 18px; gap: 14px; }
+.modal.plans .modal-body {
+  display: grid; grid-template-columns: 290px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+  gap: 0 22px; overflow: hidden; padding-right: 0;
+}
+.plans-status { grid-column: 1 / -1; margin: 0 0 12px; color: var(--muted); }
+.plans-status.err { color: var(--red); }
+.plans-side, .plans-main { grid-row: 2; min-height: 0; display: flex; flex-direction: column; }
+.plans-side { gap: 12px; }
+.plans-mode { display: inline-flex; border: 1px solid var(--panel-border); border-radius: 999px; overflow: hidden; flex: none; }
+.plans-mode-opt { background: none; border: none; color: var(--muted); padding: 5px 14px; font-size: 12px; }
+.plans-mode-opt + .plans-mode-opt { border-left: 1px solid var(--panel-border); }
+.plans-mode-opt:hover:not(:disabled) { color: var(--ink-hi); }
+.plans-mode-opt:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+.plans-mode-opt.on { color: var(--on-fill); font-weight: 650; background: var(--green); }
+.plans-mode-opt.on.m-auto { background: var(--amber); }
+.plans-filters { display: flex; gap: 6px; flex: none; }
+.plans-filter {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 8px;
+  border-radius: 999px; border: 1px solid var(--panel-border); background: none; color: var(--muted); font-size: 12px;
+}
+.plans-filter:hover { color: var(--ink-hi); border-color: rgba(var(--rgb-line), 0.35); }
+.plans-filter.on { color: var(--ink-hi); border-color: var(--accent); background: rgba(var(--rgb-accent), 0.1); }
+.plans-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.plans-filter-n { font-size: 10px; font-variant-numeric: tabular-nums; opacity: 0.75; }
+.plans-list {
+  flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 8px; padding: 2px 4px 2px 2px;
+  scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.2) transparent;
+}
+.plans-empty { margin: 4px 2px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.plan-item {
+  display: grid; gap: 5px; text-align: left; padding: 11px 13px; border-radius: 12px; color: inherit;
+  border: 1px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.02);
+}
+.plan-item:hover { border-color: rgba(var(--rgb-line), 0.35); background: rgba(var(--rgb-accent), 0.04); }
+.plan-item.on { border-color: var(--accent); background: rgba(var(--rgb-accent), 0.08); }
+.plan-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.plan-item-top { display: flex; align-items: center; gap: 8px; }
+.plan-item-id { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+.plan-item-date { margin-left: auto; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.plan-item-title { font-size: 13px; line-height: 1.4; color: var(--ink-head); }
+.plan-item-meta { font-size: 11px; color: var(--muted); }
+.plan-pill {
+  font-size: 10px; letter-spacing: 0.05em; padding: 1px 8px; border-radius: 999px; white-space: nowrap; font-weight: 600;
+  border: 1px solid currentColor;
+}
+.plan-pill.s-pending { color: var(--amber); }
+.plan-pill.s-revising { color: var(--violet); }
+.plan-pill.s-validated { color: var(--green); }
+.plan-pill.s-rejected { color: var(--red); }
+.plans-detail {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 2px 8px 18px 2px;
+  scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.2) transparent;
+}
+.plan-doc { display: grid; gap: 22px; }
+.plan-head { display: grid; gap: 8px; }
+.plan-head-top { display: flex; align-items: flex-start; gap: 12px; }
+.plan-title { margin: 0; flex: 1; font-size: 18px; font-weight: 650; line-height: 1.35; color: var(--ink-head); }
+.plan-head-top .plan-pill { margin-top: 4px; }
+.plan-meta { font-size: 12px; color: var(--muted); }
+.plan-request { display: grid; gap: 4px; padding: 10px 14px; border-radius: 10px; background: rgba(var(--rgb-hi), 0.03); border: 1px solid var(--panel-border); }
+.plan-label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.plan-request-text { margin: 0; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+.plan-note { margin: 0; padding: 9px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; border: 1px solid; }
+.plan-note.s-revising { color: var(--ink-violet); border-color: rgba(var(--rgb-violet), 0.5); background: rgba(var(--rgb-violet), 0.1); }
+.plan-note.s-validated { color: var(--ink-ok); border-color: rgba(var(--rgb-ok), 0.45); background: rgba(var(--rgb-ok), 0.08); }
+.plan-note.s-rejected { color: var(--ink-danger); border-color: rgba(var(--rgb-danger), 0.5); background: rgba(var(--rgb-danger), 0.08); white-space: pre-wrap; }
+.plan-section { display: grid; gap: 10px; }
+.plan-section-title {
+  margin: 0; font-size: 12px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent);
+  padding-bottom: 6px; border-bottom: 1px solid var(--panel-border);
+}
+.plan-intro { font-size: 13px; line-height: 1.55; color: var(--ink); }
+.plan-points { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.plan-point { display: grid; gap: 8px; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(var(--rgb-line), 0.1); background: rgba(var(--rgb-hi), 0.02); }
+.plan-point-row { display: flex; gap: 12px; align-items: baseline; }
+.plan-point-id { flex: none; font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 2.2em; }
+.plan-point-text { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.55; }
+.plan-comment-btn {
+  justify-self: start; display: inline-flex; align-items: center; background: none; border: 1px solid transparent;
+  border-radius: 8px; padding: 3px 8px; margin-left: calc(2.2em + 12px); font-size: 12px; color: var(--muted);
+}
+.plan-thread .plan-comment-btn { margin-left: 0; }
+.plan-comment-btn:hover, .plan-comment-btn:focus-visible { color: var(--ink-hi); border-color: var(--panel-border); outline: none; }
+.plan-comment-btn .ico { width: 13px; height: 13px; }
+.plan-entries { display: grid; gap: 8px; margin-left: calc(2.2em + 12px); }
+.plan-thread .plan-entries { margin-left: 0; }
+.plan-entry { display: grid; gap: 4px; padding: 8px 12px; border-radius: 10px; border-left: 2px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.025); }
+.plan-entry.astrel { border-left-color: var(--accent); background: rgba(var(--rgb-accent), 0.05); }
+.plan-entry.utilisateur { border-left-color: var(--violet); }
+.plan-entry-head { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--muted); }
+.plan-entry-who { display: inline-flex; align-items: center; font-weight: 600; color: var(--ink); }
+.plan-entry-who .ico { width: 13px; height: 13px; }
+.plan-entry-state { margin-left: auto; font-size: 10px; letter-spacing: 0.04em; }
+.plan-entry-state.unsent { color: var(--amber); }
+.plan-entry-text { margin: 0; font-size: 13px; line-height: 1.5; }
+.plan-entry-text.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
+.plan-thread { display: grid; gap: 10px; }
+.plan-editor { display: grid; gap: 8px; margin-left: calc(2.2em + 12px); }
+.plan-thread .plan-editor { margin-left: 0; }
+.plan-editor-text {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 4.4em; padding: 9px 11px; border-radius: 9px;
+  border: 1px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.04); color: inherit; font: inherit; font-size: 13px;
+  line-height: 1.5; outline: none;
+}
+.plan-editor-text:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--rgb-accent), 0.15); }
+.plan-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.plan-editor-actions .btn, .plans-actions .btn { display: inline-flex; align-items: center; padding: 7px 14px; font-size: 13px; }
+.plan-editor-actions .btn .ico, .plans-actions .btn .ico { width: 15px; height: 15px; }
+.plan-ask { border-color: var(--accent); color: var(--accent); }
+.plan-ask:hover { background: rgba(var(--rgb-accent), 0.1); }
+.plan-error { font-size: 12px; color: var(--red); }
+.plans-actions { flex: none; display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--panel-border); }
+.plans-actions-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-content: flex-end; }
+.plans-actions-info { margin-right: auto; font-size: 12px; color: var(--muted); }
+.plan-revise { border-color: var(--violet); color: var(--ink-violet); }
+.plan-revise:hover:not(:disabled) { background: rgba(var(--rgb-violet), 0.12); }
+.btn.ok.strong { background: rgba(var(--rgb-ok), 0.85); color: var(--on-fill); }
+.btn.ok.strong:hover:not(:disabled) { background: var(--green); }
+.plans-actions .btn:disabled, .plan-editor-actions .btn:disabled { opacity: 0.4; cursor: not-allowed; background: none; }
+.plans-actions .btn.ok.strong:disabled { background: rgba(var(--rgb-ok), 0.25); color: var(--on-fill); }
+.plans-actions .btn:focus-visible, .plan-editor-actions .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.plans-load-error { display: grid; gap: 10px; justify-items: start; color: var(--red); }
+.plans-load-error p { margin: 0; }
+.plans-retry { display: inline-flex; align-items: center; border-color: var(--panel-border); color: var(--ink); }
+
+/* --- page « Journal » (plan P3, lot F ; hud/src/audit.js) : journal d'audit, lecture seule --- */
+.modal.wide.audit { width: min(980px, calc(100vw - 40px)); height: min(820px, calc(100vh - 60px)); padding: 20px 22px 18px; gap: 12px; }
+.modal.audit .modal-body { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden; }
+.audit-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: none; }
+.audit-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-right: auto; }
+.audit-filter, .audit-refresh, .audit-more {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--panel-border); background: none; color: var(--muted); font-size: 12px;
+}
+.audit-filter:hover, .audit-refresh:hover, .audit-more:hover:not(:disabled) { color: var(--ink-hi); border-color: rgba(var(--rgb-line), 0.35); }
+.audit-filter.on { color: var(--ink-hi); border-color: var(--accent); background: rgba(var(--rgb-accent), 0.1); }
+.audit-filter:focus-visible, .audit-refresh:focus-visible, .audit-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.audit-refresh .ico { width: 14px; height: 14px; }
+.audit-status { margin: 0; color: var(--muted); flex: none; }
+.audit-status.err { color: var(--red); }
+.audit-list {
+  flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 2px 4px 2px 0; list-style: none; display: grid;
+  align-content: start; gap: 6px; scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.2) transparent;
+}
+.audit-item {
+  padding: 8px 10px; border-radius: 10px; border: 1px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.03);
+  border-left: 3px solid var(--accent); display: grid; gap: 3px; min-width: 0;
+}
+.audit-item.refused { border-left-color: var(--red); }
+.audit-item.k-total { border-left-color: rgb(255, 140, 0); }
+.audit-item.k-levee { border-left-color: var(--red); }
+.audit-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 11px; color: var(--muted); }
+.audit-when { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.audit-kind { color: var(--ink); font-weight: 600; }
+.audit-ok { color: var(--green); }
+.audit-item.refused .audit-ok { color: var(--red); }
+.audit-who { margin-left: auto; }
+.audit-what { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; user-select: text; }
+.audit-auth { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.audit-more { align-self: center; flex: none; }
+.audit-more[hidden] { display: none; }
+.audit-more:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* --- 18/10 (plan P5) : appairage WhatsApp dans les Réglages, guide de démarrage --- */
+.visually-hidden {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.setting-guide {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border-radius: 999px;
+  background: none; border: 1px solid var(--panel-border); color: var(--muted);
+}
+.setting-guide .ico { width: 13px; height: 13px; }
+.setting-guide:hover, .setting-guide:focus-visible { color: var(--ink-hi); border-color: var(--accent); outline: none; }
+.wa-link {
+  display: grid; justify-items: start; gap: 8px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid rgba(var(--rgb-warn), 0.35); background: rgba(var(--rgb-warn), 0.05);
+}
+.wa-link-warn { margin: 0; font-size: 12px; color: var(--amber); display: flex; align-items: center; gap: 6px; }
+.wa-qr { width: 264px; max-width: 100%; height: auto; image-rendering: pixelated; border-radius: 6px; background: #fff; }
+.wa-code {
+  font-family: var(--mono); font-size: 28px; letter-spacing: 0.12em; font-weight: 700; color: var(--ink-hi);
+  padding: 6px 12px; border-radius: 8px; background: rgba(0, 0, 0, 0.35); border: 1px solid var(--panel-border);
+  user-select: text;
+}
+.wa-link-text { margin: 0; font-size: 12px; color: var(--ink); }
+.wa-link-text.lv-ok { color: var(--green); }
+.wa-link-text.lv-error { color: var(--red); }
+
+.modal.wide.guide { width: min(1120px, calc(100vw - 40px)); height: min(860px, calc(100vh - 60px)); padding: 20px 22px 18px; }
+.modal.guide .modal-body {
+  display: grid; grid-template-columns: 260px minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px 22px; overflow: hidden; padding-right: 0;
+}
+.guide-status { grid-column: 1 / -1; margin: 0; color: var(--muted); }
+.guide-status.err { color: var(--red); }
+.guide-progress { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.guide-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.guide-bar { flex: 1; min-width: 120px; height: 6px; accent-color: var(--green); }
+.guide-finish { padding: 5px 14px; }
+.guide-nav { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 12px; scrollbar-width: thin; }
+.guide-group-title {
+  margin: 0 0 4px; font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+}
+.guide-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.guide-topic {
+  width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid transparent; background: none; color: var(--ink); font-size: 13px;
+}
+.guide-topic:hover { background: rgba(var(--rgb-hi), 0.04); }
+.guide-topic:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.guide-topic[aria-current="true"] { border-color: rgba(var(--rgb-accent), 0.45); background: rgba(var(--rgb-accent), 0.08); color: var(--ink-hi); }
+.guide-check { display: inline-grid; place-items: center; color: var(--muted); flex: none; }
+.guide-check .ico { width: 14px; height: 14px; }
+.guide-topic.done .guide-check { color: var(--green); }
+.guide-main { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 12px; padding-right: 6px; scrollbar-width: thin; }
+.guide-title { margin: 0; font-size: 18px; font-weight: 650; color: var(--ink-head); outline: none; }
+.guide-title:focus-visible { box-shadow: 0 2px 0 var(--accent); }
+.guide-step-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.guide-step-n { font-size: 12px; color: var(--muted); }
+.guide-done { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.guide-done input { accent-color: var(--green); width: 16px; height: 16px; margin: 0; }
+.guide-done:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.guide-body { font-size: 13px; line-height: 1.55; max-width: 72ch; }
+.guide-test { display: grid; justify-items: start; gap: 6px; }
+.guide-test-btn { padding: 6px 14px; border-color: var(--accent); color: var(--accent); display: inline-flex; align-items: center; gap: 6px; }
+.guide-test-result { margin: 0; font-size: 12px; }
+.guide-test-result.lv-ok { color: var(--green); }
+.guide-test-result.lv-warn { color: var(--amber); }
+.guide-test-result.lv-error { color: var(--red); }
+.guide-setting { border: 1px solid var(--panel-border); border-radius: 12px; background: rgba(var(--rgb-hi), 0.02); }
+.guide-setting-title { margin: 0; padding: 8px 12px 0; font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.guide-setting .setting { border-top: none; }
+.guide-foot { display: flex; justify-content: space-between; gap: 10px; padding-top: 4px; }
+.guide-foot .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.guide-foot .btn:focus-visible, .guide-test-btn:focus-visible, .guide-finish:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 760px) {
+  .modal.guide .modal-body { grid-template-columns: 1fr; grid-template-rows: auto auto auto minmax(0, 1fr); overflow-y: auto; }
+  .guide-nav { max-height: 30vh; }
+}
+@media (prefers-reduced-motion: reduce) { .guide-main, .guide-nav { scroll-behavior: auto; } }
+
+/* Page « Tout ce qu'Astrel sait faire » (plan P22, hud/src/capacites.js), ouverte par le bouton du
+   Guide. Jetons seulement (aucune couleur en dur : le Premium suit). */
+.guide-capacites { padding: 5px 14px; display: inline-flex; align-items: center; gap: 6px; border-color: var(--panel-border); color: var(--ink); }
+.guide-capacites:hover { border-color: rgba(var(--rgb-line), 0.35); color: var(--ink-hi); }
+.guide-capacites:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.modal.wide.capacites { width: min(980px, calc(100vw - 40px)); height: min(860px, calc(100vh - 60px)); padding: 20px 22px 18px; gap: 12px; }
+.modal.capacites .modal-body { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden; }
+.cap-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: none; }
+.cap-search, .cap-sort {
+  padding: 6px 10px; border-radius: 8px; border: 1px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.04);
+  color: inherit; font: inherit; font-size: 13px; outline: none;
+}
+.cap-search { flex: 1; min-width: 200px; }
+.cap-sort option { background: var(--option-bg); }
+.cap-search:focus, .cap-sort:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--rgb-accent), 0.15); }
+.cap-status { margin: 0; color: var(--muted); font-size: 12px; flex: none; }
+.cap-status.err { color: var(--red); }
+.cap-list {
+  flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 8px; padding-right: 4px;
+  scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.2) transparent;
+}
+.cap-group { border: 1px solid var(--panel-border); border-radius: 12px; background: rgba(var(--rgb-hi), 0.02); padding: 0 12px; }
+.cap-summary {
+  display: flex; align-items: center; gap: 10px; padding: 10px 0; cursor: pointer; list-style: none;
+  font-size: 13px; font-weight: 650; color: var(--ink-head);
+}
+.cap-summary::-webkit-details-marker { display: none; }
+.cap-summary::before { content: "+"; width: 12px; color: var(--muted); font-weight: 400; transition: transform var(--dur-1) var(--ease); }
+.cap-group[open] > .cap-summary::before { transform: rotate(45deg); }
+.cap-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.cap-title { flex: 1; min-width: 0; }
+.cap-n { font-size: 11px; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cap-entries { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 4px; }
+.cap-entry { padding: 6px 8px; border-radius: 8px; display: grid; gap: 2px; min-width: 0; }
+.cap-entry:hover { background: rgba(var(--rgb-hi), 0.03); }
+.cap-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.cap-nom { font-size: 13px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.cap-etat { font-size: 11px; color: var(--muted); }
+.cap-grav { font-size: 11px; padding: 0 7px; border-radius: 999px; border: 1px solid var(--panel-border); color: var(--muted); }
+.cap-grav.grav-critique { border-color: rgba(var(--rgb-danger), 0.5); color: var(--ink-danger); }
+.cap-grav.grav-sensible { border-color: rgba(var(--rgb-warn), 0.45); color: var(--ink-warn); }
+.cap-grav.grav-libre { border-color: rgba(var(--rgb-ok), 0.35); color: var(--ink-ok); }
+.cap-usage { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; }
+.cap-texte { margin: 0; font-size: 12px; line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; max-width: 80ch; }
+.cap-link {
+  justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; margin: 2px 0 6px;
+  border-radius: 999px; border-color: var(--panel-border); color: var(--muted); font-size: 12px; font-weight: 500;
+}
+.cap-link:hover { color: var(--ink-hi); border-color: rgba(var(--rgb-line), 0.35); }
+.cap-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cap-link .ico { width: 13px; height: 13px; }
+@media (prefers-reduced-motion: reduce) { .cap-summary::before { transition: none; } }
+
+/* === P17 thèmes : début === */
+/* 21/10 (plan P17) : thème PREMIUM, sobre, à la manière d'Apple, clair ou sombre. Posé par
+   hud/src/apparence.js sur <html> (data-theme, data-mode, data-accent ; « auto » déjà résolu en
+   clair/sombre) et par hud/theme-boot.js avant la première peinture. 25/10 (plan P35) : seul thème
+   du HUD, data-theme="premium" en dur dans index.html ; le :root du haut (palette d'origine) ne
+   sert plus que de repli. Lot 2 de P35 : les anciens sélecteurs « :root ou aperçu de thème »
+   (aperçus des Réglages, retirés au lot 1) deviennent `:root`, même spécificité (0,1,0) : rien ne
+   change à l'écran.
+   Valeurs : config/themes.json (tests/test_themes.py les compare). Non thémables : Autonome
+   TOTAL (orange), levée du garde-fou (rouge), mission (violet). */
+@font-face {
+  font-family: "Inter Astrel"; src: url("/assets/fonts/InterVariable.woff2") format("woff2");
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+:root[data-theme="premium"] {
+  --font: "Inter Astrel", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Cantarell", system-ui, sans-serif;
+  --radius: 16px;
+  --blur: 24px;
+}
+:root[data-theme="premium"][data-mode="dark"] {
+  color-scheme: dark;
+  --bg: #1c1c1e;
+  --rgb-glass: 44, 44, 46;
+  --rgb-line: 255, 255, 255;
+  --rgb-hi: 255, 255, 255;
+  --panel: rgba(var(--rgb-glass), 0.72);
+  --panel-border: rgba(var(--rgb-line), 0.1);
+  --hairline: rgba(var(--rgb-line), 0.08);
+  --surface-2: rgba(var(--rgb-hi), 0.03);
+  --ink: #f5f5f7;
+  --muted: #aeaeb2;
+  --ink-title: #98989d;
+  --ink-hi: #ffffff;
+  --ink-head: #f5f5f7;
+  --ink-strong: #ffffff;
+  --ink-code: #f5f5f7;
+  --ink-quote: #aeaeb2;
+  --green: #30d158;
+  --amber: #ffd60a;
+  --red: #ff6961;
+  --violet: #da8fff;
+  --rgb-ok: 48, 209, 88;
+  --rgb-warn: 255, 214, 10;
+  --rgb-danger: 255, 105, 97;
+  --rgb-violet: 218, 143, 255;
+  --ink-danger: #ff6961;
+  --ink-violet: #da8fff;
+  --ink-warn: #ffd60a;
+  --ink-cmd: #f5f5f7;
+  --ink-ok: #30d158;
+  --ink-ok-strong: #ffffff;
+  --on-fill: #000000;
+  --on-warn: #000000;
+  --field-border: #7c7c80;
+  --field-bg: rgba(0, 0, 0, 0.2);
+  --sunken: rgba(0, 0, 0, 0.25);
+  --fill: rgba(var(--rgb-hi), 0.08);
+  --fill-2: rgba(var(--rgb-hi), 0.14);
+  --raised: #636366;
+  --confirm-bg: rgba(44, 44, 46, 0.96);
+  --choice-bg: rgba(44, 44, 46, 0.96);
+  --shimmer-from: #3a3a3c;
+  --shimmer-to: #2c2c2e;
+  --backdrop: rgba(0, 0, 0, 0.4);
+  --vignette-edge: rgba(0, 0, 0, 0.35);
+  --option-bg: #2c2c2e;
+  --shadow-1: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-float: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-modal: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 24px 64px rgba(0, 0, 0, 0.55);
+}
+:root[data-theme="premium"][data-mode="light"] {
+  color-scheme: light;
+  --bg: #f5f5f7;
+  --rgb-glass: 255, 255, 255;
+  --rgb-line: 0, 0, 0;
+  --rgb-hi: 0, 0, 0;
+  --panel: rgba(var(--rgb-glass), 0.72);
+  --panel-border: rgba(var(--rgb-line), 0.08);
+  --hairline: rgba(var(--rgb-line), 0.07);
+  --surface-2: rgba(var(--rgb-hi), 0.03);
+  --ink: #1d1d1f;
+  --muted: #636366;
+  --ink-title: #6e6e73;
+  --ink-hi: #000000;
+  --ink-head: #1d1d1f;
+  --ink-strong: #000000;
+  --ink-code: #1d1d1f;
+  --ink-quote: #636366;
+  --green: #1f7a35;
+  --amber: #a05a00;
+  --red: #d70015;
+  --violet: #8944ab;
+  --rgb-ok: 31, 122, 53;
+  --rgb-warn: 160, 90, 0;
+  --rgb-danger: 215, 0, 21;
+  --rgb-violet: 137, 68, 171;
+  --ink-danger: #d70015;
+  --ink-violet: #8944ab;
+  --ink-warn: #a05a00;
+  --ink-cmd: #1d1d1f;
+  --ink-ok: #1f7a35;
+  --ink-ok-strong: #000000;
+  --on-fill: #ffffff;
+  --on-warn: #ffffff;
+  --field-border: #86868b;
+  --field-bg: #ffffff;
+  --sunken: rgba(0, 0, 0, 0.04);
+  --fill: rgba(var(--rgb-hi), 0.05);
+  --fill-2: rgba(var(--rgb-hi), 0.09);
+  --raised: #ffffff;
+  --confirm-bg: rgba(255, 255, 255, 0.97);
+  --choice-bg: rgba(255, 255, 255, 0.97);
+  --shimmer-from: #e8e8ed;
+  --shimmer-to: #f5f5f7;
+  --backdrop: rgba(0, 0, 0, 0.18);
+  --vignette-edge: transparent;
+  --option-bg: #ffffff;
+  --shadow-1: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.06), 0 2px 4px 0 rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-modal: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.06), 0 24px 64px rgba(0, 0, 0, 0.16);
+}
+/* accents (Réglages › Apparence) : couleur pleine (anneaux, fonds) et couleur de TEXTE (contraste) */
+:root[data-theme="premium"][data-mode="dark"] { --accent: #0a84ff; --accent-ink: #409cff; --rgb-accent: 10, 132, 255; --cyan: #0a84ff; }
+:root[data-theme="premium"][data-mode="light"] { --accent: #0071e3; --accent-ink: #0071e3; --rgb-accent: 0, 113, 227; --cyan: #0071e3; }
+:root[data-theme="premium"][data-mode="dark"][data-accent="graphite"] { --accent: #8e8e93; --accent-ink: #aeaeb2; --rgb-accent: 142, 142, 147; --cyan: #8e8e93; }
+:root[data-theme="premium"][data-mode="light"][data-accent="graphite"] { --accent: #6e6e73; --accent-ink: #6e6e73; --rgb-accent: 110, 110, 115; --cyan: #6e6e73; }
+:root[data-theme="premium"][data-mode="dark"][data-accent="vert"] { --accent: #30d158; --accent-ink: #30d158; --rgb-accent: 48, 209, 88; --cyan: #30d158; }
+:root[data-theme="premium"][data-mode="light"][data-accent="vert"] { --accent: #1f7a35; --accent-ink: #1f7a35; --rgb-accent: 31, 122, 53; --cyan: #1f7a35; }
+:root[data-theme="premium"][data-mode="dark"][data-accent="orange"] { --accent: #ff9f0a; --accent-ink: #ff9f0a; --rgb-accent: 255, 159, 10; --cyan: #ff9f0a; }
+:root[data-theme="premium"][data-mode="light"][data-accent="orange"] { --accent: #c93400; --accent-ink: #c93400; --rgb-accent: 201, 52, 0; --cyan: #c93400; }
+/* bouton principal : teinte d'accent et texte blanc en sombre (contraste), accent plein en clair */
+:root[data-theme="premium"][data-mode="dark"] { --primary-bg: rgba(var(--rgb-accent), 0.24); --primary-ink: var(--ink-hi); --bubble-user: rgba(var(--rgb-accent), 0.24); --bubble-user-ink: var(--ink-hi); }
+:root[data-theme="premium"][data-mode="light"] { --primary-bg: var(--accent); --primary-ink: #ffffff; --bubble-user: var(--accent); --bubble-user-ink: #ffffff; }
+
+/* --- Premium : surfaces, typographie, sans lueurs (recette better-ui : filet + ombres en couches) --- */
+:root[data-theme="premium"] body { -webkit-font-smoothing: antialiased; font-optical-sizing: auto; }
+:root[data-theme="premium"] .vignette { background: radial-gradient(ellipse at center, transparent 60%, var(--vignette-edge) 100%); }
+:root[data-theme="premium"] :is(#topbar, .panel, #composer, .toast, .menu, .msg.astrel, .dictation, .att, .channel-tab) {
+  backdrop-filter: blur(var(--blur)) saturate(180%);
+}
+:root[data-theme="premium"] #topbar { border-radius: 18px; border-color: transparent; box-shadow: var(--shadow-float); }
+:root[data-theme="premium"] .panel { border-color: transparent; box-shadow: var(--shadow-float); }
+:root[data-theme="premium"] #composer { border-radius: 22px; border-color: transparent; box-shadow: var(--shadow-float); }
+:root[data-theme="premium"] :is(.toast, .menu) { border-color: transparent; border-radius: 12px; box-shadow: var(--shadow-float); }
+:root[data-theme="premium"] .brand { letter-spacing: 0.12em; font-weight: 650; }
+:root[data-theme="premium"] :is(.brand-mark, .brand-mark.conn, .brand-mark.conn.on, .dot, .channel-tab.on .dot, .channel-tab .decision-mark, .task .alert-dot) { box-shadow: none; }
+:root[data-theme="premium"] .channel-tab .to-read-mark { filter: none; }
+:root[data-theme="premium"] :is(.panel-title, .confirm-head, .choice-head, .image-head, .report-badge, .report-files-head, .plan-label,
+  .plan-section-title, .guide-group-title, .guide-setting-title, .md h5, .choice-rec) { text-transform: none; letter-spacing: 0.01em; }
+:root[data-theme="premium"] .panel-title { font-size: 12px; color: var(--ink-title); border-top-color: var(--hairline); }
+:root[data-theme="premium"] .confirm-head { font-size: 13px; font-weight: 600; }
+:root[data-theme="premium"] #state-label { font-size: 15px; letter-spacing: 0.01em; text-transform: none; text-shadow: none; color: var(--ink); }
+:root[data-theme="premium"] :is(.badge, .sensor b) { font-family: var(--font); letter-spacing: 0.01em; }
+:root[data-theme="premium"] .badge { border-radius: 999px; border-color: transparent; background: var(--fill); }
+:root[data-theme="premium"] .sensor { border-radius: 12px; border-color: transparent; background: var(--fill); }
+:root[data-theme="premium"] .sensor.on { box-shadow: inset 0 0 0 1px rgba(var(--rgb-ok), 0.5); background: rgba(var(--rgb-ok), 0.1); }
+/* filet discret sur trois côtés : le liseré de gauche garde sa couleur d'état (refus, Total, levée) */
+:root[data-theme="premium"] :is(.task, .plan-point, .plan-request, .audit-item, .settings-group, .guide-setting) {
+  border-top-color: var(--hairline); border-right-color: var(--hairline); border-bottom-color: var(--hairline);
+}
+:root[data-theme="premium"] .bar > div { background: var(--accent); }
+:root[data-theme="premium"] .bar.warn > div { background: var(--amber); }
+:root[data-theme="premium"] .tgroup { background: transparent; border-color: transparent; padding: 0; }
+/* 21/10 (relecture P17, l'utilisateur : couleurs d'alerte dans les DEUX thèmes) : les pastilles Total
+   (orange), garde-fou levé (rouge) et Stop tout (rouge) sont EXCLUES des règles génériques ci-dessous
+   par :where(:not(…)), de spécificité nulle : leurs règles d'origine s'appliquent telles quelles, le
+   reste ne bouge pas. Avant, ces règles (0,3,0 à 0,5,0) les écrasaient. Contrôle :
+   tools/hud_check_rendu.py (« sémantique »). 28/10 (T10) : pastilles Mission et Éteindre retirées de la barre. */
+:root[data-theme="premium"] :is(.chip, .round):where(:not(.lift, .estop.on, .estop:hover, .toggle.total.on)) {
+  background: var(--fill); border-color: transparent; }
+:root[data-theme="premium"] .chip.on:where(:not(.estop, .toggle.total)),
+:root[data-theme="premium"] .chip:hover:where(:not(.estop, .lift, .toggle.total.on)) {
+  color: var(--ink-hi); border-color: transparent; background: var(--fill-2); }
+:root[data-theme="premium"] .round:hover { border-color: transparent; background: var(--fill-2); }
+:root[data-theme="premium"] .chip.toggle.on:where(:not(.total)) { color: var(--ink); border-color: transparent; background: var(--fill); }
+:root[data-theme="premium"] .chip.toggle.on:where(:not(.total)) .sw { background: var(--green); }
+:root[data-theme="premium"] .chip.toggle:where(:not(.total.on)) .sw::after { background: #ffffff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
+:root[data-theme="premium"] .chip.toggle:not(.on) .sw { background: var(--fill-2); }
+:root[data-theme="premium"] .usage { border-color: transparent; background: var(--fill); padding: 2px; }
+:root[data-theme="premium"] .usage button { border-radius: 999px; padding: 4px 9px; }
+:root[data-theme="premium"] .usage button.on { color: var(--ink-hi); background: var(--raised); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
+:root[data-theme="premium"] .msg { border-radius: 18px; }
+:root[data-theme="premium"] .msg.astrel { border-color: transparent; box-shadow: var(--shadow-1); }
+:root[data-theme="premium"] .msg.user { background: var(--bubble-user); color: var(--bubble-user-ink); border-color: transparent; }
+:root[data-theme="premium"] .msg.user .src { color: inherit; opacity: 0.8; }
+/* 23/10 : l'heure sur la bulle pleine de l'utilisateur reprend la couleur du texte de la bulle (le gris était invisible sur le bleu) */
+:root[data-theme="premium"] .msg.user .msg-time { color: inherit; opacity: 0.85; }
+/* 23/10 (demande : « la couleur du texte de la pièce jointe est invisible avec la bulle bleue ») : la pastille de
+   pièce jointe (nom, trombone en currentColor, contour) prend, comme l'heure, la couleur du texte de la bulle ; nom
+   opaque (≥ 4,5:1 sur les 4 accents, clair et sombre), contour à 70 % (≥ 3:1) ; tests/test_themes.py */
+:root[data-theme="premium"] .msg.user .att-chip { color: inherit; border-color: color-mix(in srgb, currentColor 70%, transparent); }
+:root[data-theme="premium"] .msg.user.unsent { background: rgba(var(--rgb-warn), 0.1); color: var(--ink); border: 1px dashed var(--amber); }
+:root[data-theme="premium"] .msg.astrel.to-read { box-shadow: inset 0 0 0 1px rgba(var(--rgb-warn), 0.6); }
+:root[data-theme="premium"] :is(.report-badge.decision, .msg.astrel.report-decision) { box-shadow: none; }
+/* 25/10 (plan P35, fiches 1 à 3) : le liseré gauche des comptes rendus disparaissait, effacé par le
+   `border-color: transparent` de `.msg.astrel` ci-dessus (0,4,0 contre 0,3,0) : couleur reposée. */
+:root[data-theme="premium"] .msg.astrel.report-decision { border-left-color: var(--amber); }
+:root[data-theme="premium"] .msg.astrel.report-blocage { border-left-color: var(--red); }
+:root[data-theme="premium"] .msg.astrel.report-resultat { border-left-color: rgba(var(--rgb-ok), 0.7); }
+:root[data-theme="premium"] .msg.choice { box-shadow: var(--shadow-float); }
+:root[data-theme="premium"] .confirm-card { border-radius: 18px; border-color: rgba(var(--rgb-warn), 0.6); box-shadow: var(--shadow-float); }
+:root[data-theme="premium"] :is(.cap-search, .cap-sort, .setting-number input, .setting-select, .modal-field input, .modal-field textarea,
+  .choice-other, .plan-editor-text) { background: var(--field-bg); border-color: var(--field-border); }
+:root[data-theme="premium"] :is(.md pre, #confirm-cmd, .setting-block pre, .wa-code) { background: var(--sunken); }
+:root[data-theme="premium"] #confirm-cmd { color: var(--ink); }
+:root[data-theme="premium"] .md code { background: var(--fill); border-color: transparent; }
+:root[data-theme="premium"] .md th { background: var(--fill); }
+:root[data-theme="premium"] .md a { color: var(--accent-ink); }
+:root[data-theme="premium"] :is(.btn.ok, .btn.ok.strong, .plan-ask, .guide-test-btn) { background: var(--primary-bg); color: var(--primary-ink); border-color: transparent; }
+:root[data-theme="premium"] :is(.btn.ok, .btn.ok.strong):hover:not(:disabled) { background: var(--primary-bg); filter: brightness(1.08); }
+:root[data-theme="premium"] .btn { border-radius: 10px; }
+:root[data-theme="premium"] .modal { border-radius: 18px; border-color: transparent; box-shadow: var(--shadow-modal); }
+:root[data-theme="premium"] .modal.danger { border-color: rgba(var(--rgb-danger), 0.45); box-shadow: var(--shadow-modal); }
+:root[data-theme="premium"] .modal-back { backdrop-filter: blur(6px); }
+:root[data-theme="premium"] :is(.settings-group-ico) { background: rgba(var(--rgb-accent), 0.12); border-color: transparent; border-radius: 7px; color: var(--accent-ink); }
+:root[data-theme="premium"] :is(.setting-ico, .settings-group-title::marker, .plan-item-id, .setting-link, .plan-section-title) { color: var(--accent-ink); }
+:root[data-theme="premium"] body.dropping #composer { box-shadow: 0 0 0 3px rgba(var(--rgb-ok), 0.35); }
+@supports not (backdrop-filter: blur(1px)) {
+  :root[data-theme="premium"] :is(#topbar, .panel, #composer, .toast, .menu, .msg.astrel) { background: rgba(var(--rgb-glass), 0.97); }
+}
+
+/* --- Réglages › Apparence : accents, pastilles de couleur (rôle radio, hud/src/settings.js).
+   25/10 (plan P35) : plus de cartes d'aperçu des thèmes (.theme-card, .theme-preview), Premium seul. */
+.accent-swatches { display: flex; gap: 10px; flex-wrap: wrap; }
+.accent-swatch {
+  width: 26px; height: 26px; padding: 0; border-radius: 50%; border: 2px solid transparent;
+  background: var(--sw); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15); cursor: pointer;
+}
+.accent-swatch[aria-checked="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 2px var(--bg); }
+.accent-swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.accent-swatch:disabled { cursor: not-allowed; opacity: 0.5; }
+
+/* --- Premium : mouvement. transform/opacity seulement, propriétés nommées (jamais « all »),
+   courbe cubic-bezier(0.2, 0, 0, 1), pression 0,96 ; prefers-reduced-motion : fondu seul. --- */
+@keyframes p17-rise { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+@keyframes p17-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="premium"] :is(.chip, .round, .btn, .mini, .choice-btn, .read-btn, .plans-filter, .audit-filter,
+    .setting-action, .usage button, .accent-swatch, .channel-tab) {
+    transition-property: background-color, border-color, color, opacity, scale;
+    transition-duration: var(--dur-1); transition-timing-function: var(--ease);
+  }
+  :root[data-theme="premium"] :is(.chip, .round, .btn, .mini, .choice-btn, .read-btn, .plans-filter, .audit-filter,
+    .setting-action, .usage button, .accent-swatch):not(:disabled):active { scale: var(--press); }
+  :root[data-theme="premium"] :is(.modal, .toast, #confirm, .msg.choice) { animation: p17-rise var(--dur-2) var(--ease) both; }
+  :root[data-theme="premium"] .modal-back { animation: p17-fade var(--dur-2) var(--ease) both; }
+  :root[data-theme="premium"] .msg:is(.user, .astrel) { animation: p17-rise var(--dur-2) var(--ease-spring) both; }
+  :root[data-theme="premium"] .chip.toggle .sw::after { transition: transform var(--dur-2) var(--ease-spring), background-color var(--dur-1) var(--ease); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="premium"] :is(.modal, .toast, #confirm, .msg.choice, .modal-back, .msg.user, .msg.astrel) { animation: p17-fade var(--dur-2) linear both; }
+}
+/* === P17 thèmes : fin === */
+
+/* === P23 affichage : début === */
+/* 22/10 (plan P23, demande de l'utilisateur : montrer Astrel à quelqu'un qui le découvre ; « le graphe,
+   les forces, les capteurs, les bandeaux rouge/orange et Astrel OS font trop geek ») : affichage
+   SIMPLE, posé par hud/src/apparence.js (data-affichage="simple" sur <html>, réglage `affichage`) et
+   par hud/theme-boot.js. Avancé = AUCUN attribut : rien ici ne s'applique, page d'avant au pixel.
+   Rien n'est retiré du DOM, seulement caché ; jetons seulement (le Premium suit).
+   SÉCURITÉ : les bandeaux Sans confirmation / garde-fou levé / mémoire ne sont JAMAIS cachés, ils
+   deviennent des pastilles neutres qui gardent leur couleur (Total orange, levée rouge) ; seul le
+   cadre coloré de l'écran est retiré. « Sans confirmation », « Garde-fou levé » (s'il l'est) et Stop
+   tout restent dans la barre, le bandeau d'une mission en cours sous la barre (28/10, T10 : plus de
+   pastilles Mission ni Éteindre, ni d'interrupteur Simple). Contrôle : tools/hud_check_rendu.py. */
+.alert-seg .seg-simple { display: none; }
+/* barre : le nom tel qu'il est écrit (« Astrel », P31), sans compteurs ; pastilles de modes cachées
+   (question 2 du plan) */
+:root[data-affichage="simple"] :is(#autonomy-chip, #plans-chip, #todo-chip, #audit-chip) { display: none !important; }
+:root[data-affichage="simple"] .brand-name { display: inline-block; text-transform: none; letter-spacing: 0.04em; }
+:root[data-affichage="simple"] :is(.chip.toggle.total.on, .chip.lift) { animation: none; }  /* couleur gardée, sans pulsation */
+/* panneau du cerveau, badges, capteurs, abonnement, filtres ; onglets et noms de projets (proposition 9) */
+:root[data-affichage="simple"] :is(#channels, .task .chan, #right .badges, #sensors, #quota, #context, #memory, #courrier, #todo-apercu,
+  #right > .panel-title:is([data-i18n="right.sensors"], #quota-title, #courrier-title, #todo-title)) {
+  display: none !important; }
+/* la conversation se centre : plus de colonne gauche (à l'écran large, marges égales des deux côtés) */
+:root[data-affichage="simple"] { --col-l: var(--edge); }
+@media (min-width: 1500px) {
+  :root[data-affichage="simple"] { --col-l: var(--col-r); }
+}
+/* bandeaux d'autonomie sobres (proposition 3) : pastille neutre, icône et filet de couleur, cadre retiré */
+:root[data-affichage="simple"] .alert-seg .seg-full { display: none; }
+:root[data-affichage="simple"] .alert-seg .seg-simple { display: inline; }
+:root[data-affichage="simple"] :is(#total-banner, #lift-banner, #memory-banner) {
+  color: var(--ink); background: var(--panel); border: 1px solid var(--panel-border); box-shadow: none; backdrop-filter: blur(14px); }
+:root[data-affichage="simple"] #total-banner { border-color: rgba(255, 140, 0, 0.55); }
+:root[data-affichage="simple"] :is(#lift-banner, #memory-banner) { border-color: rgba(var(--rgb-danger), 0.55); }
+:root[data-affichage="simple"] .alert-seg b { font-weight: 600; letter-spacing: 0; }
+:root[data-affichage="simple"] #total-banner .ico.lead { color: rgb(255, 140, 0); }
+:root[data-affichage="simple"] :is(#lift-banner, #memory-banner) .ico.lead { color: var(--red); }
+:root[data-affichage="simple"] .alert-seg button { color: var(--ink); background: rgba(var(--rgb-hi), 0.06); border-color: var(--panel-border); }
+:root[data-affichage="simple"] .alert-seg button:hover { background: rgba(var(--rgb-hi), 0.12); border-color: var(--accent); }
+:root[data-affichage="simple"] #lift-files > summary { text-decoration-color: currentColor; }
+:root[data-affichage="simple"] :is(#total-frame, #head > #lift-frame) { display: none !important; }
+/* sans panneau gauche, la ligne d'alerte prend toute la largeur libre : les trois pastilles tiennent
+   côte à côte (mesuré à 1600 px : « Rétablir » passait sous la pastille Mémoire) */
+:root[data-affichage="simple"] #head > #alert-line { left: var(--edge); }
+/* relecture P23 (1280 px, trois pastilles) : « Rétablir » était rogné de ≈ 8 px, le lien « N fichiers
+   modifiés » ne rétrécissait pas ; il se coupe (…) en premier, son dépliant reste entier */
+/* (22/10 : règle passée aux deux affichages, voir #lift-files plus haut) */
+
+/* --- lot B (22/10) --- */
+/* proposition 6 : en Simple, la ligne d'alerte reprend la place gardée à droite pour les outils du
+   graphe (graphe, « Voir le cerveau », Recadrer et Orbite retirés le 23/10, plan P28). */
+:root[data-affichage="simple"] #head > #alert-line { padding-right: 8px; }
+/* proposition 4 (question 4 : « réduite ») : orbe ≈ 110 px en haut du panneau (l'orbe suit la taille
+   de sa toile, orb_premium.js) */
+:root[data-affichage="simple"] #orb-premium { width: 110px; height: 110px; }
+:root[data-affichage="simple"] #state-label { margin-top: 2px; }
+/* === P23 affichage : fin === */
+
+/* 22/10 (plan P23 lot B, point 5 ; point 15 de la note du 21/10) : tâches finies depuis plus de 2 min,
+   repliées sous « En cours » (les deux affichages). Jetons seulement. */
+.tasks-history { margin-top: 2px; }
+.tasks-history-head { list-style: none; cursor: pointer; font-size: 11px; color: var(--muted); padding: 2px 4px;
+  border-radius: 6px; width: fit-content; }
+.tasks-history-head::-webkit-details-marker { display: none; }
+.tasks-history-head::before { content: ""; display: inline-block; margin-right: 6px; vertical-align: 1px;
+  border: 4px solid transparent; border-left-color: currentColor; border-right: 0; }
+.tasks-history[open] > .tasks-history-head::before { border: 4px solid transparent; border-top-color: currentColor; border-bottom: 0; vertical-align: 2px; }
+.tasks-history-head:hover, .tasks-history-head:focus-visible { color: var(--ink-hi); outline: none; background: rgba(var(--rgb-hi), 0.05); }
+/* Relecture P23 : le focus clavier se voit (même contour que .choice-btn). */
+.tasks-history-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tasks-history-list { margin-top: 6px; }
+
+/* === P26 médias (22/10, plan P26, hud/src/medias.js) : images en galerie, PDF page par page,
+   son, vidéo au clic, « Ouvrir ». Jetons seulement. En Simple,
+   cartes visibles mais ni taille ni chemin. === */
+.msg.media-msg { align-self: flex-start; width: min(480px, 85%); background: var(--panel); border: 1px solid var(--panel-border); }
+.media-list { display: grid; gap: 8px; margin-top: 6px; min-width: 0; }
+.msg.media-msg .media-list { margin-top: 0; }
+.media-title { font-size: 13px; color: var(--ink); overflow-wrap: anywhere; }
+.media-gallery { display: grid; gap: 6px; }
+.media-gallery.n2, .media-gallery.n3, .media-gallery.n4 { grid-template-columns: 1fr 1fr; }
+.media-thumb { position: relative; display: block; padding: 0; border: 1px solid var(--panel-border); border-radius: var(--r-1);
+  overflow: hidden; background: var(--surface-2); cursor: zoom-in; min-width: 0; }
+.media-thumb img { display: block; width: 100%; height: auto; max-height: 240px; object-fit: contain; }
+.media-thumb:hover { border-color: var(--accent); }
+.media-thumb:focus-visible, .media-open:focus-visible, .media-step:focus-visible, .media-play:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; }
+.media-letter { position: absolute; top: 4px; left: 4px; padding: 0 5px; border-radius: 4px; font-size: 11px; font-weight: 700;
+  color: var(--ink-hi); background: rgba(var(--rgb-glass), 0.8); border: 1px solid var(--panel-border); }
+.media-card { display: grid; gap: 6px; padding: 8px; min-width: 0; border-radius: var(--r-1);
+  border: 1px solid var(--panel-border); background: var(--surface-2); }
+.media-card > .media-letter { position: static; justify-self: start; } /* repli sans miniature d'une réponse illustrée */
+.media-head { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--ink); }
+.media-head .ico.lead { flex: none; }
+.media-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.media-size { flex: none; color: var(--muted); font-size: 11px; }
+.media-path { min-width: 0; flex: 1 1 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr;
+  unicode-bidi: isolate; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.media-note { font-size: 12px; color: var(--muted); }
+.media-open { justify-self: start; padding: 2px 10px; border-radius: 999px; font-size: 12px;
+  border: 1px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.04); }
+.media-open:hover { border-color: var(--accent); color: var(--ink-hi); }
+.media-page { display: block; width: 100%; padding: 0; border: 1px solid transparent; border-radius: 6px; overflow: hidden;
+  background: var(--surface-2); cursor: zoom-in; }
+.media-page:hover { border-color: var(--accent); }
+.media-page:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* page compacte dans le fil (la carte entière tient dans la hauteur par défaut du fil) ; en grand au clic */
+.media-page img { display: block; width: 100%; height: auto; max-height: 340px; object-fit: contain; }
+.media-nav { display: flex; align-items: center; gap: 6px; }
+.media-nav .media-open { margin-left: auto; }
+.media-step { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; padding: 0;
+  border-radius: 6px; border: 1px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.04); }
+.media-step:hover:not(:disabled) { border-color: var(--accent); color: var(--ink-hi); }
+.media-step:disabled { opacity: 0.4; cursor: default; }
+.media-step .ico.flip { transform: scaleX(-1); }
+.media-at { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 3.5em; text-align: center; }
+.media-card audio { width: 100%; height: 34px; }
+.media-video-box { display: grid; place-items: center; min-height: 120px; border-radius: 6px; overflow: hidden;
+  background: rgba(var(--rgb-glass), 0.6); }
+.media-video-el { display: block; width: 100%; max-height: 420px; background: rgba(var(--rgb-glass), 0.9); }
+.media-play { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px;
+  border: 1px solid var(--accent); color: var(--ink-hi); background: rgba(var(--rgb-accent), 0.12); }
+.media-play:hover { background: rgba(var(--rgb-accent), 0.22); }
+.media-video-box .media-note { padding: 8px; text-align: center; }
+/* question illustrée : vignettes compactes, une ligne de 4 au plus */
+.media-gallery.choice-gallery { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); max-width: 480px; }
+.choice-gallery .media-thumb img { height: 96px; max-height: none; object-fit: cover; }
+:root[data-affichage="simple"] :is(.media-size, .media-path) { display: none; }
+/* === P26 médias : fin === */

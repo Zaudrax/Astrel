@@ -1,0 +1,17 @@
+{
+  "name": "astrel-hud",
+  "private": true,
+  "version": "2.0.0",
+  "description": "HUD d'Astrel : orbe, conversation, capteurs.",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.js --bundle --minify --sourcemap --format=esm --target=es2022 --outfile=dist/app.js --loader:.glsl=text",
+    "watch": "esbuild src/main.js --bundle --sourcemap --format=esm --target=es2022 --outfile=dist/app.js --loader:.glsl=text --watch"
+  },
+  "dependencies": {
+    "qrcode-generator": "2.0.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

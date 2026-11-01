@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>Astrel (étoile à 4 branches)</title>
+<defs><linearGradient id="fond" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2c2c2e"/><stop offset="1" stop-color="#1c1c1e"/></linearGradient></defs>
+<rect x="30.72" y="30.72" width="962.56" height="962.56" rx="216.58" fill="url(#fond)"/>
+<rect x="36.86" y="36.86" width="950.27" height="950.27" rx="210.43" fill="none" stroke="#ffffff" stroke-opacity="0.140" stroke-width="12.29"/>
+<path d="M512 153.6 C512 440.32 583.68 512 870.4 512 C583.68 512 512 583.68 512 870.4 C512 583.68 440.32 512 153.6 512 C440.32 512 512 440.32 512 153.6 Z" fill="#0a84ff"/>
+</svg>

@@ -1,0 +1,553 @@
+{
+ "source": "simple-icons (CC0-1.0), https://simpleicons.org",
+ "version": "16.35.0",
+ "icons": {
+  "1password": {
+   "title": "1Password",
+   "hex": "145FE4",
+   "aliases": []
+  },
+  "airbnb": {
+   "title": "Airbnb",
+   "hex": "FF5A5F",
+   "aliases": []
+  },
+  "airtable": {
+   "title": "Airtable",
+   "hex": "18BFFF",
+   "aliases": []
+  },
+  "anthropic": {
+   "title": "Anthropic",
+   "hex": "191919",
+   "aliases": []
+  },
+  "appstore": {
+   "title": "App Store",
+   "hex": "0D96F6",
+   "aliases": []
+  },
+  "asana": {
+   "title": "Asana",
+   "hex": "F06A6A",
+   "aliases": []
+  },
+  "atlassian": {
+   "title": "Atlassian",
+   "hex": "0052CC",
+   "aliases": []
+  },
+  "binance": {
+   "title": "Binance",
+   "hex": "F0B90B",
+   "aliases": []
+  },
+  "bitly": {
+   "title": "Bitly",
+   "hex": "EE6123",
+   "aliases": []
+  },
+  "bitwarden": {
+   "title": "Bitwarden",
+   "hex": "175DDC",
+   "aliases": []
+  },
+  "bookingdotcom": {
+   "title": "Booking.com",
+   "hex": "003A9A",
+   "aliases": []
+  },
+  "box": {
+   "title": "Box",
+   "hex": "0061D5",
+   "aliases": []
+  },
+  "brevo": {
+   "title": "Brevo",
+   "hex": "0B996E",
+   "aliases": []
+  },
+  "buffer": {
+   "title": "Buffer",
+   "hex": "231F20",
+   "aliases": []
+  },
+  "caldotcom": {
+   "title": "Cal.com",
+   "hex": "292929",
+   "aliases": []
+  },
+  "calendly": {
+   "title": "Calendly",
+   "hex": "006BFF",
+   "aliases": []
+  },
+  "claude": {
+   "title": "Claude",
+   "hex": "D97757",
+   "aliases": []
+  },
+  "clickup": {
+   "title": "ClickUp",
+   "hex": "7B68EE",
+   "aliases": []
+  },
+  "cloudflare": {
+   "title": "Cloudflare",
+   "hex": "F38020",
+   "aliases": []
+  },
+  "coinbase": {
+   "title": "Coinbase",
+   "hex": "0052FF",
+   "aliases": []
+  },
+  "confluence": {
+   "title": "Confluence",
+   "hex": "172B4D",
+   "aliases": []
+  },
+  "contentful": {
+   "title": "Contentful",
+   "hex": "2478CC",
+   "aliases": []
+  },
+  "databricks": {
+   "title": "Databricks",
+   "hex": "FF3621",
+   "aliases": []
+  },
+  "datadog": {
+   "title": "Datadog",
+   "hex": "632CA6",
+   "aliases": []
+  },
+  "deepl": {
+   "title": "DeepL",
+   "hex": "0F2B46",
+   "aliases": []
+  },
+  "deezer": {
+   "title": "Deezer",
+   "hex": "A238FF",
+   "aliases": []
+  },
+  "discord": {
+   "title": "Discord",
+   "hex": "5865F2",
+   "aliases": []
+  },
+  "docker": {
+   "title": "Docker",
+   "hex": "2496ED",
+   "aliases": []
+  },
+  "dropbox": {
+   "title": "Dropbox",
+   "hex": "0061FF",
+   "aliases": []
+  },
+  "evernote": {
+   "title": "Evernote",
+   "hex": "00A82D",
+   "aliases": []
+  },
+  "excalidraw": {
+   "title": "Excalidraw",
+   "hex": "6965DB",
+   "aliases": []
+  },
+  "expo": {
+   "title": "Expo",
+   "hex": "1C2024",
+   "aliases": []
+  },
+  "facebook": {
+   "title": "Facebook",
+   "hex": "0866FF",
+   "aliases": []
+  },
+  "figma": {
+   "title": "Figma",
+   "hex": "F24E1E",
+   "aliases": []
+  },
+  "firebase": {
+   "title": "Firebase",
+   "hex": "DD2C00",
+   "aliases": []
+  },
+  "ghost": {
+   "title": "Ghost",
+   "hex": "15171A",
+   "aliases": []
+  },
+  "github": {
+   "title": "GitHub",
+   "hex": "181717",
+   "aliases": []
+  },
+  "gitlab": {
+   "title": "GitLab",
+   "hex": "FC6D26",
+   "aliases": []
+  },
+  "gmail": {
+   "title": "Gmail",
+   "hex": "EA4335",
+   "aliases": []
+  },
+  "googlecalendar": {
+   "title": "Google Calendar",
+   "hex": "4285F4",
+   "aliases": []
+  },
+  "googledocs": {
+   "title": "Google Docs",
+   "hex": "4285F4",
+   "aliases": []
+  },
+  "googledrive": {
+   "title": "Google Drive",
+   "hex": "4285F4",
+   "aliases": []
+  },
+  "googlegemini": {
+   "title": "Google Gemini",
+   "hex": "8E75B2",
+   "aliases": []
+  },
+  "googlemaps": {
+   "title": "Google Maps",
+   "hex": "4285F4",
+   "aliases": []
+  },
+  "googlemeet": {
+   "title": "Google Meet",
+   "hex": "00897B",
+   "aliases": []
+  },
+  "googleplay": {
+   "title": "Google Play",
+   "hex": "414141",
+   "aliases": []
+  },
+  "googlesheets": {
+   "title": "Google Sheets",
+   "hex": "34A853",
+   "aliases": []
+  },
+  "grafana": {
+   "title": "Grafana",
+   "hex": "F46800",
+   "aliases": []
+  },
+  "homeassistant": {
+   "title": "Home Assistant",
+   "hex": "18BCF2",
+   "aliases": []
+  },
+  "hubspot": {
+   "title": "HubSpot",
+   "hex": "FF7A59",
+   "aliases": []
+  },
+  "huggingface": {
+   "title": "Hugging Face",
+   "hex": "FFD21E",
+   "aliases": []
+  },
+  "indeed": {
+   "title": "Indeed",
+   "hex": "003A9B",
+   "aliases": []
+  },
+  "instagram": {
+   "title": "Instagram",
+   "hex": "FF0069",
+   "aliases": []
+  },
+  "intercom": {
+   "title": "Intercom",
+   "hex": "6AFDEF",
+   "aliases": []
+  },
+  "jira": {
+   "title": "Jira",
+   "hex": "0052CC",
+   "aliases": []
+  },
+  "linear": {
+   "title": "Linear",
+   "hex": "5E6AD2",
+   "aliases": []
+  },
+  "loom": {
+   "title": "Loom",
+   "hex": "625DF5",
+   "aliases": []
+  },
+  "mailchimp": {
+   "title": "MailChimp",
+   "hex": "FFE01B",
+   "aliases": []
+  },
+  "make": {
+   "title": "Make",
+   "hex": "6D00CC",
+   "aliases": []
+  },
+  "medium": {
+   "title": "Medium",
+   "hex": "000000",
+   "aliases": []
+  },
+  "miro": {
+   "title": "Miro",
+   "hex": "050038",
+   "aliases": []
+  },
+  "mixpanel": {
+   "title": "Mixpanel",
+   "hex": "7856FF",
+   "aliases": []
+  },
+  "mongodb": {
+   "title": "MongoDB",
+   "hex": "47A248",
+   "aliases": []
+  },
+  "n8n": {
+   "title": "n8n",
+   "hex": "EA4B71",
+   "aliases": []
+  },
+  "neon": {
+   "title": "Neon",
+   "hex": "34D59A",
+   "aliases": []
+  },
+  "netlify": {
+   "title": "Netlify",
+   "hex": "00C7B7",
+   "aliases": []
+  },
+  "notion": {
+   "title": "Notion",
+   "hex": "000000",
+   "aliases": []
+  },
+  "obsidian": {
+   "title": "Obsidian",
+   "hex": "7C3AED",
+   "aliases": []
+  },
+  "pagerduty": {
+   "title": "PagerDuty",
+   "hex": "06AC38",
+   "aliases": []
+  },
+  "paypal": {
+   "title": "PayPal",
+   "hex": "002991",
+   "aliases": []
+  },
+  "perplexity": {
+   "title": "Perplexity",
+   "hex": "1FB8CD",
+   "aliases": []
+  },
+  "pinterest": {
+   "title": "Pinterest",
+   "hex": "BD081C",
+   "aliases": []
+  },
+  "postgresql": {
+   "title": "PostgreSQL",
+   "hex": "4169E1",
+   "aliases": []
+  },
+  "posthog": {
+   "title": "PostHog",
+   "hex": "000000",
+   "aliases": []
+  },
+  "postman": {
+   "title": "Postman",
+   "hex": "FF6C37",
+   "aliases": []
+  },
+  "prisma": {
+   "title": "Prisma",
+   "hex": "2D3748",
+   "aliases": []
+  },
+  "protonmail": {
+   "title": "Proton Mail",
+   "hex": "6D4AFF",
+   "aliases": []
+  },
+  "reddit": {
+   "title": "Reddit",
+   "hex": "FF4500",
+   "aliases": []
+  },
+  "redis": {
+   "title": "Redis",
+   "hex": "FF4438",
+   "aliases": []
+  },
+  "resend": {
+   "title": "Resend",
+   "hex": "000000",
+   "aliases": []
+  },
+  "retool": {
+   "title": "Retool",
+   "hex": "3D3D3D",
+   "aliases": []
+  },
+  "revenuecat": {
+   "title": "RevenueCat",
+   "hex": "F2545B",
+   "aliases": []
+  },
+  "revolut": {
+   "title": "Revolut",
+   "hex": "191C1F",
+   "aliases": []
+  },
+  "sentry": {
+   "title": "Sentry",
+   "hex": "362D59",
+   "aliases": []
+  },
+  "shopify": {
+   "title": "Shopify",
+   "hex": "7AB55C",
+   "aliases": []
+  },
+  "sncf": {
+   "title": "SNCF",
+   "hex": "CA0939",
+   "aliases": []
+  },
+  "snowflake": {
+   "title": "Snowflake",
+   "hex": "29B5E8",
+   "aliases": []
+  },
+  "spotify": {
+   "title": "Spotify",
+   "hex": "1ED760",
+   "aliases": []
+  },
+  "square": {
+   "title": "Square",
+   "hex": "3E4348",
+   "aliases": []
+  },
+  "strapi": {
+   "title": "Strapi",
+   "hex": "4945FF",
+   "aliases": []
+  },
+  "strava": {
+   "title": "Strava",
+   "hex": "FC4C02",
+   "aliases": []
+  },
+  "stripe": {
+   "title": "Stripe",
+   "hex": "635BFF",
+   "aliases": []
+  },
+  "substack": {
+   "title": "Substack",
+   "hex": "FF6719",
+   "aliases": []
+  },
+  "supabase": {
+   "title": "Supabase",
+   "hex": "3FCF8E",
+   "aliases": []
+  },
+  "telegram": {
+   "title": "Telegram",
+   "hex": "26A5E4",
+   "aliases": []
+  },
+  "todoist": {
+   "title": "Todoist",
+   "hex": "E44332",
+   "aliases": []
+  },
+  "trello": {
+   "title": "Trello",
+   "hex": "0052CC",
+   "aliases": []
+  },
+  "uber": {
+   "title": "Uber",
+   "hex": "000000",
+   "aliases": []
+  },
+  "vercel": {
+   "title": "Vercel",
+   "hex": "000000",
+   "aliases": []
+  },
+  "webflow": {
+   "title": "Webflow",
+   "hex": "146EF5",
+   "aliases": []
+  },
+  "whatsapp": {
+   "title": "WhatsApp",
+   "hex": "25D366",
+   "aliases": []
+  },
+  "wise": {
+   "title": "Wise",
+   "hex": "9FE870",
+   "aliases": []
+  },
+  "wix": {
+   "title": "Wix",
+   "hex": "0C6EFC",
+   "aliases": []
+  },
+  "wordpress": {
+   "title": "WordPress",
+   "hex": "21759B",
+   "aliases": []
+  },
+  "x": {
+   "title": "X",
+   "hex": "000000",
+   "aliases": [
+    "Twitter"
+   ]
+  },
+  "youtube": {
+   "title": "YouTube",
+   "hex": "FF0000",
+   "aliases": []
+  },
+  "zapier": {
+   "title": "Zapier",
+   "hex": "FF4F00",
+   "aliases": []
+  },
+  "zendesk": {
+   "title": "Zendesk",
+   "hex": "03363D",
+   "aliases": []
+  },
+  "zoom": {
+   "title": "Zoom",
+   "hex": "0B5CFF",
+   "aliases": []
+  }
+ }
+}

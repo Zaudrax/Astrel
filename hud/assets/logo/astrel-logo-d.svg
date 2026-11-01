@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>Astrel (Lisible en petit)</title>
+<defs><linearGradient id="fond" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#090e1a"/><stop offset="1" stop-color="#04060c"/></linearGradient></defs>
+<rect x="30.72" y="30.72" width="962.56" height="962.56" rx="216.58" fill="url(#fond)"/>
+<rect x="36.86" y="36.86" width="950.27" height="950.27" rx="210.43" fill="none" stroke="#5aaaff" stroke-opacity="0.140" stroke-width="12.29"/>
+<circle cx="512" cy="512" r="302.08" fill="none" stroke="#3ad6ff" stroke-width="112.64"/>
+<circle cx="512" cy="512" r="133.12" fill="#3ad6ff"/>
+</svg>

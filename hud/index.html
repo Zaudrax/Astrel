@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="fr" data-theme="premium">
+<head>
+  <link rel="icon" type="image/png" href="assets/astrel-icon.png">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>Astrel</title>
+  <!-- 21/10 (plan P17) : mode et accent du thème posés avant la première peinture.
+       25/10 (plan P35) : Premium est le seul thème, d'où data-theme="premium" en dur ci-dessus. -->
+  <script src="/theme-boot.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- 20/10 : langue de l'interface (hud/src/i18n.js). Le français reste écrit ici ; les
+       attributs data-i18n (texte), data-i18n-title, data-i18n-aria et data-i18n-placeholder
+       donnent la clé de hud/src/langues.js qui le remplace en anglais. -->
+  <!-- 23/10 (plan P28, demande de l'utilisateur) : plus de graphe 3D en fond (#graph), ni Recadrer ni
+       Orbite (#graph-tools) -->
+  <div class="vignette"></div>
+
+  <!-- Tête : barre du haut + bandeaux (Total, mission). 15/10 (demande : « tout est
+       collé ») : un seul bloc qui RÉSERVE sa hauteur (--head-h, mesurée dans main.js) ;
+       panneaux, fil et notifications se placent dessous, même barre sur deux lignes.
+       19/10 : seul le bandeau de mission compte encore dans cette hauteur (#alert-line flotte). -->
+  <div id="head">
+  <header id="topbar">
+    <!-- 19/10 (demande : « la barre du haut est chargée ») : la pastille du logo EST l'état
+         de la connexion (#conn : verte en ligne, rouge hors ligne, texte au survol).
+         23/10 (plan P31, choix de l'utilisateur) : la pastille devient l'étoile à 4 branches d'Astrel
+         (currentColor : verte en ligne, rouge atténuée hors ligne, sans lueur) ; plus de « OS » ;
+         nom affiché configurable (réglage assistant_name, hud/src/i18n.js), « Astrel » par défaut. -->
+    <div class="brand"><span id="conn" class="brand-mark conn off" role="status" aria-label="Connexion au cœur : hors ligne" title="Connexion au cœur d'Astrel : hors ligne" data-i18n-aria="conn.aria_off" data-i18n-title="conn.title_off"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 1.5 C12 9.9 14.1 12 22.5 12 C14.1 12 12 14.1 12 22.5 C12 14.1 9.9 12 1.5 12 C9.9 12 12 9.9 12 1.5 Z"/></svg></span><span class="brand-name">Astrel</span></div>
+    <div class="top-actions">
+      <!-- 15/10 : boutons rangés en groupes (modes / actions / outils), chaque groupe
+           passe à la ligne d'un bloc si la fenêtre est étroite -->
+      <div class="tgroup modes" role="group" aria-label="Modes" data-i18n-aria="top.modes">
+        <!-- 14/10 : interrupteurs à état VISIBLE (OUI vert / NON gris), demande de l'utilisateur.
+             28/10 (T10, décision de l'utilisateur) : « Lire aussitôt », « Mission », « Simple » et « Éteindre »
+             retirés de la barre ; le réglage `affichage` reste dans Réglages › Apparence, le bandeau de
+             mission (pause, arrêt) et Stop tout restent. -->
+        <button class="chip toggle" id="autonomy-chip" role="switch" aria-checked="true" title="Autonome : Astrel ne demande que pour l'irréversible. Prudent : il demande pour tout ce qui sort de l'ordinaire." data-i18n-title="top.autonomy_title"><span class="sw"></span><i data-icon="zap"></i><span data-i18n="top.autonomy">Autonome</span> <b class="val" data-i18n="common.yes_caps">OUI</b></button>
+        <!-- 15/10 : Autonome TOTAL, aucune confirmation (sauf le garde-fou) ; en mémoire seulement -->
+        <!-- 19/10 : libellé « Sans confirmation » (était « Total »), même id, même logique -->
+        <button class="chip toggle total" id="total-chip" role="switch" aria-checked="false" title="Sans confirmation : NON. Cliquer pour qu'Astrel ne te demande plus rien du tout (sauf les actions sur le garde-fou). Retombe à NON à chaque relance d'Astrel." data-i18n-title="top.total_title_off"><span class="sw"></span><i data-icon="unlock"></i><span data-i18n="top.total">Sans confirmation</span> <b class="val" data-i18n="common.no_caps">NON</b></button>
+        <!-- 18/10 (plan P7) : garde-fou levé ; visible seulement tant qu'il l'est, clic = rétablir -->
+        <button class="chip lift" id="lift-chip" hidden title="Garde-fou levé : Claude modifie sans question le code d'Astrel. Cliquer pour le rétablir." data-i18n-title="top.lift_title"><i data-icon="lock"></i><span data-i18n="top.lift">Garde-fou levé</span></button>
+      </div>
+      <!-- Guide (créé par guide.js) et Réglages en icône seule -->
+      <div class="tgroup" role="group" aria-label="Outils" data-i18n-aria="top.tools">
+        <!-- 15/10 : page « Plans » (mode plan) ; pastille = plans à relire -->
+        <button class="chip" id="plans-chip" title="Plans de chantier" data-i18n-title="plans.chip_title"><i data-icon="plans"></i><span data-i18n="plans.chip">Plans</span><b id="plans-badge" class="chip-count hidden" aria-label="plans à relire" data-i18n-aria="plans.badge">0</b></button>
+        <!-- 26/10 (plan P38 lot 2) : todo par projet, 4 colonnes (hud/src/todo.js) ; pastille = tâches qui attendent l'utilisateur -->
+        <button class="chip" id="todo-chip" title="Tâches par projet : à planifier, à lancer, en cours, fini" data-i18n-title="todo.chip_title"><i data-icon="layers"></i><span data-i18n="todo.chip">Tâches</span><b id="todo-badge" class="chip-count hidden" aria-label="tâches qui t'attendent" data-i18n-aria="todo.badge">0</b></button>
+        <!-- plan P3 (17/10) : journal d'audit unifié (confirmations, refus, WhatsApp, plans, Total, agents) -->
+        <button class="chip" id="audit-chip" title="Journal : qui a autorisé quoi (confirmations, refus, envois WhatsApp, plans, Sans confirmation, agents)" data-i18n-title="audit.chip_title"><i data-icon="activity"></i><span data-i18n="audit.chip">Journal</span></button>
+        <button class="chip icon-only" id="settings-chip" title="Réglages d'Astrel" aria-label="Réglages" data-i18n-title="settings.title" data-i18n-aria="settings.chip"><i data-icon="settings"></i></button>
+      </div>
+      <div class="tgroup" role="group" aria-label="Actions" data-i18n-aria="top.actions">
+        <button class="chip estop" id="estop-chip" title="Arrêt d'urgence : coupe la voix, interrompt le travail en cours et arrête toutes les tâches de fond ; plus de réflexe ni de nouvel agent jusqu'à « Reprendre ». Tu peux toujours parler à Astrel." data-i18n-title="estop.title"><i data-icon="no-entry"></i><span data-i18n="estop.stop_all">Stop tout</span></button>
+      </div>
+    </div>
+  </header>
+  <!-- 19/10 (demande : les deux bandeaux s'empilaient et poussaient les panneaux vers le bas) :
+       Total et levée sur UNE ligne fine, en surimpression (position fixe, hors de la hauteur
+       mesurée de la tête) : rien ne bouge quand elle paraît. Rouge = Total, orange = levée. -->
+  <div id="alert-line" hidden>
+    <!-- 15/10 : Autonome TOTAL actif (ne prend jamais le focus) -->
+    <div id="total-banner" class="alert-seg" hidden title="Sans confirmation : plus aucune question, sauf le garde-fou" data-i18n-title="total.banner_title"><b><i data-icon="alert" class="lead"></i><span class="seg-full" data-i18n="total.banner">AUTONOME TOTAL</span><span class="seg-simple" data-i18n="top.total">Sans confirmation</span></b><span id="total-since" class="alert-since"></span>
+      <button type="button" id="total-off" tabindex="-1" data-i18n="total.off">Couper</button></div>
+    <!-- 18/10 (plan P7) : garde-fou levé (Réglages › Garde-fou) ; fichiers modifiés dans un dépliant -->
+    <div id="lift-banner" class="alert-seg" hidden title="Garde-fou levé : Claude modifie sans question le code du HUD, de la bulle, de WhatsApp et du garde-fou" data-i18n-title="lift.banner_title"><b><i data-icon="alert" class="lead"></i><span class="seg-full" data-i18n="lift.banner">GARDE-FOU LEVÉ</span><span class="seg-simple" data-i18n="top.lift">Garde-fou levé</span></b><span id="lift-since" class="alert-since"></span>
+      <details id="lift-files" hidden><summary></summary><ul></ul></details>
+      <button type="button" id="lift-off" tabindex="-1" data-i18n="lift.restore">Rétablir</button></div>
+    <!-- 21/10 (plan P20) : mémoire du PC presque pleine (blocage) ; « Voir » = classement, rien n'est fermé -->
+    <div id="memory-banner" class="alert-seg" hidden title="Mémoire du PC presque pleine : pas de nouvel agent ni de navigateur de test tant qu'elle ne redescend pas. Rien n'est fermé." data-i18n-title="memory.banner_title"><b><i data-icon="gauge" class="lead"></i><span class="seg-full" data-i18n="memory.banner">MÉMOIRE PRESQUE PLEINE</span><span class="seg-simple" data-i18n="memory.banner_simple">Mémoire presque pleine</span></b><span id="memory-detail" class="alert-since"></span>
+      <button type="button" id="memory-show" tabindex="-1" title="Les plus gros consommateurs de mémoire" data-i18n="memory.show" data-i18n-title="memory.show_title">Voir</button></div>
+  </div>
+  <div id="lift-frame" hidden></div>
+  <!-- 15/10 : bandeau tant qu'une mission tourne (ou attend en pause) -->
+  <div id="mission-banner" hidden><b id="mission-banner-head"><i data-icon="target" class="lead"></i><span data-i18n="mission.banner_running">MISSION EN COURS</span></b><span id="mission-banner-info"></span>
+    <button type="button" id="mission-banner-pause" tabindex="-1" data-i18n="mission.pause">Pause</button>
+    <button type="button" id="mission-banner-stop" tabindex="-1" data-i18n="mission.stop">Arrêter</button></div>
+  </div>
+
+  <!-- 23/10 (demande de l'utilisateur) : plus de panneau gauche (Cerveau : recherche, Inspecteur, Plus
+       sollicités, Forces) : la place va à la conversation ; la page « Tout ce qu'Astrel sait faire »
+       (bouton du Guide) remplace l'Inspecteur. -->
+
+  <!-- Panneau droit : présence -->
+  <aside id="right" class="panel">
+    <div id="orb-wrap">
+      <canvas id="orb-premium" aria-hidden="true"></canvas>
+      <div id="state-label">…</div>
+      <div id="state-detail" class="muted"></div>
+      <div id="presence" class="presence hidden"></div>
+      <div id="paused-note" class="paused-note hidden" title="Cliquer pour reprendre" data-i18n-title="pause.note_title"><i data-icon="pause" class="lead"></i><span data-i18n="pause.note">Voix en pause — je travaille sans parler</span></div>
+      <div id="usage-note" class="usage-note hidden"></div>
+    </div>
+    <div class="badges">
+      <span id="model-badge" class="badge" title="Changer de modèle" data-i18n-title="model.change"><i data-icon="brain" class="lead"></i>—</span>
+      <!-- 23/10 (plan P28, demande de l'utilisateur) : effort de réflexion du cerveau, à côté du modèle -->
+      <span id="effort-badge" class="badge" title="Changer l'effort de réflexion" data-i18n-title="effort.change"><i data-icon="gauge" class="lead"></i>—</span>
+      <span id="voice-badge" class="badge"><i data-icon="waves" class="lead"></i>—</span>
+      <span id="mic-badge" class="badge" title="Changer de micro" data-i18n-title="mic.change"><i data-icon="mic" class="lead"></i>—</span>
+    </div>
+
+    <div id="mission-title" class="panel-title hidden"><span data-i18n="mission.chip">Mission</span> <button id="mission-hide" class="close hidden" title="Masquer (mission finie)" aria-label="Masquer" data-i18n-title="mission.hide_title" data-i18n-aria="mission.hide"><i data-icon="x"></i></button></div>
+    <div id="mission" class="mission hidden"></div>
+
+    <div id="tasks-title" class="panel-title hidden"><span data-i18n="tasks.title">En cours</span> <span id="tasks-count"></span></div>
+    <div id="tasks" class="tasks hidden"></div>
+
+    <div id="grants-title" class="panel-title hidden"><span data-i18n="grants.title">Autorisations 30 min</span> <button id="grants-clear" class="close" title="Tout retirer" aria-label="Tout retirer" data-i18n-title="grants.clear" data-i18n-aria="grants.clear"><i data-icon="x"></i></button></div>
+    <div id="grants" class="grants hidden"></div>
+
+    <!-- 26/10 (plan P33 lot 3) : courrier entre agents (évènement `courrier`), Avancé seulement, caché
+         tant qu'aucune mission n'a de message depuis 7 jours ; clic : derniers messages, en texte -->
+    <div id="courrier-title" class="panel-title hidden"><span data-i18n="courrier.title">Courrier des agents</span></div>
+    <div id="courrier" class="courrier hidden"></div>
+
+    <!-- 26/10 (plan P38 lot 2) : aperçu de la todo, une ligne par projet qui a des tâches ouvertes
+         (« Boutique · 2 à lancer · 1 en cours ») ; clic : la vue Tâches filtrée. Avancé seulement. -->
+    <div id="todo-title" class="panel-title hidden"><span data-i18n="todo.chip">Tâches</span></div>
+    <div id="todo-apercu" class="todo-apercu hidden"></div>
+
+    <!-- 23/10 (demande de l'utilisateur) : seul WATCH (« Vue de l'écran ») ici ; les autres capteurs dans
+         Réglages › Capteurs et à la voix (main.js, SENSORS_SHOWN) -->
+    <div class="panel-title" data-i18n="right.sensors">Capteurs</div>
+    <div id="sensors" class="sensors"></div>
+
+    <!-- 22/10 : ↻ relève le quota tout de suite (commande quota_refresh, /usage du CLI, sans jeton) -->
+    <div id="quota-title" class="panel-title"><span data-i18n="right.subscription">Abonnement</span> <button id="quota-refresh" class="close" type="button" title="Actualiser l'utilisation de l'abonnement (compte aussi Claude Code utilisé ailleurs)" aria-label="Actualiser l'utilisation" data-i18n-title="quota.refresh_title" data-i18n-aria="quota.refresh"><i data-icon="refresh"></i></button></div>
+    <div id="quota" class="quota muted" data-i18n="quota.waiting">en attente du premier échange…</div>
+    <div id="context" class="quota small muted" title="Taille du contexte du cerveau : ce que chaque tour relit. Au-delà du seuil, et quand tout est calme, Astrel sauvegarde le fil puis repart d'une session neuve." data-i18n-title="context.title" data-i18n="context.none">Contexte : —</div>
+    <!-- 21/10 (plan P20) : mémoire du PC, cachée tant que le cœur n'a rien mesuré -->
+    <div id="memory" class="quota small muted hidden" role="button" tabindex="0" title="Mémoire du PC : RAM utilisée sur le total, part du swap utilisée. Clic : les plus gros consommateurs. Astrel ne ferme rien." data-i18n-title="memory.title"></div>
+
+  </aside>
+
+  <!-- Conversation -->
+  <section id="dialog">
+    <div id="chat-grip" title="Tirer pour agrandir ou réduire la conversation (double-clic : taille par défaut)" data-i18n-title="chat.grip"></div>
+    <nav id="channels" class="channels hidden" aria-label="Canaux" data-i18n-aria="channels.aria"></nav>
+    <div id="transcript"></div>
+    <button id="jump-btn" class="round hidden" title="Aller en bas (derniers messages)" aria-label="Aller en bas" data-i18n-title="chat.jump_title" data-i18n-aria="chat.jump"><i data-icon="arrow-down"></i></button>
+    <!-- Confirmation : une carte au-dessus de la barre, qui NE PREND PAS le clavier (14/10) -->
+    <div id="confirm" class="hidden" role="alertdialog" aria-live="assertive">
+      <div class="confirm-card">
+        <div class="confirm-head"><i data-icon="alert" class="lead"></i><span data-i18n="confirm.head">Confirmation requise</span></div>
+        <div id="confirm-typing" class="muted small hidden" data-i18n="confirm.typing">Tu tapes : la barre garde ton texte. Réponds d'un clic quand tu veux.</div>
+        <div id="confirm-question"></div>
+        <code id="confirm-cmd"></code>
+        <div class="confirm-actions">
+          <button id="confirm-no" class="btn danger" tabindex="-1"><span data-i18n="confirm.no">Non</span> <kbd data-i18n="key.esc">Échap</kbd></button>
+          <button id="confirm-always" class="btn ok ghost" tabindex="-1" title="Ne plus demander pour ce type d'action pendant 30 minutes" data-i18n-title="confirm.always_title"><span data-i18n="confirm.always">Oui pour 30 min</span> <kbd data-i18n="key.shift_enter">Maj+Entrée</kbd></button>
+          <button id="confirm-yes" class="btn ok" tabindex="-1"><span data-i18n="confirm.yes">Oui</span> <kbd data-i18n="key.enter">Entrée</kbd></button>
+        </div>
+        <div class="muted small" data-i18n="confirm.voice">Tu peux aussi répondre à voix haute (« oui », « non », « oui pour 30 minutes »).</div>
+      </div>
+    </div>
+    <div id="dictation" class="dictation hidden">
+      <span class="dict-head"><i data-icon="pen" class="lead"></i><span data-i18n="dictation.head">Dictée</span></span><span id="dictation-text" class="dict-text"></span>
+      <button id="dictation-copy" class="mini" title="Recopier tout le texte dicté dans le presse-papiers" data-i18n-title="dictation.copy_title" data-i18n="common.copy">Copier</button>
+      <button id="dictation-clear" class="mini" title="Repartir d'un texte vide" data-i18n-title="dictation.clear_title" data-i18n="dictation.clear">Effacer</button>
+    </div>
+    <div id="attachments" class="attachments hidden"></div>
+    <!-- 19/10 (l'utilisateur, « comme ChatGPT ») : une carte sur deux étages. En haut le texte,
+         pleine largeur, qui grandit vers le haut puis défile ; en bas une rangée de boutons
+         de hauteur fixe, qui ne bouge pas quand le texte grandit. -->
+    <div id="composer">
+      <!-- 15/10 : zone multiligne, Entrée envoie, Maj+Entrée passe à la ligne -->
+      <textarea id="ask" rows="1" placeholder="Demande à Astrel…  (Maj+Entrée : à la ligne)" autocomplete="off" data-i18n-placeholder="ask.placeholder"></textarea>
+      <div class="composer-row">
+        <div class="composer-tools">
+          <!-- 16/10 : trois coupures, comme les « muet » d'un appel. Micro seul,
+               voix seule (= mode Silencieux : j'écoute, je réponds à l'écran), ou les deux. -->
+          <button id="mic-btn" class="round" aria-pressed="false" aria-label="Couper le micro" title="Micro actif : cliquer pour le couper (l'écoute en cours s'arrête, rien n'est envoyé)" data-i18n-aria="mic.cut" data-i18n-title="mic.on_title"><i data-icon="mic"></i></button>
+          <button id="voice-btn" class="round" aria-pressed="false" aria-label="Couper la voix" title="Voix active : cliquer pour la couper (je t'écoute toujours et je réponds à l'écran)" data-i18n-aria="voice.cut" data-i18n-title="voice.on_title"><i data-icon="volume"></i></button>
+          <button id="mute-all-btn" class="round" aria-pressed="false" aria-label="Couper le micro et la voix" title="Couper le micro ET la voix : je ne t'écoute plus et je ne parle plus (le clavier marche toujours)" data-i18n-aria="muteall.cut" data-i18n-title="muteall.on_title"><i data-icon="mute-all"></i></button>
+          <button id="wake-btn" class="round" title="Écouter maintenant (pendant l'écoute : la fermer)" aria-label="Écouter maintenant" data-i18n-title="wake.title" data-i18n-aria="wake.aria"><i data-icon="listen"></i></button>
+          <div id="usage" class="usage" role="radiogroup" aria-label="Mode d'usage" title="Mode d'usage (clic droit : durée d'écoute après ma réponse)" data-i18n-aria="usage.aria" data-i18n-title="usage.title">
+            <button data-mode="conversation" role="radio" title="Conversation : je t'écoute et je te réponds à voix haute" data-i18n-title="usage.conversation_title"><i data-icon="message"></i><span data-i18n="usage.conversation">Conversation</span></button>
+            <button data-mode="silencieux" role="radio" title="Silencieux : je t'écoute, je réponds à l'écran, sans rien dire (« mode silencieux »)" data-i18n-title="usage.silent_title"><i data-icon="volume-off"></i><span data-i18n="usage.silent">Silencieux</span></button>
+            <button data-mode="dictee" role="radio" title="Dictée : je copie ce que tu dis dans le presse-papiers, rien ne part à Claude (« fin de dictée » pour sortir)" data-i18n-title="usage.dictation_title"><i data-icon="pen"></i><span data-i18n="usage.dictation">Dictée</span></button>
+          </div>
+          <button id="attach-btn" class="round" title="Joindre un fichier ou une image (ou Ctrl+V, ou glisser-déposer)" aria-label="Joindre un fichier" data-i18n-title="attach.title" data-i18n-aria="attach.aria"><i data-icon="clip"></i></button>
+          <input id="attach-input" type="file" multiple hidden>
+          <!-- 28/10 (plan P40 lot A5) : panneau « Images » sous la barre (hud/src/images.js), zéro jeton -->
+          <button id="images-btn" class="round" aria-expanded="false" aria-controls="image-panel" title="Images IA : prompt, moteur, modèle, pièces jointes (sans passer par Claude)" aria-label="Images IA" data-i18n-title="images.btn_title" data-i18n-aria="images.title"><i data-icon="image"></i></button>
+        </div>
+        <div class="composer-actions">
+          <button id="pause-btn" class="round" title="Mettre la voix en pause (Ctrl+Alt+P) : le travail continue, je reprendrai où j'en étais" aria-label="Mettre la voix en pause" data-i18n-title="pause.pause_title" data-i18n-aria="pause.pause"><i data-icon="pause"></i></button>
+          <button id="stop-btn" class="round" title="Arrêter : coupe la voix et interrompt la réponse en cours (les tâches de fond continuent : « Stop tout » pour elles)" aria-label="Arrêter" data-i18n-title="stop.title" data-i18n-aria="stop.aria"><i data-icon="stop"></i></button>
+          <button id="reset-btn" class="round" title="Nouvelle conversation" aria-label="Nouvelle conversation" data-i18n-title="reset.title" data-i18n-aria="reset.title"><i data-icon="new-chat"></i></button>
+          <button id="log-btn" class="round" title="Activité" aria-label="Activité" data-i18n-title="activity.title" data-i18n-aria="activity.title"><i data-icon="activity"></i></button>
+        </div>
+      </div>
+    </div>
+    <!-- 28/10 (plan P40 lot A5) : rempli par hud/src/images.js -->
+    <div id="image-panel" class="image-panel hidden" role="region" aria-label="Images IA" data-i18n-aria="images.title"></div>
+  </section>
+
+  <!-- Activité -->
+  <aside id="activity" class="panel hidden">
+    <div class="panel-title"><span data-i18n="activity.title">Activité</span> <button class="close" data-close="activity" title="Fermer" aria-label="Fermer" data-i18n-title="common.close" data-i18n-aria="common.close"><i data-icon="x"></i></button></div>
+    <div id="activity-list"></div>
+  </aside>
+
+  <div id="toasts"></div>
+  <!-- 15/10 : cadre rouge tant que l'Autonome TOTAL est actif (le bandeau est dans la tête) -->
+  <div id="total-frame" hidden></div>
+
+  <script type="module" src="/dist/app.js"></script>
+</body>
+</html>
