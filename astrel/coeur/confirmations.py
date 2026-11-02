@@ -12,6 +12,7 @@ import time
 import uuid
 from typing import Any, Callable
 
+from .. import langue  # 02/11 : oui anglais en conversation anglaise
 from .. import audit
 from .. import config
 from .. import guard
@@ -513,7 +514,10 @@ class ConfirmationsCoeur:
                                                                or self._off))
             if self.speaker.paused or self._muted_since(gen):
                 return  # micro coupé pendant l'écoute de la réponse : pas de « oui » entendu
-            decision = guard.decision_from_speech(heard) if heard else None
+            # 02/11 : oui anglais seulement en conversation anglaise (refus des deux langues toujours)
+            decision = guard.decision_from_speech(heard, english=langue.anglais()) if heard else None
+            if decision is not None and langue.question(heard):
+                decision = None  # 02/11 : une question n'est pas une réponse (« okay, what's that file? ») : reposée
             if decision is not None and box["allow"] is None:
                 box.update(allow=decision, by="voix", always=decision and _wants_30(heard))
                 answered.set()
@@ -528,9 +532,11 @@ class ConfirmationsCoeur:
         (après les essais à l'oral). Phrase courte seulement : une vraie demande
         à Claude ne doit pas être prise pour une réponse."""
         pending = self._pending_confirm
-        if pending is None or len(text.split()) > 8:
+        # 02/11 (contre-relecture) : 4 mots au plus (8 avant : « okay, what time is it » validait) et jamais une
+        # question ; sinon la phrase suit son cours normal (Claude).
+        if pending is None or len(text.split()) > 4 or langue.question(text):
             return False
-        decision = guard.decision_from_speech(text)
+        decision = guard.decision_from_speech(text, english=langue.anglais())
         if decision is None or pending["box"]["allow"] is not None:
             return False
         pending["box"].update(allow=decision, by="oral", always=decision and _wants_30(text))

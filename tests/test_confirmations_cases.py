@@ -366,13 +366,13 @@ def test_changer_refuse_les_valeurs_invalides():
 
 
 def test_journal_en_ajout_seul_qui_quand_avant_apres():
-    cases.changer({L.GIT: False, L.ENVOIS: False}, "L'utilisateur (HUD)")
-    cases.changer({L.GIT: True}, "L'utilisateur (HUD)")
-    cases.changer({L.GIT: True}, "L'utilisateur (HUD)")  # rien ne change : rien n'est écrit
+    cases.changer({L.GIT: False, L.ENVOIS: False}, "l'utilisateur (HUD)")
+    cases.changer({L.GIT: True}, "l'utilisateur (HUD)")
+    cases.changer({L.GIT: True}, "l'utilisateur (HUD)")  # rien ne change : rien n'est écrit
     lines = guard.CONFIRM_CASES_LOG.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 3
     quand, qui, case_id, change = lines[0].split("\t")
-    assert time.strptime(quand, "%Y-%m-%d %H:%M:%S") and qui == "L'utilisateur (HUD)"
+    assert time.strptime(quand, "%Y-%m-%d %H:%M:%S") and qui == "l'utilisateur (HUD)"
     assert {lines[0].split("\t")[2], lines[1].split("\t")[2]} == {L.GIT, L.ENVOIS}
     assert lines[2].endswith(f"{L.GIT}\tdécochée -> cochée")
 
@@ -459,7 +459,7 @@ def test_carte_affichee_passe_quand_sa_case_est_decochee(monkeypatch, tmp_path):
         time.sleep(0.01)
     assert j._pending_confirm and j._pending_confirm["cats"] == [L.GIT]
     j._non_claude = lambda: False
-    assert j._cases_change({L.GIT: False}, "L'utilisateur (HUD)")["ok"]
+    assert j._cases_change({L.GIT: False}, "l'utilisateur (HUD)")["ok"]
     t.join(3)
     assert result == [True]
 

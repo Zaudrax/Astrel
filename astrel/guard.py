@@ -5660,13 +5660,55 @@ ALWAYS_WORDS = ("oui à tout", "oui a tout", "oui pour tout", "à chaque fois", 
                 "pour 30", "pour trente", "30 min", "trente min", "demi-heure", "demi heure")
 
 
-def decision_from_speech(text: str) -> bool | None:
-    """Interprète une réponse vocale. None = indécidable (et donc refus, en fin de compte)."""
-    t = " " + re.sub(r"[^\wàâçéèêëîïôûùüÿœ' -]", " ", text.lower()) + " "
-    for w in config.NO_WORDS:
+# 02/11 (relecture de la conversation anglaise, accord EXPLICITE de l'utilisateur, durcissement seulement) : les mots
+# des réponses vivent ICI, dans le fichier protégé (avant : `config.YES_WORDS`/`NO_WORDS`, modifiables sans carte).
+# - OUI : français partout ; anglais SEULEMENT si l'appelant le dit (conversation en anglais, `english=True`) ;
+#   WhatsApp et le clavier n'en passent pas : seuls les oui français. Rien qui puisse cacher un refus (« do it »,
+#   « go for it », « approve », « sure ») ; « yes » n'est plus un oui en français.
+# - REFUS : les deux langues, partout, lus AVANT les oui ; toute négation (« pas », « jamais », n't…) l'emporte.
+# - INDÉCIS (« je ne sais pas », « not sure ») : None, la question est reposée ; lus avant les refus.
+# - « à chaque fois », « toujours » ne valent plus un oui à eux seuls (« demande-moi à chaque fois ») ; ils gardent
+#   leur sens « 30 min » derrière un oui (`wants_always`).
+# - L'apostrophe typographique (’ ‘ ʼ, clavier du téléphone, transcription) est ramenée à ' AVANT tout test.
+YES_WORDS_FR = ("oui", "ouais", "vas-y", "vas y", "d'accord", "confirme", "ok", "valide")
+YES_WORDS_EN = ("yes", "yeah", "yep", "okay", "go ahead", "confirmed")
+NO_WORDS = (
+    "non", "annule", "stop", "surtout pas", "laisse tomber", "pas", "jamais", "rien", "attends", "attendez",
+    "plus tard",
+    "no", "nope", "cancel", "not", "never", "never mind", "no way", "stop it", "cannot", "wait", "hold on",
+    "hang on", "later", "don't", "won't", "wouldn't", "shouldn't", "didn't", "can't", "doesn't", "isn't",
+    "aren't", "haven't", "mustn't",
+)
+UNDECIDED_WORDS = ("je ne sais pas", "je sais pas", "sais pas", "i don't know", "i do not know", "dunno",
+                   "not sure")
+_ALWAYS_ALONE = ("à chaque fois", "a chaque fois", "toujours")
+# Tournures NEUTRES (accord du 02/11) : retirées AVANT de lire les refus, sinon « oui, pas de souci »
+# était un refus à cause de « pas ». Elles ne valent jamais un oui : il faut un vrai mot de oui à côté
+# (« pas de souci » seul → None) ; une négation ailleurs dans la phrase refuse toujours.
+NEUTRAL_PHRASES = ("pas de soucis", "pas de souci", "pas de problèmes", "pas de problème", "pas de probleme",
+                   "ça ne me dérange pas", "ca ne me derange pas", "ça me va", "ca me va", "pourquoi pas",
+                   "no problem", "no worries", "not a problem")
+_APOSTROPHES = str.maketrans({"’": "'", "‘": "'", "ʼ": "'"})
+_NEGATION_NT = re.compile(r"\w+n't(?!\w)")  # 02/11 : règle générique, en plus de la liste
+
+
+def decision_from_speech(text: str, english: bool = False) -> bool | None:
+    """Interprète une réponse vocale. None = indécidable (et donc refus, en fin de compte).
+    `english` : la conversation est en anglais, les oui anglais comptent aussi (refus : toujours les deux)."""
+    low = str(text or "").lower().translate(_APOSTROPHES)
+    t = " " + " ".join(re.sub(r"[^\wàâçéèêëîïôûùüÿœ' -]", " ", low).split()) + " "
+    for w in NEUTRAL_PHRASES:
+        t = t.replace(f" {w} ", " ")  # 02/11 : accord poli, ni oui ni refus ; un vrai oui reste exigé à côté
+    for w in UNDECIDED_WORDS:
+        if f" {w} " in t:
+            return None
+    for w in NO_WORDS:
         if f" {w} " in t:
             return False
-    for w in config.YES_WORDS + ALWAYS_WORDS:
+    if _NEGATION_NT.search(t):
+        return False  # 02/11 : toute négation anglaise en n't (« couldn't », « wasn't », « ain't »…)
+    yes = YES_WORDS_FR + (YES_WORDS_EN if english else ()) + tuple(w for w in ALWAYS_WORDS if w not in _ALWAYS_ALONE)
+    for w in yes:
         if f" {w} " in t:
             return True
     return None
