@@ -253,6 +253,15 @@ EDGE_VOICES = {
     "fr-FR-RemyMultilingualNeural": "Rémy — masculine, très naturelle",
     "fr-FR-VivienneMultilingualNeural": "Vivienne — féminine, très naturelle",
     "fr-FR-DeniseNeural": "Denise — féminine",
+    # 02/11 (conversation anglaise) : voix anglaises (noms vérifiés avec edge-tts 7.3.1 --list-voices) ;
+    # la liste des Réglages ne montre que celles de la langue de la conversation.
+    "en-US-AndrewNeural": "Andrew — masculine, américaine, posée",
+    "en-US-AndrewMultilingualNeural": "Andrew multilingue — masculine, américaine",
+    "en-US-BrianNeural": "Brian — masculine, américaine, détendue",
+    "en-US-AvaMultilingualNeural": "Ava multilingue — féminine, américaine",
+    "en-US-EmmaNeural": "Emma — féminine, américaine, enjouée",
+    "en-GB-RyanNeural": "Ryan — masculine, britannique",
+    "en-GB-SoniaNeural": "Sonia — féminine, britannique",
 }
 
 

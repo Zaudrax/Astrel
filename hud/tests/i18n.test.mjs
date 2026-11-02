@@ -48,7 +48,7 @@ test("textes du cœur : clé exacte, modèle à parties variables, morceaux, uni
     assert.equal(tx("Garde-fou levé."), "Guardrail lifted.");
     assert.equal(tx("Voix Edge revenue."), "Edge voice is back.");
     assert.equal(tx("Attention, une commande administrateur et une publication git (push). Je continue ?"),
-      "Heads up: an admin command and a git publish (push). Shall I go ahead?");
+      "Heads up: an admin command and a git publish (push). Should I continue?");
     assert.equal(tx("NVIDIA RTX, 8,0 Go de mémoire graphique"), "NVIDIA RTX, 8.0 GB of graphics memory");
     assert.equal(tx("Texte de Claude, inconnu du catalogue."), "Texte de Claude, inconnu du catalogue.");
     // « avant de » ne devient pas « avant of » : un modèle sans début fixe doit avoir des mots fixes

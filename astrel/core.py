@@ -31,6 +31,7 @@ from . import attachments, audio, config, guard, boucles, mcp_config, relief, re
 from . import audit, detail_agent, equipe, fournisseurs, ipc, levee, memoire
 from . import courrier
 from . import gel
+from . import langue  # 02/11 : langue de la conversation (fr, en)
 from .attente import attente
 from . import images_ia
 from . import videos_ia
@@ -173,8 +174,14 @@ def mode_phrase(text: str) -> str:
 
     names = {k for k in (eveil.plie(n) for n in eveil.noms_actuels()) if k and " " not in k}
     t = " ".join("astrel" if eveil.plie(w) in names else w for w in t.split())
-    t = _MODE_TAIL.sub("", _MODE_FILLER.sub("", t)).strip()
-    for pattern, mode in _MODE_PHRASES:
+    if langue.anglais():
+        # 02/11 : conversation en anglais, « switch to silent mode », « end dictation ».
+        t = langue.MODE_TAIL_EN.sub("", langue.MODE_FILLER_EN.sub("", t)).strip()
+        phrases = langue.MODE_PHRASES_EN
+    else:
+        t = _MODE_TAIL.sub("", _MODE_FILLER.sub("", t)).strip()
+        phrases = _MODE_PHRASES
+    for pattern, mode in phrases:
         if pattern.fullmatch(t):
             return mode
     return ""
@@ -204,23 +211,38 @@ _DICTATION_WORDS = (
 )
 
 
-def dictation_clean(text: str) -> str:
-    """Texte dicté prêt à coller : ponctuation dite remplacée, blancs nettoyés."""
+def dictation_clean(text: str, lang: str | None = None) -> str:
+    """Texte dicté prêt à coller : ponctuation dite remplacée, blancs nettoyés. 02/11 : en anglais,
+    « comma », « new line »…"""
     t = " " + str(text or "").strip() + " "
-    for spoken, sign in _DICTATION_WORDS:
-        t = re.sub(r"[\s,.]*\b" + spoken + r"\b[\s,.]*", sign + " ", t, flags=re.IGNORECASE)
+    words = langue.DICTATION_WORDS_EN if (lang or langue.conversation()) == "en" else _DICTATION_WORDS
+    for spoken, sign in words:
+        t = re.sub(r"[\s,.]*\b(?:" + spoken + r")\b[\s,.]*", sign + " ", t, flags=re.IGNORECASE)
     t = re.sub(r"[ \t]+([,;:.!?…»])", r"\1", t)
     t = re.sub(r"([,;:!?…])[,.]+", r"\1", t)
     t = re.sub(r"[ \t]*\n[ \t]*", "\n", t)
     return re.sub(r"[ \t]{2,}", " ", t).strip(" \t")
 
 
+# Relecture du 02/11 : « à chaque fois » et « toujours » (dans `guard.ALWAYS_WORDS`) ne valent 30 min que SEULS
+# après le oui : « oui, mais demande-moi à chaque fois » demande l'inverse. Le reste de la liste est lu tel quel.
+_SEULS_FR = ("à chaque fois", "a chaque fois", "toujours")
+_WANTS_30_SEUL_FR = re.compile(r"(?:(?:oui|ouais|ok|d'accord|vas-y|vas y)\s+)*(?:a chaque fois|toujours)")
+
+
 def _wants_30(text: str) -> bool:
     """« Oui pour 30 minutes » : guard.wants_always ne connaît que « oui à tout »
     tant que le patch du lot A n'est pas appliqué (docs/LOT-HUD-AUTONOMIE.md)."""
     low = fold(text)
-    return guard.wants_always(text) or any(w in low for w in ("30 min", "trente min", "demi-heure", "demi heure",
-                                                              "pour 30", "pour trente"))
+    if langue.anglais() and langue.wants_30_en(text):
+        return True  # 02/11 : « yes for half an hour »
+    bare = " ".join(re.sub(r"[^\w' -]", " ", low).replace("-", " ").split()).replace("vas y", "vas-y")
+    if _WANTS_30_SEUL_FR.fullmatch(bare):
+        return True
+    padded = " " + text.lower() + " "
+    always = any(w in padded for w in guard.ALWAYS_WORDS if w not in _SEULS_FR)
+    return always or any(w in low for w in ("30 min", "trente min", "demi-heure", "demi heure",
+                                             "pour 30", "pour trente"))
 
 
 def _cats_texte(cats: Any) -> str:
@@ -775,7 +797,11 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         self.keyboard = keyboard
         self.status = StatePublisher()
         self.mic = MicStream()
-        self.speaker = Speaker(voice_spec, on_activity=self._on_speech_activity)
+        # 02/11 : conversation en anglais, voix et secours anglais (retenus à part, `langue.voix`).
+        english = langue.anglais()
+        self.speaker = Speaker(voice_spec or (langue.voix("en") if english else None),
+                               fallback=langue.voix_secours("en") if english else None,
+                               on_activity=self._on_speech_activity)
         self.wake: WakeWord | None = None
         self.recorder: VoiceRecorder | None = None
         self.stt = Transcriber()
@@ -847,6 +873,8 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         if not force and self._voice_muted():
             log.info("ASTREL (mode %s, non dit) : %s", self._usage, text)
             return
+        if raw:
+            text = langue.parle(text)  # 02/11 : phrase écrite par le code, dite dans la langue de la conversation
         if not force and self._away():
             # Plan P1 : l'utilisateur est absent, la pièce est vide ; ce qui compte part sur WhatsApp.
             log.info("ASTREL (absent, non dit) : %s", text)
@@ -1821,9 +1849,9 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
         try:
-            config.VOICE_FILE.write_text(active + "\n", encoding="utf-8")
+            langue.retenir_voix(active)  # 02/11 : une voix par langue de conversation
         except OSError:
-            log.warning("choix de voix non retenu : %s", config.VOICE_FILE)
+            log.warning("choix de voix non retenu : %s", langue.fichier_voix())
         graph.set_voice(active)
         self.say("Voici ma nouvelle voix.", raw=True, live=True, force=True)  # essai demandé par l'utilisateur
         return {"ok": True, "voice": active}
@@ -1968,8 +1996,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         if sensors.is_on("FOCUS") or self._turn_active or self._off or self._floor_taken():
             return
         hour = time.localtime().tm_hour
-        hello = "Bonsoir" if hour >= 18 else "Re-bonjour"
-        self.say(f"{hello} l'utilisateur.", raw=True, live=True)
+        self.say("Bonsoir." if hour >= 18 else "Re-bonjour.", raw=True, live=True)
 
     def _restart(self) -> None:
         """Demande une relance : la boucle principale s'arrête, et c'est `cli.main`,
@@ -2338,6 +2365,8 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             if held_mid:
                 ch, routed = channel, False  # déjà rangé (et le canal ouvert déjà suivi) quand il a été gardé
             else:
+        # 02/11 : langue de la conversation changée → session neuve (ou note en attendant les tâches de fond).
+        prefix = self._langue_suivre(source) + prefix
                 ch, routed, floating = self._route_message(text, channel, source)
             mid = held_mid or uuid.uuid4().hex[:12]
             if not held_mid:
@@ -2359,7 +2388,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                                  "(courts paragraphes ou puces, *gras* pour les mots clés), sans tableau large, "
                                  "sans émoji.]")
                 elif self._usage == "silencieux":
-                    notes.append("[Mode silencieux : l'utilisateur lit ta réponse à l'écran, elle n'est pas dite.]")
+                    notes.append(langue.note("[Mode silencieux : l'utilisateur lit ta réponse à l'écran, elle n'est pas dite.]"))
                 workdir = channels.workdir_of(ch)
                 if workdir and ch != self._note_channel:
                     notes.append(f"[Canal {ch} : dossier du projet {workdir}]")
@@ -2372,11 +2401,11 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                 shot = capture_for_prompt()
                 if shot:
                     images.append(shot)
-                    prompt = f"{prompt}\n\n[Capture de l'écran de l'utilisateur jointe par le capteur WATCH.]"
+                    prompt = f"{prompt}\n\n" + langue.note("[Capture de l'écran de l'utilisateur jointe par le capteur WATCH.]")
             if source == "réflexe":
-                prompt = f"[Réflexe programmé, l'utilisateur n'a rien demandé à l'instant.] {prompt}"
+                prompt = langue.note("[Réflexe programmé, l'utilisateur n'a rien demandé à l'instant.]") + f" {prompt}"
             elif busy and source not in ("relève", "plan", "equipe", "quota"):  # un plan validé en mode auto : pas l'utilisateur
-                prompt = f"[l'utilisateur te parle pendant que tu travailles.] {prompt}"
+                prompt = langue.note("[l'utilisateur te parle pendant que tu travailles.]") + f" {prompt}"
             if source in _UTILISATEUR:
                 self._last_user_at = time.time()
                 self._cancel_retry("tu as envoyé un nouveau message")
@@ -2850,11 +2879,14 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         # le 26/09, « on verra ça plus tard » (contient « a plus tard ») au milieu
         # d'un feu vert a mis Astrel en veille au lieu de lancer le travail.
         words = bare.split()
-        for w in config.STOP_WORDS:
+        english = langue.anglais()  # 02/11 : formules de la langue de la conversation
+        for w in (langue.STOP_WORDS_EN if english else config.STOP_WORDS):
             for m in re.finditer(r"(?<!\w)" + re.escape(w) + r"(?!\w)", bare):
                 if len(words) <= 8 or len(bare[m.end():].split()) <= 2:
                     return True
-        return re.search(config.STOP_ENDINGS_RE, bare) is not None
+        if english and langue.stop_seul_en(bare):
+            return True
+        return re.search(langue.STOP_ENDINGS_RE_EN if english else config.STOP_ENDINGS_RE, bare) is not None
 
     # ------------------------------------------------------------------ boucles
 
@@ -2937,7 +2969,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                                 mid=uuid.uuid4().hex[:12])
                     first = False
                     continue
-                away = away_phrase(text)
+                away = away_phrase(text) or (langue.away_phrase_en(text) if langue.anglais() else "")
                 if away:
                     # Plan P1 : « je m'absente » / « je suis de retour », reconnus avant Claude.
                     bus.publish("transcript", who="user", text=text, source="voix", channel=channels.active,
@@ -3168,7 +3200,8 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         from .i18n import nom
 
         # 25/10 (plan P36) : « Astrel est prêt. », avec le nom affiché ; le journal dit le mot d'éveil.
-        self.say(nom(config.SAY_READY, language="fr"), raw=True, live=True)
+        # 02/11 : en anglais, le catalogue pose lui-même le nom affiché (« Nova is ready. »).
+        self.say(config.SAY_READY if langue.anglais() else nom(config.SAY_READY, language="fr"), raw=True, live=True)
         log.info("en veille — dis « %s »%s", assistant_name(),
                  " ou « Hey Jarvis »" if getattr(self.wake, "legacy", False) else "")
         last_vault_check = 0.0

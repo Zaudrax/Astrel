@@ -117,6 +117,11 @@ Astrel's replies stay in French, whatever language you pick here. The
 voices offered follow this choice: only those that speak this language
 appear in the list.
 
+For a conversation entirely in English (Astrel listens, answers and speaks
+in English, with an English voice), choose **Conversation language ›
+English**: a fresh session starts with your next message. The wake word
+stays "Astrel".
+
 The language of the HUD, bubble and mini-chat texts is chosen separately:
 **Settings › Voice, audio and language › Interface language** (French or
 English), applied right away, without restarting Astrel.

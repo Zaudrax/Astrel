@@ -322,8 +322,8 @@ async def run(url: str) -> None:
         # carte de confirmation (texte du garde-fou traduit) et question à choix
         await p.js("window.__ws.send(JSON.stringify({ cmd: 'demo_confirm' }))")
         await p.until("!document.querySelector('#confirm').classList.contains('hidden')", 5)
-        check("carte de confirmation traduite (« Heads up: a git publish (push). Shall I go ahead? »)", await p.js(
-            "document.querySelector('#confirm-question').textContent === 'Heads up: a git publish (push). Shall I go ahead?'"))
+        check("carte de confirmation traduite (« Heads up: a git publish (push). Should I continue? »)", await p.js(
+            "document.querySelector('#confirm-question').textContent === 'Heads up: a git publish (push). Should I continue?'"))
         await scan(p, "carte de confirmation")
         await p.shot("apres-en-confirmation.png")
         await click(p, "#confirm-no")

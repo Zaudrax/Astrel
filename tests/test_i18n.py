@@ -88,7 +88,7 @@ def test_modeles_parties_variables_et_morceaux():
     tr = lambda s: i18n.tr(s, "en")  # noqa: E731
     assert tr("Voix Edge revenue.") == "Edge voice is back."
     assert tr("Attention, une commande administrateur, une opération git et l'envoi d'un e-mail. Je continue ?") \
-        == "Heads up: an admin command, a git operation and sending an email. Shall I go ahead?"
+        == "Heads up: an admin command, a git operation and sending an email. Should I continue?"
     # morceaux connus « a · b » ; « a, b » seulement si TOUS sont connus
     assert tr("Contrôle · en cours…") == "Check · running…"
     assert tr("Bonjour, une commande administrateur") == "Bonjour, une commande administrateur"
@@ -224,7 +224,7 @@ print(json.dumps([card.question.get_text(), card.no.get_label(), card.yes.get_la
 @pytest.mark.parametrize("lang, want", [
     ("fr", ["Attention, une publication git (push). Je continue ?", "Non", "Oui", "Oui 30 min",
             "Question déjà close : réponse non prise en compte.", "Écris à Astrel… (Entrée ; Ctrl+V colle une image)"]),
-    ("en", ["Heads up: a git publish (push). Shall I go ahead?", "No", "Yes", "Yes 30 min",
+    ("en", ["Heads up: a git publish (push). Should I continue?", "No", "Yes", "Yes 30 min",
             "Question already closed: reply ignored.", "Message Astrel… (Enter; Ctrl+V pastes an image)"]),
 ])
 def test_bulle_dans_la_langue_choisie(lang, want, tmp_path):

@@ -117,6 +117,11 @@ Les réponses d'Astrel restent en français, quelle que soit la langue choisie
 ici. Les voix proposées suivent ce choix : seules celles qui parlent cette
 langue apparaissent dans la liste.
 
+Pour une conversation TOUT en anglais (Astrel t'écoute, te répond et parle en
+anglais, avec une voix anglaise), choisis **Langue de la conversation ›
+Anglais** : une session neuve démarre à ton message suivant. Le mot d'éveil
+reste « Astrel ».
+
 La langue des textes du HUD, de la bulle et du mini-chat se choisit à part :
 **Réglages › Voix, audio et langue › Langue de l'interface** (français ou
 anglais), appliquée tout de suite, sans relancer Astrel.

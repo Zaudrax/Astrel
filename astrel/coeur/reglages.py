@@ -229,8 +229,11 @@ class ReglagesCoeur:
         return out
 
     def _voice_options(self) -> list[tuple[str, str]]:
-        """Voix qui parlent la langue choisie (« Langue parlée ») ; la voix en cours reste dans la liste."""
-        lang = str(reglages.value("stt_language") or "fr")
+        """Voix qui parlent la langue choisie (« Langue parlée ») ; la voix en cours reste dans la liste.
+        02/11 : conversation en anglais, les voix anglaises (`langue.stt`)."""
+        from .. import langue
+
+        lang = langue.stt()
         out = [(v.spec, v.label) for v in available_voices() if _speaks(v.spec, lang)]
         current = self.speaker.voice
         if current and current not in {v for v, _ in out}:
@@ -326,7 +329,7 @@ class ReglagesCoeur:
                     # Plan P28 : comme `_set_model`, l'effort n'existe que pour Claude.
                     raise SettingError(key, "l'effort de réflexion ne s'applique qu'à Claude ; le cerveau "
                                             "tourne sur un autre fournisseur (Réglages › Fournisseur)")
-                before = reglages.value(key) if key == "brain_effort" else None
+                before = reglages.value(key) if key in ("brain_effort", "conversation_language") else None
                 reglages.set(key, value)
             except SettingError as exc:
                 err = {"key": exc.key, "message": exc.message}
@@ -341,6 +344,8 @@ class ReglagesCoeur:
             if key == "history_keep_days":  # 17/10 (plan P4) : l'oubli s'applique tout de suite
                 from .. import history
 
+            if key == "conversation_language" and reglages.value(key) != before:
+                self._langue_changee()  # 02/11 : voix et écoute tout de suite, session au message suivant
                 threading.Thread(target=history.purge, args=(reglages.value(key),), name="history-purge",
                                  daemon=True).start()
         return {"ok": True, **reglages.publish()}

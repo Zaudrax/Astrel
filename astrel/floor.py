@@ -168,10 +168,18 @@ class Backlog:
 
 
 _NUMBERS = {2: "deux", 3: "trois", 4: "quatre", 5: "cinq", 6: "six", 7: "sept", 8: "huit", 9: "neuf"}
+_NUMBERS_EN = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"}
 
 
-def intro(n: int) -> str:
-    """Annonce d'un groupe de messages (plusieurs tâches finies pendant qu'il parlait)."""
+def intro(n: int, lang: str | None = None) -> str:
+    """Annonce d'un groupe de messages (plusieurs tâches finies pendant qu'il parlait). 02/11 : en anglais
+    pour une conversation anglaise (`langue.py`)."""
+    if lang is None:
+        from . import langue
+
+        lang = langue.conversation()
+    if lang == "en":
+        return f"{_NUMBERS_EN.get(n, str(n)).capitalize()} messages came in while you were talking."
     return f"{_NUMBERS.get(n, str(n)).capitalize()} messages sont arrivés pendant que tu parlais."
 
 

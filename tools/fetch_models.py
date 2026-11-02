@@ -17,11 +17,15 @@ ROOT = Path(__file__).resolve().parent.parent
 M = ROOT / "models"
 
 HF = "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR"
+# 02/11 (conversation anglaise) : voix de secours locale en anglais, « joe » (jeu de données CC0).
+HF_EN = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US"
 MP = "https://storage.googleapis.com/mediapipe-models"
 
 FILES = [
     (f"{HF}/upmc/medium/fr_FR-upmc-medium.onnx", "piper/fr_FR-upmc-medium.onnx"),
     (f"{HF}/upmc/medium/fr_FR-upmc-medium.onnx.json", "piper/fr_FR-upmc-medium.onnx.json"),
+    (f"{HF_EN}/joe/medium/en_US-joe-medium.onnx", "piper/en_US-joe-medium.onnx"),
+    (f"{HF_EN}/joe/medium/en_US-joe-medium.onnx.json", "piper/en_US-joe-medium.onnx.json"),
     (f"{MP}/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite",
      "mediapipe/blaze_face_short_range.tflite"),
     (f"{MP}/gesture_recognizer/gesture_recognizer/float16/latest/gesture_recognizer.task",

@@ -240,6 +240,7 @@ GUIDE_TOPICS = {
     "compte": "claude", "demarrage": "controle", "diagnostic": "depannage",
     "audio.mic": "micro", "audio.test": "micro", "audio.output": "voix", "audio.voice": "voix",
     "audio.wake": "parler", "wake_legacy": "parler", "wake_names": "parler", "audio.followup": "parler", "audio.followup_s": "parler", "stt_language": "langue",
+    "conversation_language": "langue",
     "confidentialite": "memoire", "history_keep_days": "memoire", "donnees": "memoire",
     "systeme.autostart": "demarrage-auto", "systeme.bubble": "bulle", "systeme.hotkeys": "parler",
     "whatsapp": "whatsapp", "browser.main_visible": "agents", "browser.extra_visible": "agents",
@@ -249,6 +250,8 @@ GUIDE_TOPICS = {
 }
 # Langue de la reconnaissance (Whisper) : les réponses restent en français.
 LANGS = (("fr", "Français"), ("en", "Anglais"), ("es", "Espagnol"), ("de", "Allemand"), ("it", "Italien"))
+# Langue de la conversation (02/11, demande de l'utilisateur) : `astrel/langue.py`.
+CONVERSATION_LANGS = (("fr", "Français"), ("en", "Anglais"))
 # Langue de l'interface (20/10, demande de l'utilisateur) : HUD, bulle, mini-chat (`astrel/i18n.py`).
 UI_LANGS = (("fr", "Français"), ("en", "English"))
 # Apparence (21/10, plan P17, demande de l'utilisateur) : HUD et bulle, à chaud (`astrel/theme.py`,
@@ -562,10 +565,19 @@ ITEMS: dict[str, Item] = {i.key: i for i in (
          "Aussi à la voix (« allume les gestes »).",
          "action", "hot", lambda: None, lock=_needs_core("capteurs")),
     Item("stt_language", "voix", "Langue parlée",
-         "Langue dans laquelle tu parles à Astrel (reconnaissance vocale) ; ses réponses restent en français.",
+         "Conversation en français : langue dans laquelle tu parles à Astrel (reconnaissance vocale), ses "
+         "réponses restant en français. Conversation en anglais : toujours l'anglais.",
          "choice", "hot", lambda: str(config.STT_LANGUAGE), choices=LANGS),
     # 20/10 (demande de l'utilisateur) : langue de l'interface, appliquée à chaud (le HUD se recharge,
     # la bulle relit le fichier). La voix, les réponses et le prompt d'Astrel n'en dépendent pas.
+    # 02/11 (demande de l'utilisateur) : conversation anglaise complète (`astrel/langue.py`) ; la langue de
+    # l'interface est un autre réglage (`ui_language`).
+    Item("conversation_language", "voix", "Langue de la conversation",
+         "Langue dans laquelle Astrel t'écoute, te répond et parle : consignes de Claude, reconnaissance vocale, "
+         "voix et commandes dites. Une session neuve démarre à ton message suivant (après les tâches de fond en "
+         "cours). La langue de l'interface n'en dépend pas.",
+         "choice", "hot", lambda: str(config.CONVERSATION_LANGUAGE), env="ASTREL_CONVERSATION_LANGUAGE",
+         choices=CONVERSATION_LANGS),
     Item("ui_language", "voix", "Langue de l'interface",
          "Langue des textes du HUD, de la bulle et du mini-chat. La voix d'Astrel et ses réponses n'en "
          "dépendent pas.",

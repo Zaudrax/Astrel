@@ -25,9 +25,23 @@ _GLUED_SENTENCE = re.compile(r"(?<=[a-zà-ÿ0-9])([.!?…]+)(?=[A-ZÀ-Ý][a-zà-
 _BLANK_LINES = re.compile(r"\n\s*\n+")
 
 
-def clean_for_speech(text: str, max_chars: int = 1200) -> str:
+# 02/11 (conversation anglaise, `astrel/langue.py`) : ce que la voix dit à la place du code et des liens.
+_SPOKEN = {"fr": (" (voir le code à l'écran) ", "le lien"), "en": (" (see the code on screen) ", "the link")}
+
+
+def _lang() -> str:
+    try:
+        from .. import langue
+
+        return langue.conversation()
+    except Exception:
+        return "fr"
+
+
+def clean_for_speech(text: str, max_chars: int = 1200, lang: str | None = None) -> str:
     """Ce qui est visuel n'a pas de sens à l'oral : on le retire ou le résume."""
-    text = _CODE_BLOCK.sub(" (voir le code à l'écran) ", text)
+    code, link = _SPOKEN.get(lang or _lang(), _SPOKEN["fr"])
+    text = _CODE_BLOCK.sub(code, text)
     text = _MD_TABLE_RULE.sub("", text)
     text = text.replace("|", ", ")
     text = _MD_LINK.sub(r"\1", text)
@@ -35,7 +49,7 @@ def clean_for_speech(text: str, max_chars: int = 1200) -> str:
     text = _MD_HEADING.sub("", text)
     text = _MD_BULLET.sub("", text)
     text = _MD_EMPHASIS.sub(r"\2", text)
-    text = _URL.sub("le lien", text)
+    text = _URL.sub(link, text)
     # Un chemin complet est illisible à l'oral : on garde le dernier élément.
     text = _PATH.sub(lambda m: m.group(0).rstrip("/").split("/")[-1], text)
     # « Astrel.Et » : sans espace, la voix enchaîne sans marquer la fin de phrase.
@@ -55,7 +69,9 @@ def clean_for_speech(text: str, max_chars: int = 1200) -> str:
 # Fin de phrase : ponctuation forte suivie d'un blanc, ou saut de ligne.
 # Les décimales (« 3.5 ») et les abréviations collées ne coupent pas, faute de blanc.
 _SENTENCE_END = re.compile(r"(?<=[.!?…])[\"»)\]]*\s+|\n+")
-_ABBREVIATIONS = ("M.", "Mme.", "Dr.", "p.", "ex.", "cf.", "etc.", "env.", "vs.", "St.")
+_ABBREVIATIONS = ("M.", "Mme.", "Dr.", "p.", "ex.", "cf.", "etc.", "env.", "vs.", "St.",
+                  # 02/11 (conversation anglaise) : abréviations anglaises courantes, sans effet en français
+                  "Mr.", "Mrs.", "Ms.", "Jr.", "Sr.", "e.g.", "i.e.", "approx.", "No.", "Prof.", "U.S.")
 
 
 class SentenceSplitter:

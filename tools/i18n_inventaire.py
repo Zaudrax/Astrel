@@ -17,7 +17,9 @@ Deux façons de lire un module :
   `text=`, `detail=`, `desc=`… d'un `publish(...)` ou `status.set(...)`, et les valeurs
   des clés `"error"`, `"text"`, `"label"`… d'un dict littéral.
 Une f-string devient un modèle : `f"Voix {engine.name} revenue."` → `Voix {name} revenue.`
-La voix, les consignes envoyées à Claude et la mémoire ne passent pas par ces contextes.
+Les consignes envoyées à Claude et la mémoire ne passent pas par ces contextes. 02/11 : les phrases DITES
+par le code (`say`, `say_and_wait`, `_announce`, phrases de `config.py`) en font partie : la conversation
+anglaise les dit par le même catalogue.
 """
 from __future__ import annotations
 
@@ -53,6 +55,10 @@ PUBLISHERS = {"publish", "set", "notice", "_notice", "toast"}
 VISIBLE_VARS = {"text", "hud", "notice", "question", "cost", "go", "stay", "never", "when", "then", "why", "note",
                 "label", "msg", "message", "reason", "detail"}
 LOG_FUNCS = {"debug", "info", "warning", "warn", "error", "exception", "critical", "log"}
+# 02/11 (conversation anglaise, `astrel/langue.py`) : phrases DITES par le code (premier argument), traduites
+# par le même catalogue quand la conversation est en anglais ; et les constantes de phrases de `config.py`.
+SPEAKERS = {"say", "say_and_wait", "_announce"}
+SPOKEN_CONSTS = {"SAY_READY", "SAY_NOT_UNDERSTOOD", "SAY_ERROR", "GOODBYES"}
 
 FRENCH = re.compile(
     r"[àâäçéèêëîïôöùûüœÀÂÇÉÈÊÎÔÙÛŒ«»]|\b(?:le|la|les|un|une|des|du|de|et|pour|pas|est|sur|avec|dans|tu|je|il|"
@@ -244,10 +250,16 @@ def scan_file(path: Path, full: bool, demo: bool = False) -> list[tuple[int, str
                 for kw in n.keywords:
                     if kw.arg in VISIBLE_KW:
                         add(kw.value, visible=True)
+            if fname in SPEAKERS and n.args:
+                add(n.args[0], visible=True)
         elif isinstance(n, ast.Dict):
             for k, v in zip(n.keys, n.values):
                 if isinstance(k, ast.Constant) and k.value in VISIBLE_KEYS and v is not None:
                     add(v, visible=True)
+        elif isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name) \
+                and n.targets[0].id in SPOKEN_CONSTS:
+            for elt in (n.value.elts if isinstance(n.value, ast.Tuple) else [n.value]):
+                add(elt, visible=True)
         elif isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name) \
                 and n.targets[0].id in VISIBLE_VARS:
             add(n.value)  # `text = f"…"` puis `publish("notice", text=text)` : texte composé à part

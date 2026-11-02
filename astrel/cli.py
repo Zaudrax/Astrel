@@ -80,17 +80,14 @@ def calibrate_mode(noise_s: float = 4.0, speech_s: float = 10.0) -> int:
     Le gain vise une voix normale autour de `TARGET_P90` (RMS, sur 16 bits) : assez
     fort pour que le VAD et le mot de réveil l'entendent, assez bas pour ne pas
     saturer de près (×4 saturait la voix sur le micro USB). Le seuil VAD est réglé
-    entre le bruit de fond et la voix mesurés."""
-    import subprocess
+    entre le bruit de fond et la voix mesurés.
 
     import numpy as np
 
     from . import micprofile
     from .listener import VoiceRecorder
 
-    TARGET_P90 = 2500.0
     rec = VoiceRecorder()
-    frame_s = config.FRAME_SAMPLES / config.SAMPLE_RATE
     name, label = audio.MicStream(gain=1.0).identity()
     n = audio.source_channels(name)
 

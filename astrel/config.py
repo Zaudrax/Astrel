@@ -259,6 +259,14 @@ def _saved_voice() -> str:
 TTS_ENGINE = os.environ.get("ASTREL_TTS_ENGINE") or _saved_voice() or "edge:fr-FR-RemyMultilingualNeural"
 TTS_FALLBACK = os.environ.get("ASTREL_TTS_FALLBACK", "piper:fr_FR-upmc-medium")
 TTS_SPEED = _env_float("ASTREL_TTS_SPEED", 1.0)
+# 02/11 (demande de l'utilisateur) : conversation en ANGLAIS (réglage `conversation_language`, `astrel/langue.py`).
+# Sa voix est retenue à part (VOICE_EN_FILE) ; par défaut Andrew, voix américaine NON multilingue : une voix
+# multilingue change de langue pour toute la phrase sur un mot étranger (Rémy, 26/09), et un nom de
+# projet français ferait basculer Andrew. Secours local : Piper « joe » (jeu de données CC0).
+CONVERSATION_LANGUAGE = "fr"
+VOICE_EN_FILE = RUNTIME / "voice-en.txt"
+TTS_ENGINE_EN_DEFAULT = "edge:en-US-AndrewNeural"
+TTS_FALLBACK_EN = os.environ.get("ASTREL_TTS_FALLBACK_EN", "piper:en_US-joe-medium")
 GEMINI_TTS_MODEL = os.environ.get("ASTREL_GEMINI_TTS_MODEL", "gemini-3.8-flash-tts")
 # Consigne de diction envoyée avec chaque phrase (style Gemini).
 GEMINI_TTS_STYLE = os.environ.get(
@@ -766,8 +774,8 @@ STOP_ENDINGS_RE = (
     r"|^(?:(?:ok|bon|merci|c'est bon|c'est gentil)[\s,]*)*(?:stop|arr[eê]te|c'est bon|merci|merci astrel)$"
 )
 GOODBYES = ("À plus tard.", "Je me mets en veille.", "D'accord, à tout à l'heure.", "Je reste dans le coin.")
-YES_WORDS = ("oui", "ouais", "vas-y", "vas y", "d'accord", "confirme", "ok", "yes", "valide")
-NO_WORDS = ("non", "annule", "stop", "surtout pas", "laisse tomber", "no")
+# Mots des réponses aux confirmations (oui, non, indécis) : dans `guard.py` (fichier protégé) depuis le 02/11,
+# plus ici (`guard.YES_WORDS_FR`, `YES_WORDS_EN`, `NO_WORDS`, `UNDECIDED_WORDS`).
 
 for _d in (RUNTIME, LOGS, CONFIG_DIR):
     _d.mkdir(parents=True, exist_ok=True)

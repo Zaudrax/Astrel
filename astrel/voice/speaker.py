@@ -164,6 +164,24 @@ class Speaker:
         self._publish_voice()
         return engine.name
 
+    def set_fallback(self, spec: str) -> str:
+        """Change la voix de SECOURS (02/11 : voix locale de la langue de la conversation). Inutilisable :
+        l'ancienne reste, rien n'est levé (le secours n'est qu'un filet)."""
+        if not spec or (self._fallback is not None and self._fallback.name == build_engine(spec).name):
+            return self._fallback.name if self._fallback is not None else ""
+        engine = build_engine(spec)
+        try:
+            engine.load()
+        except Exception as exc:
+            log.warning("voix de secours %s indisponible (%s) : la précédente reste", engine.name, exc)
+            return self._fallback.name if self._fallback is not None else ""
+        self._fallback = engine
+        return engine.name
+
+    @property
+    def fallback(self) -> str:
+        return self._fallback.name if self._fallback is not None else ""
+
     @property
     def voice(self) -> str:
         return self._active_engine().name

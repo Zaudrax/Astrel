@@ -566,13 +566,11 @@ class VoiceRecorder:
 
 def stt_language() -> str:
     """Langue parlée, choisie dans la page « Réglages » du HUD (17/10, plan P4) ; lue à
-    chaque phrase. Défaut : `config.STT_LANGUAGE`."""
-    try:
-        from .settings import reglages
+    chaque phrase. Défaut : `config.STT_LANGUAGE`. 02/11 : conversation en anglais = l'anglais
+    (`langue.stt`), mot d'éveil compris."""
+    from . import langue
 
-        return str(reglages.value("stt_language") or config.STT_LANGUAGE)
-    except Exception:
-        return config.STT_LANGUAGE
+    return langue.stt()
 
 
 def stt_prompt() -> str:
@@ -588,7 +586,9 @@ def stt_prompt() -> str:
     seen: dict[str, None] = {}
     for w in words:
         seen.setdefault(w, None)
-    return "Vocabulaire : " + ", ".join(seen) + "."
+    # 02/11 : le lexique est écrit dans la langue attendue (un lexique français poussait Whisper vers le
+    # français pendant une conversation anglaise).
+    return ("Vocabulary: " if stt_language() == "en" else "Vocabulaire : ") + ", ".join(seen) + "."
 
 
 class Transcriber:
@@ -627,4 +627,11 @@ class Transcriber:
             condition_on_previous_text=False,
             initial_prompt=stt_prompt() if self._prompt is None else self._prompt,
         )
-        return " ".join(s.text.strip() for s in segments).strip()
+        text = " ".join(s.text.strip() for s in segments).strip()
+        from . import langue
+
+        if langue.hallucination(text):
+            # 02/11 : phrase de sous-titres inventée par Whisper sur du bruit (« Thanks for watching! »).
+            log.info("transcription jetée : hallucination connue de Whisper")
+            return ""
+        return text
