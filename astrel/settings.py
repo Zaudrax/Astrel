@@ -238,7 +238,7 @@ PANEL_KINDS = ("info", "action")
 # `help` porte déjà le texte d'aide) ; le HUD en fait un bouton « ? ».
 GUIDE_TOPICS = {
     "compte": "claude", "demarrage": "controle", "diagnostic": "depannage",
-    "audio.mic": "micro", "audio.test": "micro", "audio.output": "voix", "audio.voice": "voix",
+    "audio.mic": "micro", "audio.test": "micro", "audio.calibrage": "micro", "audio.output": "voix", "audio.voice": "voix",
     "audio.wake": "parler", "wake_legacy": "parler", "wake_names": "parler", "audio.followup": "parler", "audio.followup_s": "parler", "stt_language": "langue",
     "conversation_language": "langue",
     "confidentialite": "memoire", "history_keep_days": "memoire", "donnees": "memoire",
@@ -515,6 +515,11 @@ ITEMS: dict[str, Item] = {i.key: i for i in (
     Item("audio.mic", "voix", "Micro",
          "Micro qu'écoute Astrel ; « micro du système » suit le réglage de son du bureau.",
          "choice", "hot", lambda: "", live=True, lock=_needs_core("audio.mic")),
+    # 02/11 (demande de l'utilisateur) : assistant pas à pas du HUD (calibrage.js), même mesure que --calibrate.
+    Item("audio.calibrage", "voix", "Calibrage du micro",
+         "Mesure le bruit de fond puis ta voix (tu dis « Astrel » trois fois), et propose le gain et les seuils "
+         "de ce micro, à côté des réglages actuels. Rien n'est changé sans « Enregistrer ».",
+         "action", "hot", lambda: None, lock=_needs_core("audio.calibrage")),
     Item("audio.output", "voix", "Haut-parleur",
          "Sortie du son de TOUT l'ordinateur (comme dans les réglages de son du bureau), par pactl.",
          "choice", "hot", lambda: "", live=True, lock=_output_lock,
@@ -564,12 +569,6 @@ ITEMS: dict[str, Item] = {i.key: i for i in (
          "Présence (webcam), vue de l'écran, gestes, ne pas déranger, routines : allumer ou éteindre. "
          "Aussi à la voix (« allume les gestes »).",
          "action", "hot", lambda: None, lock=_needs_core("capteurs")),
-    Item("stt_language", "voix", "Langue parlée",
-         "Conversation en français : langue dans laquelle tu parles à Astrel (reconnaissance vocale), ses "
-         "réponses restant en français. Conversation en anglais : toujours l'anglais.",
-         "choice", "hot", lambda: str(config.STT_LANGUAGE), choices=LANGS),
-    # 20/10 (demande de l'utilisateur) : langue de l'interface, appliquée à chaud (le HUD se recharge,
-    # la bulle relit le fichier). La voix, les réponses et le prompt d'Astrel n'en dépendent pas.
     # 02/11 (demande de l'utilisateur) : conversation anglaise complète (`astrel/langue.py`) ; la langue de
     # l'interface est un autre réglage (`ui_language`).
     Item("conversation_language", "voix", "Langue de la conversation",
@@ -578,6 +577,12 @@ ITEMS: dict[str, Item] = {i.key: i for i in (
          "cours). La langue de l'interface n'en dépend pas.",
          "choice", "hot", lambda: str(config.CONVERSATION_LANGUAGE), env="ASTREL_CONVERSATION_LANGUAGE",
          choices=CONVERSATION_LANGS),
+    Item("stt_language", "voix", "Langue parlée",
+         "Conversation en français : langue dans laquelle tu parles à Astrel (reconnaissance vocale), ses "
+         "réponses restant en français. Conversation en anglais : toujours l'anglais.",
+         "choice", "hot", lambda: str(config.STT_LANGUAGE), choices=LANGS),
+    # 20/10 (demande de l'utilisateur) : langue de l'interface, appliquée à chaud (le HUD se recharge,
+    # la bulle relit le fichier). La voix, les réponses et le prompt d'Astrel n'en dépendent pas.
     Item("ui_language", "voix", "Langue de l'interface",
          "Langue des textes du HUD, de la bulle et du mini-chat. La voix d'Astrel et ses réponses n'en "
          "dépendent pas.",

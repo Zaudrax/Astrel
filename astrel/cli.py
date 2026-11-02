@@ -82,88 +82,37 @@ def calibrate_mode(noise_s: float = 4.0, speech_s: float = 10.0) -> int:
     saturer de près (×4 saturait la voix sur le micro USB). Le seuil VAD est réglé
     entre le bruit de fond et la voix mesurés.
 
-    import numpy as np
-
-    from . import micprofile
+    02/11 : la mesure vit dans `astrel/calibrage.py` (partagée avec l'assistant du HUD), mêmes calculs
+    et mêmes messages qu'avant."""
+    from . import calibrage, micprofile
     from .listener import VoiceRecorder
 
     rec = VoiceRecorder()
     name, label = audio.MicStream(gain=1.0).identity()
     n = audio.source_channels(name)
-
-    def capture(seconds: float, proc) -> np.ndarray:
-        """Trames × échantillons × canaux, en flottants."""
-        size = config.FRAME_BYTES * n
-        frames = []
-        for _ in range(int(seconds / frame_s)):
-            buf = proc.stdout.read(size)
-            if len(buf) < size:
-                raise IOError("flux microphone interrompu")
-            frames.append(np.frombuffer(buf, dtype=np.int16).reshape(-1, n).astype(np.float64))
-        return np.array(frames)
-
-    def rms_of(x: np.ndarray) -> np.ndarray:  # x : trames × échantillons
-        return np.sqrt((x ** 2).mean(axis=1))
-
-    def probs_of(x: np.ndarray) -> np.ndarray:
-        rec._vad.reset_states()
-        clipped = np.clip(x, -32768, 32767).astype(np.int16)
-        return np.array([rec.speech_prob(f.tobytes()) for f in clipped])
-
-    cmd = ["parecord", f"--rate={config.SAMPLE_RATE}", f"--channels={n}", "--format=s16le", "--raw",
-           "--latency-msec=40"] + ([f"--device={name}"] if name else [])
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    proc = calibrage.ouvrir_flux(name, n)
     try:
         print(f"Micro : {label or name or 'du système'} ({n} {'canaux' if n > 1 else 'canal'})\n")
         print(f"1/2 Reste silencieux {noise_s:.0f} s (bruit de fond)…")
-        noise = capture(noise_s, proc)
+        noise = calibrage.lire(proc, n, noise_s)
         print(f"2/2 Parle normalement {speech_s:.0f} s, comme à Astrel (mais sans dire « Astrel »)…")
-        speech = capture(speech_s, proc)
+        speech = calibrage.lire(proc, n, speech_s)
     finally:
         proc.terminate()
 
-    channels: list[int] = []
+    m = calibrage.analyser(noise, speech, lambda x: calibrage.probas(rec._vad, x))
     if n > 1:
-        share = []
-        for c in range(n):
-            x = speech[:, :, c]
-            share.append(float((probs_of(x) >= 0.5).mean()) if np.abs(x).max() > 0 else 0.0)
-        best = max(share)
-        if best > 0:
-            channels = [c for c in range(n) if share[c] >= 0.6 * best]
-        print("Voix reconnue par canal : " + ", ".join(f"{c}: {share[c]:.0%}" for c in range(n)))
-        print(f"Canaux gardés : {'+'.join(map(str, channels)) or 'aucun'}\n")
-        if not channels:
-            print("Aucun canal où je reconnais ta voix : micro coupé, mauvaise source, ou trop loin ?")
-            return 1
-    pick = channels or [0]
-    speech_mix = speech[:, :, pick].mean(axis=2)  # trames × échantillons
-    noise_mix = noise[:, :, pick].mean(axis=2)
-    n_rms, s_rms = rms_of(noise_mix), rms_of(speech_mix)
-    n_prob, s_prob = probs_of(noise_mix), probs_of(speech_mix)
-    s_peak = np.abs(speech_mix).max(axis=1)
-
-    # La voix, c'est ce que le VAD reconnaît ; à défaut (micro très bruyant), ce qui dépasse le bruit de fond.
-    voiced = s_prob >= 0.5
-    if voiced.sum() < 5:
-        voiced = s_rms > np.percentile(n_rms, 90) * 1.3
-    if voiced.sum() < 5:
-        print("\nJe n'ai presque rien entendu de ta voix : micro coupé, mauvaise source, ou trop loin ?")
+        print("Voix reconnue par canal : " + ", ".join(f"{c}: {m.parts[c]:.0%}" for c in range(n)))
+        print(f"Canaux gardés : {'+'.join(map(str, m.canaux)) or 'aucun'}\n")
+    if m.erreur:
+        print(("\n" if m.erreur == calibrage.PRESQUE_RIEN else "") + m.erreur)
         return 1
-    p90, peak = float(np.percentile(s_rms[voiced], 90)), float(s_peak[voiced].max())
-    noise_level = float(np.percentile(n_rms, 90))
-    gain = TARGET_P90 / p90
-    gain = min(gain, 30000.0 / peak)  # jamais de saturation sur le plus fort pic
-    gain = round(max(0.5, min(gain, 12.0)), 1)
-    # VAD : au milieu entre le pire bruit et la parole typique, borné comme les mesures du micro USB.
-    vad = float(min(0.5, max(0.25, (float(np.percentile(n_prob, 95)) + float(np.percentile(s_prob[voiced], 25))) / 2)))
-    print(f"Bruit de fond : RMS {noise_level:.0f} (brut), VAD max {n_prob.max():.2f}")
-    print(f"Voix : RMS {p90:.0f} (brut, 90e centile), pic {peak:.0f}, VAD médian {float(np.median(s_prob[voiced])):.2f}")
-    print(f"Rapport voix / bruit : {p90 / max(noise_level, 1):.1f}")
-    if p90 / max(noise_level, 1) < 2:
-        print("⚠ Voix à peine plus forte que le bruit de fond : monter le gain ne servira pas, "
-              "rapproche le micro ou change de micro.")
-    prof = micprofile.save(name, label, channels=channels if n > 1 else None, gain=gain, vad=round(vad, 2))
+    print(f"Bruit de fond : RMS {m.bruit:.0f} (brut), VAD max {m.bruit_vad_max:.2f}")
+    print(f"Voix : RMS {m.voix:.0f} (brut, 90e centile), pic {m.pic:.0f}, VAD médian {m.voix_vad_mediane:.2f}")
+    print(f"Rapport voix / bruit : {m.rapport:.1f}")
+    if m.faible:
+        print("⚠ " + calibrage.TROP_FAIBLE)
+    prof = micprofile.save(name, label, channels=m.canaux if n > 1 else None, gain=m.gain, vad=m.vad)
     print(f"\nProfil retenu pour ce micro : {prof.describe()}")
     if state.send_command("micprofile") is not None:
         print("Astrel tourne : il a pris ce profil tout de suite.")

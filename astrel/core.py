@@ -494,10 +494,12 @@ from .coeur.confirmations import ConfirmationsCoeur
 from .coeur.taches import TachesCoeur
 from .coeur.quota import QuotaCoeur
 from .coeur.fiabilite import FiabiliteCoeur
+from .coeur.calibrage import CALIBRAGE_COMMANDS, CalibrageCoeur  # 02/11 : assistant de calibrage du micro
+from .coeur.langue import LangueCoeur  # 02/11 : conversation anglaise
 
 
 class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, ConfirmationsCoeur, TachesCoeur, QuotaCoeur,
-             FiabiliteCoeur):
+             FiabiliteCoeur, CalibrageCoeur, LangueCoeur):
     # Le morceau de réponse en cours vient d'un tour de fond (compte rendu), et
     # a-t-il été dit ? Sinon il est « à lire » : bouton 🔊 dans le HUD.
     _report_chunk = False
@@ -621,6 +623,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         relance seul plusieurs fois par jour, le micro se rallumait sans prévenir."""
         self._mute_gen += 1
         self._off = True
+        self._calibrage_micro_coupe()  # 02/11 : un calibrage en cours s'arrête aussi (rien d'écrit)
         self._followup = False
         self._force_wake = False  # un réveil pas encore servi ne rouvre pas l'écoute
         try:
@@ -870,11 +873,11 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         `force` : demande EXPRESSE de l'utilisateur (clic sur 🔊 Lire, essai d'une voix).
         `tag` : phrase qu'on pourra faire taire seule (`speaker.cancel`), la question
         d'une confirmation à laquelle l'utilisateur répond à l'écran (15/10)."""
+        if raw:
+            text = langue.parle(text)  # 02/11 : phrase écrite par le code, dite dans la langue de la conversation
         if not force and self._voice_muted():
             log.info("ASTREL (mode %s, non dit) : %s", self._usage, text)
             return
-        if raw:
-            text = langue.parle(text)  # 02/11 : phrase écrite par le code, dite dans la langue de la conversation
         if not force and self._away():
             # Plan P1 : l'utilisateur est absent, la pièce est vide ; ce qui compte part sur WhatsApp.
             log.info("ASTREL (absent, non dit) : %s", text)
@@ -1337,6 +1340,8 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             return self._set_mic(str(cmd.get("source") or cmd.get("text") or "").strip())
         if name == "micprofile":
             return self._set_mic_profile(str(cmd.get("text") or "").strip())
+        if name in CALIBRAGE_COMMANDS:
+            return self._calibrage_command(name, cmd)  # 02/11 : HUD non-Claude seulement (seuils d'écoute)
         if name == "sensor":
             return sensors.set(str(cmd.get("name", "")), bool(cmd.get("on")))
         if name == "sensors":
@@ -1840,6 +1845,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             log.warning("choix du micro non retenu : %s", config.MIC_FILE)
         log.info("micro : %s", source or "celui du système")
         self._publish_mic(mics)
+        self._calibrage_propose_si_besoin()  # 02/11 : micro sans profil, le HUD propose l'assistant
         return {"ok": True, "source": source}
 
     def _set_voice(self, spec: str) -> dict:
@@ -2224,6 +2230,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         if self._lift:
             self.set_lift(False, "arrêt d'urgence")  # et rétablit le garde-fou (18/10, plan P7)
         self.speaker.interrupt()
+        self._calibrage_estop()  # 02/11 : un calibrage du micro en cours est annulé, rien n'est écrit
         self._drop_backlog("arrêt d'urgence")
         if self._turn_active:
             self.brain.interrupt()
@@ -2358,6 +2365,8 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                     bus.publish("notice", level="info", channel=ch, text=relief.HELD_NOTICE)
                 return
             held_mid, channel = mid, ch  # la relève vient de finir : envoi normal, sans le réafficher
+        # 02/11 : langue de la conversation changée → session neuve (ou note en attendant les tâches de fond).
+        prefix = self._langue_suivre(source) + prefix
         with self._send_lock:
             busy = self._turn_active
             self._last_turn = time.time()
@@ -2365,8 +2374,6 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             if held_mid:
                 ch, routed = channel, False  # déjà rangé (et le canal ouvert déjà suivi) quand il a été gardé
             else:
-        # 02/11 : langue de la conversation changée → session neuve (ou note en attendant les tâches de fond).
-        prefix = self._langue_suivre(source) + prefix
                 ch, routed, floating = self._route_message(text, channel, source)
             mid = held_mid or uuid.uuid4().hex[:12]
             if not held_mid:
@@ -3020,7 +3027,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         Jamais micro coupé : avant le 15/10, la boucle de veille ne regardait pas
         le micro coupé ici et lançait une conversation vide (carillon « fin »)."""
         return (self._followup and not self._off and not self.speaker.busy and not self.speaker.paused
-                and not self.mic.muted and not self._confirm_evt.is_set())
+                and not self.mic.muted and not self._confirm_evt.is_set() and not self._calibrating)
 
     def _wait_reply_start(self, cap_s: float = 20.0) -> None:
         """Juste après une demande : laisser Astrel commencer sa réponse avant de
@@ -3215,7 +3222,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                     # TRAVAILLE en silence, en revanche, « Hey Jarvis » marche,
                     # et aussi pendant qu'une question attend à l'écran (14/10).
                     time.sleep(0.05)
-                    triggered = self._force_wake and not self._confirm_evt.is_set()
+                    triggered = self._force_wake and not self._confirm_evt.is_set() and not self._calibrating
                 else:
                     with self._ear:
                         frame = self.mic.read_frame()
@@ -3223,10 +3230,13 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                     # Voix en pause : le micro est toujours lu (le flux ne prend pas
                     # de retard) mais le mot d'éveil n'est plus écouté. Seul un geste
                     # exprès (bouton, Ctrl+Alt+J) réveille, et il reprend la voix.
-                    listening = not self._off and not self.speaker.paused
+                    # 02/11 : une mesure de calibrage (HUD) écoute le micro : pas de mot d'éveil.
+                    listening = not self._off and not self.speaker.paused and not self._calibrating
                     # 25/10 (plan P36) : VAD calculé UNE fois par bloc (il garde un état), partagé
                     # par la voie texte du mot d'éveil (« Astrel ») et la prise de parole (`floor`).
                     prob = self.recorder.speech_prob(frame) if self.recorder is not None else None
+                    if self._calibrating:
+                        self._force_wake = False  # réveil exprès pendant la mesure : ignoré
                     triggered = self._force_wake or (listening and self.wake.feed(
                         frame, self.mic.profile.wake, speech=prob, vad=self.mic.profile.vad))
                     self._wake_deaf_check()

@@ -55,6 +55,7 @@ const ITEM_ICONS = {
   assistant_name: "sparkles", // 23/10 (plan P31) : nom affiché (Astrel)
   compte: "user", demarrage: "rocket", diagnostic: "activity", effacer: "trash",
   "audio.mic": "mic", "audio.output": "volume", "audio.voice": "waves", "audio.wake": "listen", "audio.test": "play",
+  "audio.calibrage": "gauge", conversation_language: "languages", // 02/11 : calibrage du micro, langue de la conversation
   wake_legacy: "history", wake_names: "pen", // 25/10 (plan P36) : ancien mot d'éveil (alias), variantes du nom
   "audio.followup": "message", "audio.followup_s": "timer", // 20/10 : écoute prolongée après une réponse
   stt_language: "languages", confidentialite: "eye", history_keep_days: "history", donnees: "database", maj: "download",

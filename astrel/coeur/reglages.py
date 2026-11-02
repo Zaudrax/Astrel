@@ -39,6 +39,9 @@ class ReglagesCoeur:
         reglages.bind("audio.followup", get=lambda: self._followup_setting > 0, put=self._followup_switch)
         reglages.bind("audio.followup_s", get=lambda: max(1, int(round(self._followup_last))),
                       put=self._followup_duration)
+        # 02/11 (demande de l'utilisateur) : assistant de calibrage du micro, ouvert par le HUD lui-même.
+        reglages.bind("audio.calibrage", view=self._calibrage_view,
+                      run=lambda _a, _c: {"ok": False, "error": "le calibrage se lance depuis le HUD (bouton « Calibrer ce micro »)"})
         reglages.bind("audio.test", view=lambda: {"value": {"lines": []}, "actions": [
             {"id": "voice", "label": "Tester la voix"}, {"id": "mic", "label": "Tester le micro (3 s)"}]},
             run=self._audio_test)
@@ -341,11 +344,11 @@ class ReglagesCoeur:
                 self._apply_effort()
             if key == "plan_mode":
                 plans.publish()  # le sélecteur Manuel/Auto de la page « Plans » suit
+            if key == "conversation_language" and reglages.value(key) != before:
+                self._langue_changee()  # 02/11 : voix et écoute tout de suite, session au message suivant
             if key == "history_keep_days":  # 17/10 (plan P4) : l'oubli s'applique tout de suite
                 from .. import history
 
-            if key == "conversation_language" and reglages.value(key) != before:
-                self._langue_changee()  # 02/11 : voix et écoute tout de suite, session au message suivant
                 threading.Thread(target=history.purge, args=(reglages.value(key),), name="history-purge",
                                  daemon=True).start()
         return {"ok": True, **reglages.publish()}

@@ -11,6 +11,7 @@ import { openModal, openPanel } from "./modal.js";
 import { openImage } from "./viewer.js";
 import { choiceGallery, initMedias, mediaList, resendMicHold, stopHiddenMedia } from "./medias.js";
 import { initSettings, loadSettings, onHudAction, openSettings } from "./settings.js";
+import { initCalibrage } from "./calibrage.js";
 import { initImages, modelLabel } from "./images.js";
 import { initGuide, openGuide } from "./guide.js";
 import { initCapacites } from "./capacites.js";
@@ -1963,6 +1964,7 @@ addEventListener("keydown", (e) => {
   $("#activity").classList.add("hidden");
 });
 initSettings(toast); // Réglages (15/10) : hud/src/settings.js
+initCalibrage(); // 02/11 : assistant de calibrage du micro (hud/src/calibrage.js)
 // 28/10 (plan P40 lot A5) : panneau « Images » sous la barre, Réglages › Images, évènement `ia_etat`
 initImages({ toast, channel: () => activeChannel });
 initGuide(toast); // Guide de démarrage (18/10, plan P5) : hud/src/guide.js

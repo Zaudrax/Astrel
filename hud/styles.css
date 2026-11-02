@@ -1823,6 +1823,35 @@ body.dropping #composer { border-color: var(--green); box-shadow: 0 0 18px rgba(
 }
 /* === P17 thèmes : fin === */
 
+/* --- assistant de calibrage du micro (02/11, hud/src/calibrage.js) : fenêtre openPanel étroite --- */
+.modal.wide.calibrage { width: min(560px, calc(100vw - 40px)); height: auto; max-height: calc(100vh - 80px); }
+.calib-mic { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; margin: 0; }
+.calib-steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0; counter-reset: calib; }
+.calib-steps li { flex: 1; font-size: 12px; color: var(--muted); padding: 6px 8px; border-radius: 8px;
+  border: 1px solid var(--panel-border); counter-increment: calib; }
+.calib-steps li::before { content: counter(calib) ". "; }
+.calib-steps li.on { color: var(--ink-hi); border-color: var(--accent); }
+.calib-steps li.done { color: var(--ink-head); border-color: rgba(var(--rgb-ok), 0.6); }
+.calib-big { font-size: 20px; font-weight: 600; color: var(--ink-hi); margin: 6px 0 0; }
+.calib-text, .calib-note { margin: 0; line-height: 1.45; }
+.calib-note { font-size: 12px; color: var(--muted); }
+.calib-meter { height: 14px; border-radius: 999px; background: rgba(var(--rgb-line), 0.12); overflow: hidden; }
+.calib-bar { height: 100%; width: 100%; background: var(--accent); transform-origin: left center; transform: scaleX(0);
+  transition: transform 80ms linear; }
+.calib-info { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.calib-voice { opacity: 0.35; }
+.calib-voice.on { opacity: 1; color: var(--ok); font-weight: 600; }
+.calib-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.calib-table th, .calib-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--panel-border); }
+.calib-table tr:first-child th { color: var(--muted); font-weight: 500; font-size: 12px; }
+.calib-table td.changed { color: var(--ink-hi); font-weight: 600; }
+.calib-facts { margin: 0; padding-left: 18px; font-size: 12px; color: var(--muted); display: grid; gap: 3px; }
+.calib-warn { margin: 0; font-size: 13px; color: var(--amber); }
+.calib-error { margin: 0; color: var(--red); }
+.calib-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.toast.calib-propose { display: flex; align-items: center; gap: 10px; }
+@media (prefers-reduced-motion: reduce) { .calib-bar { transition: none; } }
+
 /* === P23 affichage : début === */
 /* 22/10 (plan P23, demande de l'utilisateur : montrer Astrel à quelqu'un qui le découvre ; « le graphe,
    les forces, les capteurs, les bandeaux rouge/orange et Astrel OS font trop geek ») : affichage

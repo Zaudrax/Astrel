@@ -473,6 +473,7 @@ async def run(url):
         await check_couleurs_semantiques(p)  # 21/10 (relecture P17)
         await check_reglages(p)
         await check_reglages_actions(p)
+        await check_calibrage(p)  # 02/11 : assistant de calibrage du micro
         await check_levee(p)  # 18/10 (plan P7)
         await check_reglages_icones(p)  # 19/10
         await check_reglages_connecteurs_icones(p)  # 19/10 (plan P10, lot 3)
@@ -511,6 +512,83 @@ async def run(url):
         for e in errors[:5]:
             print("     ", json.dumps(e["params"])[:300])
         pump.cancel()
+
+
+async def check_calibrage(p: Page) -> None:
+    """02/11 (demande de l'utilisateur) : Réglages › « Calibrer ce micro » ouvre l'assistant (fenêtre du HUD,
+    jamais confirm()), rien ne démarre avant « Commencer » ; vumètre en direct ; résultat à côté de
+    l'actuel ; Enregistrer / Refaire / Annuler ; fermer envoie `calibrage_cancel` ; un micro sans profil
+    fait proposer l'assistant (notice non bloquante). Captures : calibrage-*.png."""
+    sent = lambda cmd: p.js(f"window.__sent.filter(m => m.cmd === {json.dumps(cmd)}).length")
+
+    async def demo(**args):
+        await p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': 'demo_calibrage', **args}))})")
+
+    await demo(pause_at="parole")
+    found = await reglages_bouton(p, "audio.calibrage|act|ouvrir")
+    check("Réglages › « Calibrer ce micro » ouvre l'assistant (Réglages refermés)",
+          found and await p.until("!!document.querySelector('.modal.wide.calibrage') "
+                                  "&& !document.querySelector('.modal.wide.settings')", 3))
+    intro = await p.js("""(() => { const m = document.querySelector('.modal.wide.calibrage');
+        return { title: m.querySelector('.modal-title')?.textContent, steps: m.querySelectorAll('.calib-steps li').length,
+                 buttons: [...m.querySelectorAll('.calib-actions .btn')].map(b => b.textContent) }; })()""")
+    check(f"présentation : 3 étapes, {intro['buttons']}, rien d'envoyé avant « Commencer »",
+          intro["steps"] == 3 and intro["buttons"] == ["Annuler", "Commencer"] and await sent("calibrage_start") == 0)
+    await p.js(SETTLE_JS)
+    await p.shot("calibrage-1-presentation.png")
+    await p.js("document.querySelector('.calib-actions .ok').click()")
+    check("Commencer : étape 1 « silence » avec vumètre",
+          await p.until("!!document.querySelector('.calib-meter') && document.querySelector('.calib-big')"
+                        "?.textContent.includes('Silence')", 4) and await sent("calibrage_start") == 1)
+    check("étape 2 : « Dis « Astrel » trois fois », vumètre qui bouge",
+          await p.until("document.querySelector('.calib-big')?.textContent.includes('Astrel') && "
+                        "document.querySelector('.calib-bar').style.transform !== 'scaleX(0.000)'", 5))
+    await asyncio.sleep(0.3)
+    await p.js(SETTLE_JS)
+    await p.shot("calibrage-2-parole.png")
+    await demo(pause_at="")
+    await p.js("document.querySelector('.calib-actions .btn').click()")  # Annuler pendant la mesure
+    check("Annuler pendant la mesure : fenêtre fermée, `calibrage_cancel` envoyé",
+          await p.until("!document.querySelector('.modal.wide.calibrage')", 3)
+          and await p.until("window.__sent.some(m => m.cmd === 'calibrage_cancel')", 3))
+    await p.until("!!document.querySelector('.modal.wide.settings')", 3)  # les Réglages se rouvrent
+    await p.key("Escape", vk=27)
+    await p.until("!document.querySelector('.modal-back')", 3)
+    await reglages_bouton(p, "audio.calibrage|act|ouvrir")
+    await p.until("!!document.querySelector('.modal.wide.calibrage .calib-actions .ok')", 3)
+    await p.js("document.querySelector('.calib-actions .ok').click()")
+    ok = await p.until("!!document.querySelector('.calib-table')", 8)
+    res = await p.js("""(() => { const m = document.querySelector('.modal.wide.calibrage');
+        return { rows: [...m.querySelectorAll('.calib-table tr')].map(r => [...r.children].map(c => c.textContent)),
+                 buttons: [...m.querySelectorAll('.calib-actions .btn')].map(b => b.textContent),
+                 facts: m.querySelector('.calib-facts')?.textContent || '', focus: document.activeElement?.textContent }; })()""")
+    check(f"résultat : actuel à côté du proposé ({res['rows'][1:3] if ok else '?'})",
+          ok and res["rows"][1] == ["Gain", "×2", "×1,4"] and res["rows"][2] == ["Seuil de parole (VAD)", "0,35", "0,32"]
+          and res["rows"][3][2].endswith("inchangé") and res["rows"][4] == ["Canaux", "tous", "0 + 1"])
+    check(f"boutons Annuler / Refaire / Enregistrer ({res['buttons']}), nom reconnu 3 sur 3",
+          res["buttons"] == ["Annuler", "Refaire", "Enregistrer"] and "3 fois sur 3" in res["facts"]
+          and res["focus"] == "Enregistrer")
+    await p.js(SETTLE_JS)
+    await p.shot("calibrage-3-resultat.png")
+    await p.js("[...document.querySelectorAll('.calib-actions .btn')].find(b => b.textContent === 'Enregistrer').click()")
+    check("Enregistrer : `calibrage_save`, profil enregistré",
+          await p.until("document.querySelector('.calib-big')?.textContent === 'Profil enregistré.'", 3)
+          and await sent("calibrage_save") == 1)
+    await p.shot("calibrage-4-enregistre.png")
+    await p.js("document.querySelector('.calib-actions .ok').click()")
+    await p.until("!!document.querySelector('.modal.wide.settings')", 3)
+    await p.key("Escape", vk=27)
+    await p.until("!document.querySelector('.modal-back')", 3)
+    await demo(propose=True)
+    check("micro sans profil : notice non bloquante « Calibrer », rien de lancé",
+          await p.until("!!document.querySelector('.toast.calib-propose button.ok')", 3)
+          and not await p.js("!!document.querySelector('.modal-back')"))
+    await p.shot("calibrage-5-proposition.png")
+    await p.js("document.querySelector('.toast.calib-propose button.ok').click()")
+    check("« Calibrer » ouvre l'assistant", await p.until("!!document.querySelector('.modal.wide.calibrage')", 3))
+    await p.key("Escape", vk=27)
+    check("Échap ferme (présentation : aucun cancel de plus)", await p.until(
+        "!document.querySelector('.modal.wide.calibrage')", 3) and await sent("calibrage_cancel") == 1)
 
 
 async def check_lots_15_10(p: Page) -> None:

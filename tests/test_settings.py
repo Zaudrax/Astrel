@@ -17,6 +17,8 @@ from test_reports import ch, astrel, of, published  # noqa: F401  (fixtures)
 LIVE = {"audio.mic", "audio.voice", "audio.wake", "audio.output", "audio.followup", "audio.followup_s", "systeme.autostart", "systeme.bubble",
         "systeme.hotkeys"}
 CONTRACT_KEYS = {"compte", "demarrage", "diagnostic", *LIVE, "audio.test", "stt_language",
+                 "audio.calibrage",  # 02/11 : assistant de calibrage du micro (bouton du HUD)
+                 "conversation_language",  # 02/11 : conversation anglaise (astrel/langue.py)
                  "confidentialite", "history_keep_days", "donnees", "maj", "whatsapp", "browser.main_visible", "browser.extra_visible", "browser.extra_count",
                  "images_mode", "images_ordre", "images_manuel", "video_choix", "connectors", "skills",
                  "plugins", "agent_alert_tokens", "agent_alert_s", "session_idle_reset_s",
@@ -51,7 +53,7 @@ CONTRACT_KEYS = {"compte", "demarrage", "diagnostic", *LIVE, "audio.test", "stt_
                  # 28/10 (hud-boutons-t10) : accès retirés de la barre du HUD (comptes rendus, mission, extinction)
                  "reports", "mission", "systeme.eteindre"}
 # Branché par le cœur (`reglages.bind`) : grisé « Réglable quand Astrel tourne » sans lui.
-CORE_BOUND = {"local.mode", "capteurs"}
+CORE_BOUND = {"audio.calibrage", "local.mode", "capteurs"}
 COMMON = {"key", "label", "help", "kind", "value", "default", "applies", "pending", "locked", "lock_reason"}
 
 

@@ -214,6 +214,29 @@ async def simple_en(p: Page) -> None:
     await asyncio.sleep(0.4)
 
 
+async def calibrage_en(p: Page) -> None:
+    """02/11 : assistant de calibrage du micro en anglais (présentation, mesure, résultat), séance de la démo."""
+    await click(p, "#settings-chip")
+    await p.until("!!document.querySelector('[data-fkey=\"audio.calibrage|act|ouvrir\"]')", 8)
+    await p.js("(() => { const b = document.querySelector('[data-fkey=\"audio.calibrage|act|ouvrir\"]'); "
+               "b.closest('details').open = true; b.click(); })()")
+    ok = await p.until("!!document.querySelector('.modal.wide.calibrage .calib-actions .ok')", 5)
+    title = await p.js("document.querySelector('.modal.wide.calibrage .modal-title')?.textContent")
+    await scan(p, "Calibrage › présentation")
+    await click(p, ".modal.wide.calibrage .calib-actions .ok")
+    measuring = await p.until("document.querySelector('.calib-big')?.textContent.startsWith('Say')", 6)
+    await scan(p, "Calibrage › mesure")
+    done = await p.until("!!document.querySelector('.calib-table')", 10)
+    await scan(p, "Calibrage › résultat")
+    labels = await p.js("[...document.querySelectorAll('.calib-table th, .calib-actions .btn')].map(e => e.textContent)")
+    check(f"calibrage en anglais (« {title} », {labels})", ok and measuring and done and title == "Calibrate the mic"
+          and "Speech threshold (VAD)" in labels and "Save" in labels and "Redo" in labels)
+    await p.shot("apres-en-calibrage.png")
+    await p.key("Escape", vk=27)
+    await p.until("!document.querySelector('.modal.wide.calibrage')", 3)
+    await close_panel(p)
+
+
 async def run(url: str) -> None:
     targets = json.load(urllib.request.urlopen(f"http://127.0.0.1:{CDP_PORT}/json"))
     ws_url = next(t["webSocketDebuggerUrl"] for t in targets if t["type"] == "page")
@@ -423,6 +446,9 @@ async def run(url: str) -> None:
         await scan(p, "Capacités (tout déplié)")
         await p.shot("apres-en-capacites.png")
         await close_panel(p)
+
+        # ---------------------------------------------------------- calibrage du micro en anglais (02/11)
+        await calibrage_en(p)
 
         # ---------------------------------------------------------- affichage Simple en anglais (22/10, plan P23)
         await simple_en(p)

@@ -725,6 +725,13 @@ class DemoSettings:
         self.groups.insert(1, {"id": "voix", "title": "Voix, audio et langue", "items": [
             it("audio.mic", "Micro", "Micro qu'écoute Astrel.", "choice", "", guide="micro",
                choices=[{"value": "", "label": "Micro du système"}, {"value": "usb", "label": "Micro USB"}]),
+            # 02/11 : assistant de calibrage (bouton exécuté par le HUD, séance simulée par `demo_calibrage`)
+            it("audio.calibrage", "Calibrage du micro",
+               "Mesure le bruit de fond puis ta voix (tu dis « Astrel » trois fois), et propose le gain et les seuils "
+               "de ce micro, à côté des réglages actuels. Rien n'est changé sans « Enregistrer ».", "action",
+               {"lines": [{"label": "Ce micro", "level": "warn",
+                           "text": "pas encore calibré : réglages par défaut (gain ×2, VAD 0.35, réveil 0.50)"}]},
+               guide="micro", actions=[{"id": "ouvrir", "label": "Calibrer ce micro", "hud": "calibrage"}]),
             it("audio.test", "Essais", "Fait parler Astrel, ou écoute le micro 3 secondes.", "action", None,
                guide="micro", actions=[{"id": "voice", "label": "Tester la voix"},
                                        {"id": "mic", "label": "Tester le micro (3 s)"}]),
@@ -1234,6 +1241,65 @@ DEMO_SKILLS = {"tdd": "on", "code-review": "on", "founder-cfo": "name-only", "do
 DEMO_CLAUDEAI = {"claude.ai Gmail": True, "claude.ai Google Drive": True, "claude.ai Vercel": False}
 
 
+class DemoCalibrage:
+    """02/11 : séance de calibrage SIMULÉE (mêmes évènements `calibrage` que `astrel/calibrage.Seance`),
+    accélérée : 1 s de silence, 2 s de voix, vumètre qui bouge. Rien n'est écrit (dossier jetable)."""
+
+    def __init__(self) -> None:
+        self.gen = 0
+        self.etat = ""
+        self.pause_at = ""  # tests du HUD : la séance s'arrête à cette étape (« parole »), pour la capture
+        self.log: list[str] = []
+
+    def command(self, name: str, cmd: dict) -> dict:
+        self.log.append(name)
+        if cmd.get("_from_claude") is True:
+            return {"ok": False, "error": "calibrage du micro réservé à l'utilisateur (HUD), refusé à Claude"}
+        if name == "calibrage_start":
+            self.gen += 1
+            threading.Thread(target=self._run, args=(self.gen,), daemon=True).start()
+            return {"ok": True, "micro": "Generic Mono", "canaux": 2}
+        if name == "calibrage_cancel":
+            self.gen += 1
+            if self.etat in ("bruit", "parole", "analyse", "resultat"):
+                self._pub("annule", raison="annulé par l'utilisateur")
+            return {"ok": True, "cancelled": True}
+        if self.etat != "resultat":
+            return {"ok": False, "error": "aucun calibrage à enregistrer : lance d'abord les mesures"}
+        self.gen += 1
+        profil = "gain ×1.4, VAD 0.32, réveil 0.50, canaux 0+1"
+        self._pub("enregistre", profil=profil, prioritaires=[])
+        bus.publish("notice", level="info", text=f"Profil du micro enregistré : {profil}.")
+        return {"ok": True, "profil": profil}
+
+    def _pub(self, etat: str, **data) -> None:
+        self.etat = etat
+        bus.publish("calibrage", etat=etat, micro="Generic Mono", **data)
+
+    def _run(self, gen: int) -> None:
+        for etat, etape, duree in (("bruit", 1, 1.0), ("parole", 2, 2.0)):
+            n = int(duree / 0.08)
+            for i in range(n):
+                if gen != self.gen:
+                    return
+                niveau = 0.08 + 0.03 * math.sin(i) if etat == "bruit" else 0.35 + 0.3 * abs(math.sin(i / 2.5))
+                self._pub(etat, etape=etape, duree_s=duree, reste_s=round((n - i - 1) * 0.08, 1),
+                          niveau=round(niveau, 3), **({"parole": niveau > 0.45} if etat == "parole" else {}))
+                if etat == self.pause_at and i == n // 2:
+                    return  # figé au milieu de l'étape (capture du vumètre)
+                time.sleep(0.08)
+        if gen != self.gen:
+            return
+        self._pub("analyse")
+        time.sleep(0.4)
+        if gen != self.gen:
+            return
+        self._pub("resultat", ancien={"gain": 2.0, "vad": 0.35, "wake": 0.5, "canaux": [], "cle": ""},
+                  propose={"gain": 1.4, "vad": 0.32, "wake": 0.5, "canaux": [0, 1]}, n_canaux=2,
+                  parts=[0.82, 0.77], bruit=210, voix=1790, pic=9400, rapport=8.5, faible=False,
+                  avertissement="", nom={"sur": 3, "propose": 3, "ancien": 2})
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true")
@@ -1272,7 +1338,16 @@ def main() -> int:
     staged: list[dict] = []  # pièces jointes en attente déposées par le HUD (16/10)
     last_sent: list[str] = []  # id des pièces parties avec la dernière phrase dite (`demo_voice`)
 
+    demo_calib = DemoCalibrage()
+
     def on_command(cmd: dict):
+        if str(cmd.get("cmd") or "").startswith("calibrage_"):  # 02/11 : assistant de calibrage du micro
+            return demo_calib.command(str(cmd["cmd"]), cmd)
+        if cmd.get("cmd") == "demo_calibrage":  # tests du HUD : figer une étape, proposer l'assistant
+            demo_calib.pause_at = str(cmd.get("pause_at") or "")
+            if cmd.get("propose"):
+                bus.publish("calibrage_propose", source="alsa_input.usb-demo", micro="Micro USB")
+            return {"ok": True, "log": list(demo_calib.log), "etat": demo_calib.etat}
         if cmd.get("cmd") == "settings_get":
             return settings.publish()
         elif cmd.get("cmd") == "settings_set":
