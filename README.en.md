@@ -29,15 +29,23 @@ complete, never in the middle of a code block. Wake word and transcription run o
 the answers, with Piper as a local fallback. The microphone is muted while Astrel speaks, and
 nothing unrequested is said while the user has the floor.
 
+**French or English.** The conversation language is set in Settings › Voice, audio and language ›
+"Conversation language". In English, Whisper transcribes English, Astrel answers with an English
+voice and English instructions, and voice commands have English versions. The wake word stays
+"Astrel". On the same page, an assistant ("Calibrate this mic") measures background noise, then
+your voice, and suggests a gain and thresholds for that microphone next to the current settings;
+nothing changes until you click "Save".
+
 **A HUD that stays on the machine.** A web page served on 127.0.0.1 only, with a token that never
 appears on a command line and a signed cookie. Markdown in answers is rendered as DOM nodes from a
 closed list, without `innerHTML`. A floating bubble (GTK) shows the state at a glance and receives
 confirmation questions.
 
-**A team of agents.** Astrel delegates to sub-agents defined in `config/agents/` (coder, tester,
-reviewer, planner, researcher…), each with its role sheet. After a coder, a tester then a reviewer
-check the work. A hook rewrites the sub-agents' model: code is always written by Opus. Large jobs
-go through a plan mode: a written plan, reviewed in the HUD, then carried out.
+**A team of agents for the user's projects.** Astrel delegates to sub-agents defined in
+`config/agents/` (coder, tester, reviewer, planner, researcher…), each with its role sheet. After a
+coder, a tester then a reviewer check the work. A hook picks each sub-agent's model: a coding task
+always runs on Opus. Large jobs go through a plan mode: a written plan, reviewed in the HUD, then
+carried out.
 
 **Memory, and tokens kept in check.** Markdown notes in a local vault, recalled before each
 message; conversation history indexed with SQLite FTS5 (`history_search`). When the context goes
@@ -182,10 +190,8 @@ able to recognise a program started by Claude, as there is no cgroup.
 
 ## Known limitations
 
-- The interface is in French and English, but speech recognition, the voice and Claude's
-  instructions are in French.
 - macOS and Windows have never run on a real machine.
-- Microphone thresholds are measured per microphone: a new one needs `./run.sh --calibrate`.
+- The HUD calibration assistant has not been tried with a real microphone yet.
 - WhatsApp has been tried on a real account; the calendar and home automation connectors have
   not yet.
 - Video generation depends on sites that change often; it has worked for real on two sites, never

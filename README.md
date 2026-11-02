@@ -30,16 +30,23 @@ complète, jamais au milieu d'un bloc de code. Le réveil et la transcription se
 des réponses, avec Piper en secours local. Le micro est coupé pendant qu'Astrel parle, et rien de
 non demandé n'est dit tant que l'utilisateur a la parole.
 
+**En français ou en anglais.** La conversation se règle dans Réglages › Voix, audio et langue ›
+« Langue de la conversation ». En anglais, Whisper transcrit en anglais, Astrel répond avec une
+voix anglaise et des consignes anglaises, et les commandes vocales ont leur version anglaise. Le
+mot d'éveil reste « Astrel ». Dans la même page, un assistant (« Calibrer ce micro ») mesure le
+bruit de fond puis la voix, et propose un gain et des seuils pour ce micro à côté des réglages
+actuels ; rien ne change sans « Enregistrer ».
+
 **Un HUD qui reste sur la machine.** Page web servie sur 127.0.0.1 seulement, avec un jeton qui ne
 passe jamais par la ligne de commande et un cookie signé. Le markdown des réponses est rendu en
 nœuds DOM d'une liste fermée, sans `innerHTML`. Une bulle flottante (GTK) donne l'état d'un coup
 d'œil et reçoit les questions de confirmation.
 
-**Une équipe d'agents.** Astrel délègue à des sous-agents définis dans `config/agents/` (codeur,
-testeur, relecteur, planificateur, chercheur…), chacun avec sa fiche de métier. Après un codeur,
-un testeur puis un relecteur repassent derrière. Un hook réécrit le modèle des sous-agents : le code
-est toujours écrit par Opus. Les gros chantiers passent par un mode plan : un plan écrit, relu dans
-le HUD, puis exécuté.
+**Une équipe d'agents pour les projets de l'utilisateur.** Astrel délègue à des sous-agents
+définis dans `config/agents/` (codeur, testeur, relecteur, planificateur, chercheur…), chacun avec
+sa fiche de métier. Après un codeur, un testeur puis un relecteur repassent derrière. Un hook choisit
+le modèle de chaque sous-agent : une tâche de code part toujours sur Opus. Les gros chantiers
+passent par un mode plan : un plan écrit, relu dans le HUD, puis exécuté.
 
 **De la mémoire et des jetons comptés.** Notes en Markdown dans un coffre local, rappelées avant
 chaque message ; historique des conversations indexé en SQLite FTS5 (`history_search`). Quand le
@@ -188,10 +195,8 @@ faute de cgroup.
 
 ## Limites connues
 
-- Interface en français et en anglais, mais la reconnaissance vocale, la voix et les consignes de
-  Claude sont en français.
 - macOS et Windows n'ont jamais tourné sur une vraie machine.
-- Les seuils de micro sont mesurés micro par micro : un nouveau micro demande `./run.sh --calibrate`.
+- L'assistant de calibrage du HUD n'a pas encore été essayé avec un vrai micro.
 - WhatsApp a été essayé sur un vrai compte ; les connecteurs agenda et domotique ne l'ont pas
   encore été.
 - La génération de vidéos dépend de sites qui changent souvent ; elle a réussi en réel sur deux

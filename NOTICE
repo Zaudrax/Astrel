@@ -6,7 +6,7 @@ COMPOSANTS TIERS
 
 Ils ne font pas partie de ce dépôt : l'installation (install.py) les télécharge
 ou les installe à part, chacun sous sa propre licence. Versions : celles fixées
-dans requirements.txt et les package.json, au 02/11/2026.
+dans requirements.txt, tools/fetch_models.py et les package.json, au 02/11/2026.
 
 Python (pip, requirements.txt)
 - openWakeWord 0.4.0 : code sous Apache-2.0. Ses modèles pré-entraînés (dont
@@ -29,6 +29,8 @@ Python (pip, requirements.txt)
 Modèles téléchargés par tools/fetch_models.py
 - Voix Piper fr_FR-upmc-medium (rhasspy/piper-voices) : données UPMC sous
   CC BY-SA 4.0, d'après sa fiche de modèle.
+- Voix Piper en_US-joe-medium (rhasspy/piper-voices), secours local de la
+  conversation anglaise : données sous CC0, d'après sa fiche de modèle.
 - MediaPipe blaze_face_short_range et gesture_recognizer (Google) : Apache-2.0.
 
 Node.js (npm)
