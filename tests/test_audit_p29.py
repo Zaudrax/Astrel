@@ -22,8 +22,9 @@ from pathlib import Path
 import pytest
 
 from astrel import brain, config, guard, limites, totalgate
+from conftest import CheminBash
 
-R = config.ROOT
+R = CheminBash(config.ROOT)
 H = Path.home()
 W = guard._PROJECT_ROOTS[0]  # dossier de travail (cwd du cerveau)
 SP = R / ".venv" / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"

@@ -11,8 +11,9 @@ import chemins_machine  # chemins de la machine qui lance la suite
 import pytest
 
 from astrel import config, guard, totalgate
+from conftest import CheminBash
 
-R = config.ROOT
+R = CheminBash(config.ROOT)
 
 
 @pytest.fixture(autouse=True)

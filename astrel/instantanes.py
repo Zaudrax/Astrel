@@ -243,12 +243,9 @@ def _sha(path: Path) -> str | None:
 
 
 def _vrai_chemin(fd: int) -> str | None:
-    """Chemin réel d'un descripteur ouvert (Linux : /proc/self/fd), None si le système ne le dit pas."""
-    lien = f"/proc/self/fd/{fd}"
-    try:
-        return os.readlink(lien) if os.path.islink(lien) else None
-    except OSError:
-        return None
+    """Chemin réel d'un descripteur ouvert (Linux : /proc/self/fd ; Windows : GetFinalPathNameByHandleW,
+    03/11), None si le système ne le dit pas."""
+    return systeme.vrai_chemin_fd(fd)
 
 
 def _juge_garde_fou(*chemins: str) -> str:
@@ -277,7 +274,7 @@ def _dossier_prive(reel: Path) -> bool:
     if not dedans:
         return True
     racine = max(dedans, key=lambda r: len(r.parts))
-    if racine == Path("/tmp").resolve():
+    if any(racine == t.resolve() for t in guard.TEMP_ROOTS):  # 03/11 : %TEMP% aussi sous Windows
         return False
     for d in reel.parents:
         if d == racine or racine not in d.parents:
@@ -347,7 +344,7 @@ def _lire_copie(reel: str) -> tuple[bytes, int] | str:
     try:
         st = os.fstat(fd)
         vrai = _vrai_chemin(fd)
-        if vrai is not None and vrai != reel:
+        if vrai is not None and not systeme.meme_chemin(vrai, reel):
             return "chemin changé"
         if not stat.S_ISREG(st.st_mode) or not st.st_mode & 0o077 or st.st_nlink > 1:
             return "secret"
@@ -626,7 +623,7 @@ def _dans_dossier(p: Path, action) -> None:
     dfd = os.open(p.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     try:
         vrai = _vrai_chemin(dfd)
-        if vrai is not None and vrai != str(p.parent):
+        if vrai is not None and not systeme.meme_chemin(vrai, str(p.parent)):
             raise _Refus("chemin changé")
         if refus(str(p), copie=False):
             raise _Refus("protégé")
@@ -645,7 +642,8 @@ def _remplacer(contenu: bytes, mode) -> object:
         try:
             with os.fdopen(fd, "wb") as fh:
                 fh.write(contenu)
-                os.fchmod(fh.fileno(), mode if isinstance(mode, int) else 0o644)
+                if hasattr(os, "fchmod"):  # 03/11 : absent sous Windows avant Python 3.13
+                    os.fchmod(fh.fileno(), mode if isinstance(mode, int) else 0o644)
             if dfd is not None:
                 os.replace(tmp, nom, src_dir_fd=dfd, dst_dir_fd=dfd)  # remplace un lien, jamais sa cible
             else:

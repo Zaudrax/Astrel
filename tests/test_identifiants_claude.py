@@ -16,9 +16,10 @@ from pathlib import Path
 import pytest
 
 from astrel import config, guard, totalgate
+from conftest import CheminBash
 
-R = config.ROOT
-HOME = Path.home()
+R = CheminBash(config.ROOT)
+HOME = CheminBash(Path.home())
 CRED = HOME / ".claude" / ".credentials.json"
 
 

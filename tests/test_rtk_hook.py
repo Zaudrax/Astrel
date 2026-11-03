@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="rtk : binaire Linux (inerte ailleurs, `rtk_hook.enabled`)")
+
 from astrel import brain, config, guard, rtk_hook
 
 RTK = Path("/opt/rtk")

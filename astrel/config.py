@@ -24,6 +24,8 @@ SECRETS_FILE = CONFIG_DIR / "secrets.json"
 HUD_DIR = ROOT / "hud"
 # Plan P6 : la venv range Python dans Scripts\python.exe sous Windows.
 VENV_PYTHON = ROOT / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+# 03/11 : mode UTF-8 de Python pour les programmes d'Astrel lancés sous Windows (sinon cp1252 par défaut).
+UTF8_ARGS = ["-X", "utf8"] if sys.platform == "win32" else []
 
 
 def python_command(script: Path) -> str:
@@ -49,6 +51,10 @@ HOOK_PYCACHE_DIR = ROOT / "hooks" / "__pycache__" / "isole"
 def hook_python_args() -> list[str]:
     """Options de l'interpréteur du hook du garde-fou (voir plus haut)."""
     args = ["-I"] + (["-S"] if sys.platform.startswith("linux") else [])
+    # 03/11 (Windows) : mode UTF-8 ; sinon la commande à juger, lue sur l'entrée, est décodée en cp1252 et un
+    # chemin accentué (« Téléchargements ») ne correspond plus à ce qu'il protège. -I ignore PYTHONUTF8 : option.
+    if sys.platform == "win32":
+        args += ["-X", "utf8"]
     return args + ["-X", f"pycache_prefix={HOOK_PYCACHE_DIR.as_posix()}"]
 
 

@@ -4,7 +4,11 @@ import base64
 import subprocess
 import zipfile
 
+import sys
+
 import pytest
+
+pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="lecture de documents : script bash et venv markitdown de Linux")
 
 from astrel import attachments, config, guard
 

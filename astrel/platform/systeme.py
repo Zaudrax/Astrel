@@ -140,3 +140,38 @@ def pread(fd: int, n: int, offset: int) -> bytes:
         return os.read(fd, n)
     finally:
         os.lseek(fd, position, os.SEEK_SET)
+
+
+def vrai_chemin_fd(fd: int) -> str | None:
+    """Chemin réel d'un descripteur ouvert : /proc/self/fd (Linux), GetFinalPathNameByHandleW (Windows,
+    03/11) ; None si le système ne le dit pas (macOS)."""
+    lien = f"/proc/self/fd/{fd}"
+    if os.path.islink(lien):
+        try:
+            return os.readlink(lien)
+        except OSError:
+            return None
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.GetFinalPathNameByHandleW.argtypes = (wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD)
+        buf = ctypes.create_unicode_buffer(1024)
+        n = k.GetFinalPathNameByHandleW(msvcrt.get_osfhandle(fd), buf, len(buf), 0)
+        if not 0 < n < len(buf):
+            return None
+        reel = buf.value
+        if reel.startswith("\\\\?\\UNC\\"):
+            return "\\\\" + reel[8:]
+        return reel[4:] if reel.startswith("\\\\?\\") else reel
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def meme_chemin(a: str, b: str) -> bool:
+    """Même chemin, à la casse près sous Windows."""
+    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))

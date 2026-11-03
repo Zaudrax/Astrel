@@ -205,3 +205,27 @@ def test_pread_sans_bouger_la_position(tmp_path, monkeypatch):
         assert os.read(fd, 2) == b"23"  # position intacte
     finally:
         os.close(fd)
+
+
+# ------------------------------------------------------------------ mode UTF-8 de Python sous Windows (03/11)
+
+def test_hook_du_garde_fou_en_utf8_sous_windows(monkeypatch):
+    from astrel import config
+    monkeypatch.setattr(config.sys, "platform", "win32")
+    assert config.hook_python_args()[:3] == ["-I", "-X", "utf8"]
+    monkeypatch.setattr(config.sys, "platform", "linux")
+    assert "utf8" not in config.hook_python_args()
+
+
+def test_astrel_relance_en_utf8_sous_windows(monkeypatch):
+    from astrel import platform as plateforme
+    appels = []
+    monkeypatch.setattr(plateforme, "SYSTEM", "windows")
+    monkeypatch.setattr(plateforme.sys, "argv", ["astrel", "--text"])
+    import subprocess as sp
+    monkeypatch.setattr(sp, "call", lambda cmd: appels.append(cmd) or 7)
+    with pytest.raises(SystemExit) as fin:
+        plateforme.en_utf8("astrel")
+    assert fin.value.code == 7 and appels[0][1:] == ["-X", "utf8", "-m", "astrel", "--text"]
+    monkeypatch.setattr(plateforme, "SYSTEM", "linux")
+    plateforme.en_utf8("astrel")  # rien : pas de relance

@@ -75,13 +75,13 @@ def write() -> dict:
         "astrel": {
             "type": "stdio",
             "command": config.VENV_PYTHON.as_posix(),  # « / » partout (plan P6)
-            "args": ["-m", "astrel.mcp_server"],
+            "args": [*config.UTF8_ARGS, "-m", "astrel.mcp_server"],
             "env": {"PYTHONPATH": str(config.ROOT), **_session_vars()},
         },
         "connecteurs": {
             "type": "stdio",
             "command": config.VENV_PYTHON.as_posix(),
-            "args": ["-m", "astrel.mcp_connectors"],
+            "args": [*config.UTF8_ARGS, "-m", "astrel.mcp_connectors"],
             "env": {"PYTHONPATH": str(config.ROOT), **_connector_env()},
         },
     }

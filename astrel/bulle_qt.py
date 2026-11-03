@@ -680,4 +680,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    plateforme.en_utf8("astrel.bulle_qt")  # Windows : relancée en mode UTF-8 (03/11)
     sys.exit(main())

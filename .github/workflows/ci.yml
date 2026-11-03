@@ -65,6 +65,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ github.ref_name != 'portage' }}
     timeout-minutes: 75
+    env:
+      PYTHONUTF8: "1"  # 03/11 : Astrel tourne en mode UTF-8 sous Windows (platform.en_utf8) ; les tests aussi
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

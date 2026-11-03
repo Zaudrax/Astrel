@@ -237,7 +237,7 @@ def windows_summary() -> str:
 # d'administrateur), qui lancent `pythonw` (sans fenêtre de console) : Astrel, et la bulle Qt.
 # Raccourcis clavier : écoutés par le cœur (`platform/raccourcis.py`, pynput).
 
-_LIENS = {"service": ("Astrel.lnk", "-m astrel"), "bubble": ("Astrel bulle.lnk", "-m astrel.bulle_qt")}
+_LIENS = {"service": ("Astrel.lnk", "-X utf8 -m astrel"), "bubble": ("Astrel bulle.lnk", "-X utf8 -m astrel.bulle_qt")}
 
 
 def _demarrage() -> Path:

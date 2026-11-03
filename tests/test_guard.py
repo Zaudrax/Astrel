@@ -489,9 +489,9 @@ def _depuis_les_plans(cmd):
 
 
 @pytest.mark.parametrize("cmd", [
-    f"cd {guard.config.ROOT}; node --version",
-    f"cd {guard.config.ROOT} && python3 -c 'print(1)'",
-    f"cd {guard.config.ROOT}; xrandr",
+    f"cd {guard.config.ROOT.as_posix()}; node --version",
+    f"cd {guard.config.ROOT.as_posix()} && python3 -c 'print(1)'",
+    f"cd {guard.config.ROOT.as_posix()}; xrandr",
 ])
 def test_cd_vers_dossier_existant_quitte_les_plans(cmd):
     assert not _depuis_les_plans(cmd).needs_confirm, cmd
@@ -499,8 +499,8 @@ def test_cd_vers_dossier_existant_quitte_les_plans(cmd):
 
 @pytest.mark.parametrize("cmd", [
     "xrandr",                                   # lancé DANS les plans, sans cd
-    f"cd {guard.config.ROOT}/dossier-inexistant; xrandr",   # cd qui peut rater : l'ancien dossier reste en jeu
-    f"rm -f /tmp/x; cd {guard.config.ROOT}; xrandr",        # la commande supprime : rien n'est sûr
+    f"cd {guard.config.ROOT.as_posix()}/dossier-inexistant; xrandr",   # cd qui peut rater : l'ancien dossier reste en jeu
+    f"rm -f /tmp/x; cd {guard.config.ROOT.as_posix()}; xrandr",        # la commande supprime : rien n'est sûr
     "cd runtime/plans && echo x > P3.json",
 ])
 def test_cd_incertain_garde_les_plans_en_jeu(cmd):

@@ -13,8 +13,9 @@ import time
 import pytest
 
 from astrel import config, guard, totalgate
+from conftest import CheminBash
 
-R = config.ROOT
+R = CheminBash(config.ROOT)
 PARENT = R.parent  # dossier qui contient le projet
 
 

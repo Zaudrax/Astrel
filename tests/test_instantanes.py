@@ -13,6 +13,10 @@ import pytest
 
 from astrel import brain, config, guard, instantanes
 
+# Droits Unix (bits de mode, dossier 0700 qui cache ses fichiers) : sans objet sous Windows, où le profil protège.
+unix = pytest.mark.skipif(os.name == "nt", reason="droits Unix")
+BASE = os.path.abspath("/data/p")  # absolu sur tous les systèmes (Windows : avec son lecteur)
+
 R = config.ROOT
 _spec = importlib.util.spec_from_file_location("suivi_outils", R / "hooks" / "suivi_outils.py")
 suivi = importlib.util.module_from_spec(_spec)
@@ -52,7 +56,7 @@ def proj(tmp_path):
     ("echo x &> k.log", ["k.log"]),
 ])
 def test_cibles_bash(cmd, cibles):
-    assert instantanes.cibles_bash(cmd, "/data/p") == [os.path.normpath(os.path.join("/data/p", c)) for c in cibles]
+    assert instantanes.cibles_bash(cmd, BASE) == [os.path.normpath(os.path.join(BASE, c)) for c in cibles]
 
 
 @pytest.mark.parametrize("cmd", [
@@ -147,6 +151,7 @@ def test_redirection_shell(proj):
     assert f.read_text() == "ancien"
 
 
+@unix
 def test_mode_rendu(proj):
     f = proj / "outil.sh"
     f.write_text("#!/bin/sh\n")
@@ -258,6 +263,7 @@ def test_bornes(proj, monkeypatch):
     assert len([d for d in instantanes.DIR.iterdir() if d.is_dir()]) <= 3
 
 
+@unix
 def test_droits_du_stockage(proj):
     f = proj / "a.py"
     f.write_text("avant")
@@ -472,6 +478,7 @@ def test_course_en_boucle(proj, faux_runtime):
     assert _aucune_copie_du_secret()
 
 
+@unix
 def test_fichier_0644_dans_dossier_0700(tmp_path, monkeypatch):
     """Point 1 : un fichier lisible rangé dans un dossier privé d'un projet n'est pas copié (sous
     /tmp, non jugé : les dossiers de travail y sont en 0700)."""
@@ -576,6 +583,7 @@ def test_modif_hors_outil_apres_un_edit_refuse(proj):
     assert f.read_text() == "A\nclaude1\nUTILISATEUR\nclaude3\n"
 
 
+@unix
 def test_dossier_a_creer_n_est_pas_prive(tmp_path, monkeypatch):
     """Contre-relecture N2 : un Write qui crée nouveau/a.py est suivi (le dossier absent n'est pas
     « privé ») ; un dossier privé EXISTANT au-dessus reste refusé."""

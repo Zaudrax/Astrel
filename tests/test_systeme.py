@@ -151,7 +151,7 @@ def test_windows_demarrage_par_le_dossier_demarrage(tmp_path, monkeypatch):
     assert "démarrera" in windows.set_autostart(True)
     assert "bulle" in windows.set_autostart(True, bubble=True)
     assert windows.autostart_state() == {"service": True, "bubble": True}
-    assert lances == [(str(pyw), "-m astrel"), (str(pyw), "-m astrel.bulle_qt")]
+    assert lances == [(str(pyw), "-X utf8 -m astrel"), (str(pyw), "-X utf8 -m astrel.bulle_qt")]
     windows.set_autostart(False)
     assert windows.autostart_state() == {"service": False, "bubble": True}
     pyw.unlink()

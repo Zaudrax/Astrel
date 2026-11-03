@@ -132,6 +132,7 @@ import getpass
 import json
 import os
 import re
+import tempfile
 import shlex
 import time
 from dataclasses import dataclass, field
@@ -298,7 +299,10 @@ CRITICAL_MCP_TOOLS = {"update_label", "delete_label"}
 
 # Écriture libre dans les projets ; ailleurs dans le dossier personnel :
 # sensible ; dans les dossiers système ou les secrets : critique.
-ALLOWED_WRITE_ROOTS = [config.WORKDIR.resolve(), config.ROOT.resolve(), Path("/tmp")]
+# 03/11 (portage) : sous Windows, le dossier temporaire est %TEMP% (profil de l'utilisateur), pas /tmp.
+# Linux : /tmp SEUL (TMPDIR peut viser n'importe où, le prendre élargirait en silence la zone libre).
+TEMP_ROOTS = [Path("/tmp")] + ([Path(tempfile.gettempdir()).resolve()] if os.name == "nt" else [])
+ALLOWED_WRITE_ROOTS = [config.WORKDIR.resolve(), config.ROOT.resolve(), *TEMP_ROOTS]
 # 15/10, partie B : fichiers du dossier personnel qui lancent du code ou ouvrent un
 # accès (démarrage du shell et de la session, unités systemd, ~/.local/bin dans le
 # PATH, réglages et hooks de Claude Code…). Y écrire, par Write/Edit ou par Bash
@@ -1220,7 +1224,7 @@ def mission_fence() -> tuple[list[Path], list[Path]] | None:
 
     scope, forbidden = paths("scope"), paths("forbidden_paths")
     if scope:
-        scope.append(Path("/tmp").resolve())
+        scope += [t.resolve() for t in TEMP_ROOTS]
     return (scope, forbidden) if scope or forbidden else None
 
 
@@ -1469,6 +1473,8 @@ _MSYS = re.compile(r"^/(?:cygdrive/|mnt/)?([A-Za-z])(?=/|$)")
 def _msys(raw: str) -> str:
     if os.name != "nt":
         return raw
+    if raw == "/tmp" or raw.startswith("/tmp/"):  # Git Bash monte /tmp sur %TEMP% (profil de l'utilisateur)
+        return Path(tempfile.gettempdir()).as_posix() + raw[4:]
     m = _MSYS.match(raw)
     return m.group(1).upper() + ":" + (raw[m.end():] or "/") if m else raw
 

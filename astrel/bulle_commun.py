@@ -13,7 +13,7 @@ import threading
 import time
 from typing import Callable
 
-from . import bubble_premium, config, state
+from . import config, state
 from .minichat import MiniChat
 
 SIZE = 148
@@ -25,8 +25,10 @@ POS_FILE = config.RUNTIME / "bubble.json"
 LOCK_FILE = config.RUNTIME / "bubble.lock"
 
 
-def fallback_look() -> bubble_premium.Look:
-    """Premium sombre, accent bleu, si config/themes.json est illisible (comme `bubble._fallback_look`)."""
+def fallback_look():
+    """Premium sombre, accent bleu, si config/themes.json est illisible (comme `bubble._fallback_look`).
+    Import tardif : le dessin demande cairo, inutile au reste de ce module (tests, CI sans cairo)."""
+    from . import bubble_premium
     accent, gray, warn = (10 / 255, 132 / 255, 1.0), (174 / 255, 174 / 255, 178 / 255), (1.0, 214 / 255, 10 / 255)
     states = {s: accent for s in (state.SLEEPING, state.LISTENING, state.THINKING, state.WORKING, state.SPEAKING)}
     states.update({state.BOOTING: gray, state.OFF: gray, state.ASKING: warn})

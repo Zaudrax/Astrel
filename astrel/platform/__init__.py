@@ -121,8 +121,18 @@ def lancer_detache(cmd: list[str]) -> None:
 
 def ouvrir_hud() -> None:
     """Le HUD, comme `./hud.sh` sous Linux : `python -m astrel --hud`, détaché."""
-    lancer_detache([python_exe(), "-m", "astrel", "--hud"])
+    lancer_detache([python_exe(), "-X", "utf8", "-m", "astrel", "--hud"])
 
 
 def allumer_astrel() -> None:
-    lancer_detache([python_exe(), "-m", "astrel"])
+    lancer_detache([python_exe(), "-X", "utf8", "-m", "astrel"])
+
+
+def en_utf8(module: str) -> None:
+    """03/11 (Windows) : Python y lit et écrit en cp1252 par défaut ; un accent dans un réglage, une note ou un
+    JSON devenait illisible. Lancé sans le mode UTF-8, le programme se relance avec (`-X utf8`) et rend son
+    code de sortie. Ailleurs, rien (UTF-8 est déjà l'encodage du système)."""
+    if SYSTEM != "windows" or sys.flags.utf8_mode:
+        return
+    import subprocess
+    sys.exit(subprocess.call([sys.executable, "-X", "utf8", "-m", module, *sys.argv[1:]]))

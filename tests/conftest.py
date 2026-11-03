@@ -13,6 +13,7 @@ os.environ["ASTREL_WORKDIR"] = _PROJETS
 atexit.register(shutil.rmtree, _PROJETS, True)
 
 import pytest  # noqa: E402
+from pathlib import Path
 
 from astrel import config
 from astrel.floor import backlog, floor
@@ -450,3 +451,14 @@ def prompt_de(cmd: list) -> str:
     if "--append-system-prompt-file" in cmd:
         return Path(cmd[cmd.index("--append-system-prompt-file") + 1]).read_text(encoding="utf-8")
     return cmd[cmd.index("--append-system-prompt") + 1]
+
+
+class CheminBash(type(Path())):
+    """Chemin écrit en « / » (f-string, str) : il entre dans des commandes Bash, où Git Bash (Windows) mangerait
+    les « \\ ». Identique sous Linux ; Windows comprend aussi « C:/… ». 03/11, CI Windows."""
+
+    def __str__(self) -> str:
+        return super().__str__().replace("\\", "/")
+
+    def __format__(self, spec: str) -> str:
+        return format(str(self), spec)
