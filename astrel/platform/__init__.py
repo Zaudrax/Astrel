@@ -76,3 +76,14 @@ def camera_api(system: str | None = None) -> int:
     system = system or SYSTEM
     name = {"linux": "CAP_V4L2", "macos": "CAP_AVFOUNDATION", "windows": "CAP_DSHOW"}.get(system, "CAP_ANY")
     return int(getattr(cv2, name, getattr(cv2, "CAP_ANY", 0)))
+
+
+def console_utf8() -> None:
+    """03/11 (CI Windows) : sortie redirigée = encodage du système (cp1252 sous Windows), qui plante sur
+    « → » ou « ✓ ». Toujours UTF-8 ; un caractère impossible devient « ? » au lieu d'arrêter Astrel."""
+    for flux in (sys.stdout, sys.stderr):
+        try:
+            if flux is not None and (flux.encoding or "").lower().replace("-", "") != "utf8":
+                flux.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass

@@ -24,6 +24,9 @@ Python (pip, requirements.txt)
   (Apache-2.0), psutil (BSD-3-Clause), NumPy (BSD-3-Clause), pytest (MIT),
   sounddevice (MIT, hors Linux).
 - nvidia-cublas-cu12 et nvidia-cudnn-cu12 (Linux) : licence propriétaire NVIDIA.
+- Hors Linux, pour la bulle : PySide6-Essentials 6.10.3 et shiboken6 (Qt for Python, LGPL-3.0 ;
+  bibliothèques chargées dynamiquement, remplaçables par l'utilisateur) et pycairo 1.28.0
+  (LGPL-2.1 ou MPL-1.1), avec la bibliothèque cairo (LGPL-2.1 ou MPL-1.1).
 
 Programme tiers séparé, appelé comme une commande
 - Piper (paquet pip piper-tts 1.8.0, https://github.com/OHF-Voice/piper1-gpl) :

@@ -19,6 +19,12 @@ nvidia-cudnn-cu12==9.26.0.51 ; sys_platform == "linux"
 # macOS/Windows. JAMAIS sous Linux, où PortAudio manque (piège 1 du CLAUDE.md).
 sounddevice==0.5.6 ; sys_platform != "linux"
 
+# Bulle hors Linux (03/11, astrel/bulle_qt.py) : Qt (LGPL-3.0, bibliothèque dynamique) et cairo pour le
+# MÊME dessin que la bulle GTK. Linux garde GTK et le cairo du système. pycairo : roue toute prête sous
+# Windows ; sous macOS il se compile (`brew install cairo pkg-config` avant l'installation).
+PySide6-Essentials==6.10.3 ; sys_platform != "linux"
+pycairo==1.28.0 ; sys_platform != "linux"
+
 # Voix
 # Piper (GPL-3.0) : PROGRAMME SÉPARÉ. Ce paquet ne sert qu'à installer la commande `piper`, qu'Astrel lance
 # en sous-processus (astrel/voice/engines.py) ; aucun module piper n'est importé (02/11).

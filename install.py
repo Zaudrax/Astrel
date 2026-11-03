@@ -244,7 +244,19 @@ def has_systemd() -> bool:
 
 # --- étapes ---
 
+
+def _console_utf8() -> None:
+    """03/11 (CI Windows) : sortie redirigée = encodage du système (cp1252), qui plante sur « → » ou
+    « ✓ ». Toujours UTF-8, et un caractère impossible devient « ? » au lieu d'arrêter le programme."""
+    for flux in (sys.stdout, sys.stderr):
+        try:
+            if flux is not None and (flux.encoding or "").lower().replace("-", "") != "utf8":
+                flux.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
 def main(argv: list[str] | None = None) -> int:
+    _console_utf8()
     ap = argparse.ArgumentParser(description="Installe Astrel (Linux, macOS, Windows), sans droits administrateur.")
     ap.add_argument("--rebuild-hud", action="store_true", help="recompiler le HUD (Node.js requis)")
     ap.add_argument("--projets", metavar="DOSSIER",

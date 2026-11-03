@@ -374,6 +374,9 @@ def text_mode(j) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from . import platform as plateforme
+
+    plateforme.console_utf8()  # 03/11 : Windows, sortie redirigée en cp1252
     ap = argparse.ArgumentParser(prog="astrel", description="Astrel — assistant vocal local branché sur Claude Code")
     ap.add_argument("--text", action="store_true", help="mode clavier : ni micro, ni mot de réveil")
     ap.add_argument("--no-voice-out", action="store_true", help="affiche les réponses au lieu de les dire")

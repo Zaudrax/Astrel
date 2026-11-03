@@ -351,7 +351,19 @@ def report(results: list[Check]) -> str:
     return anonymize("\n".join(lines))
 
 
+
+def _console_utf8() -> None:
+    """03/11 (CI Windows) : sortie redirigée = encodage du système (cp1252), qui plante sur « → » ou
+    « ✓ ». Toujours UTF-8, et un caractère impossible devient « ? » au lieu d'arrêter le programme."""
+    for flux in (sys.stdout, sys.stderr):
+        try:
+            if flux is not None and (flux.encoding or "").lower().replace("-", "") != "utf8":
+                flux.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
 def main(argv: list[str] | None = None) -> int:
+    _console_utf8()
     ap = argparse.ArgumentParser(description="Vérifie qu'une machine peut faire tourner Astrel (lecture seule).")
     ap.add_argument("--json", action="store_true", help="sortie JSON")
     ap.add_argument("--ci", action="store_true", help="intégration continue : Claude Code et l'audio ne bloquent pas")
