@@ -28,6 +28,7 @@ from astrel.fournisseurs import Effectif
 from astrel.fournisseurs_cli import base
 from astrel.fournisseurs_cli.base import Capacites, EtatTour, SessionCli
 from astrel.settings import reglages
+from conftest import mode_prive
 
 ROOT = Path(__file__).resolve().parent.parent
 FAUX = Path(__file__).resolve().parent / "faux_cli.py"
@@ -159,7 +160,7 @@ def test_reprise_meme_conversation_puis_relance_puis_session_perdue(cli):
     assert evs[-1].kind == "turn_end" and evs[-1].text == "Bonjour, tour 1."
     assert _appels(cli)[-1]["prompt"].startswith("[Consigne d'Astrel")
     assert json.loads(carte.read_text())[sess.session_id] != "id-inconnu"
-    assert stat.S_IMODE(carte.stat().st_mode) == 0o600
+    assert mode_prive(carte, 0o600)
     b2.stop()
 
 
@@ -335,8 +336,8 @@ def test_config_outils_dans_le_dossier_du_cli(cli, monkeypatch):
     hooks = json.loads((c.dossier() / "hooks.json").read_text())["hooks"]["PreToolUse"]
     assert hooks[0]["matcher"] == "*" and hooks[0]["hooks"][0]["command"].endswith("codex outils")
     for f in ("config.toml", "hooks.json"):
-        assert stat.S_IMODE((c.dossier() / f).stat().st_mode) == 0o600
-    assert stat.S_IMODE(c.dossier().stat().st_mode) == 0o700
+        assert mode_prive(c.dossier() / f)
+    assert mode_prive(c.dossier(), 0o700)
     c.preparer(base.MODE_CONVERSATION)
     assert "mcp_servers" not in tomllib.loads((c.dossier() / "config.toml").read_text())
     assert json.loads((c.dossier() / "hooks.json").read_text())["hooks"]["PreToolUse"][0]["hooks"][0][

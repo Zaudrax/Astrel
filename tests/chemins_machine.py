@@ -5,10 +5,12 @@ from pathlib import Path
 
 from astrel import config
 
-RACINE = str(Path(__file__).resolve().parent.parent)
-PARENT = str(Path(RACINE).parent)
-PROJETS = str(config.WORKDIR)
-HOME = str(Path.home())
+# En « / » (03/11, CI Windows) : ces chemins entrent dans des commandes Bash, où Git Bash mangerait les
+# « \ » d'un chemin Windows ; Python et Git Bash comprennent tous deux « C:/… ». Identique sous Linux.
+RACINE = Path(__file__).resolve().parent.parent.as_posix()
+PARENT = Path(RACINE).parent.as_posix()
+PROJETS = Path(config.WORKDIR).as_posix()
+HOME = Path.home().as_posix()
 
 
 def longueur_type(texte: str) -> int:

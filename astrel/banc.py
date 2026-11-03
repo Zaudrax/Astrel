@@ -229,7 +229,7 @@ def run_scenario2(sc: dict, workdir: Path, popen: Callable = subprocess.Popen,
     mcp_file = workdir / "mcp.json"
     mcp_file.write_text(json.dumps(_mcp_config(log_path)), encoding="utf-8")
     proc = popen(command(mcp_file), cwd=str(workdir), env=_env(), stdin=subprocess.PIPE,
-                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
     timer = threading.Timer(timeout_s, proc.kill)
     timer.start()
 

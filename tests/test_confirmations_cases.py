@@ -16,6 +16,7 @@ from astrel.cases_confirmation import cases
 from astrel.settings import reglages
 from test_lot_hud import make_astrel as make_light_astrel
 from test_reports import ch, astrel, of, published  # noqa: F401  (fixtures)
+from conftest import mode_prive
 
 R = config.ROOT
 L = limites
@@ -353,9 +354,9 @@ def test_fichier_absent_ou_corrompu_defauts(tmp_path):
 
 def test_fichier_signe_et_droits(tmp_path):
     cases.changer({L.GIT: False}, "test")
-    assert guard.CONFIRM_CASES_FILE.stat().st_mode & 0o777 == 0o600
-    assert guard.CONFIRM_KEY_FILE.stat().st_mode & 0o777 == 0o600
-    assert guard.CONFIRM_CASES_LOG.stat().st_mode & 0o777 == 0o600
+    assert mode_prive(guard.CONFIRM_CASES_FILE, 0o600)
+    assert mode_prive(guard.CONFIRM_KEY_FILE, 0o600)
+    assert mode_prive(guard.CONFIRM_CASES_LOG, 0o600)
 
 
 def test_changer_refuse_les_valeurs_invalides():

@@ -10,6 +10,7 @@ import sys
 import pytest
 
 from astrel import config, confirm, guard
+from conftest import mode_prive
 
 R = config.ROOT
 CRITIQUE = {"command": "git push origin main"}  # critique en autonome : une carte
@@ -126,7 +127,7 @@ def test_compteur_borne_et_prive(run):
         run(prompt=f"p{i}")
     f = guard.REFUS_DIR / "series.json"
     assert len(json.loads(f.read_text())["series"]) == 50
-    assert f.stat().st_mode & 0o777 == 0o600 and guard.REFUS_DIR.stat().st_mode & 0o777 == 0o700
+    assert mode_prive(f, 0o600) and mode_prive(guard.REFUS_DIR, 0o700)
 
 
 def test_deleguer_ne_referme_pas_le_disjoncteur(run):

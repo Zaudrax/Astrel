@@ -432,3 +432,11 @@ def _fiabilite_isolee(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "GEL_ON", False)
     monkeypatch.setattr(config, "GEL_LOG", tmp_path / "gel.log")
     monkeypatch.setattr(gel.chien, "_boucles", {})
+
+
+def mode_prive(chemin, attendu: int = 0o600) -> bool:
+    """03/11 (CI Windows) : droits Unix du fichier (0600 par défaut). Windows n'a pas ces bits (os.chmod n'y règle
+    que la lecture seule) : la protection y vient du profil de l'utilisateur, la vérification est sautée."""
+    import os
+    from pathlib import Path
+    return os.name == "nt" or (Path(chemin).stat().st_mode & 0o777) == attendu

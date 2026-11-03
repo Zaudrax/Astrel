@@ -209,7 +209,7 @@ Lanceur = Callable[..., "subprocess.CompletedProcess[str]"]
 def _lancer(cmd: list[str], lanceur: Lanceur) -> str:
     # Dossier neutre : aucun CLAUDE.md de projet joint à la sonde (jetons pour rien).
     r = lanceur(cmd, cwd=tempfile.gettempdir(), env=environnement(), stdin=subprocess.DEVNULL,
-                capture_output=True, text=True, timeout=DELAI_S)
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=DELAI_S)
     if r.returncode != 0:
         raise RuntimeError(f"le CLI a répondu {r.returncode}")
     return r.stdout or ""

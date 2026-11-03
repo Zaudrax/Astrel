@@ -15,6 +15,7 @@ import pytest
 
 from astrel import attachments, config, core, events, images_ia
 from astrel.images_ia import Etat, Images, Job
+from conftest import mode_prive
 
 PNG = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
                     "1f15c4890000000d49444154789c63f8cfc0500f0004850180848a6c210000000049454e44ae426082")
@@ -216,7 +217,7 @@ def test_plafond_gemini_remis_a_zero_le_lendemain(lieux, monkeypatch):
     assert e.disponible("amw", "gemini", t0) == (False, "plafond", False)
     lendemain = time.mktime((2026, 10, 22, 0, 5, 0, 0, 0, -1))  # minuit passé : remis à zéro
     assert e.disponible("amw", "gemini", lendemain)[0] is True and e.compte("amw", lendemain)["n"] == 0
-    assert oct(e.path.stat().st_mode & 0o777) == "0o600"
+    assert mode_prive(e.path, 0o600)
     assert not list(e.path.parent.glob(".*.tmp"))  # écriture atomique, rien de traînant
 
 

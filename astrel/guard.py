@@ -1169,10 +1169,10 @@ def _bash_protected_code(cmd: str) -> str:
     bases = [_base()]
     for m in list(_CD.finditer(cmd))[:8]:
         # 23/10 (audit P29) : os.path.expanduser ne lève pas sur « ~0.27 » (`httpx~=0.27`), Path.expanduser si.
-        d = Path(os.path.expanduser(m.group(1).strip("'\"")))
+        d = Path(os.path.expanduser(_msys(m.group(1).strip("'\""))))
         bases += [d.resolve()] if d.is_absolute() else [(b / d).resolve() for b in bases]
     for w in words:
-        p = Path(os.path.expanduser(w))
+        p = Path(os.path.expanduser(_msys(w)))
         for b in ([Path("/")] if p.is_absolute() else bases):
             full = (b / p).resolve()
             if _under(full, PROTECTED_CODE):
@@ -1293,7 +1293,7 @@ def _fence_xs(xs: list, ctx: "_Ctx", out: list) -> None:
                 _add(out, L_MISSION_OUT)  # chemin impossible à connaître : demandé pendant la mission
                 continue
             for p, pattern in scopes:
-                if pattern is None and _DEV_FREE.match(str(p)):
+                if pattern is None and _DEV_FREE.match(p.as_posix()):
                     continue  # /dev/null…
                 _judge_fence(p, out, pattern)
 
@@ -2901,6 +2901,7 @@ def _paths(c: str, ctx: _Ctx) -> list[Path] | None:
     (None : impossible à connaître)."""
     if _PROC_CWD.search(c):
         return None  # /proc/self/cwd pointe vers le dossier du SHELL, pas celui du hook (3/10)
+    c = _msys(c)  # 03/11 : Git Bash (« /c/Users/… ») sous Windows
     if c.startswith("~"):
         head, sep, tail = c.partition("/")
         if head == "~":
@@ -4637,8 +4638,10 @@ def _download(prog: str, args: list, ctx: _Ctx, out: list) -> tuple:
 
 # --- jugements ---
 
-_DEV_FREE = re.compile(r"/dev/(null|zero|stdout|stderr|stdin|tty|fd/\d+|shm/.*|pts/\d+)$|/proc/self/fd/\d+$")
-_DEV_DISK = re.compile(r"/dev/(sd|nvme|mmcblk|hd|vd|xvd|dm-|mapper/|disk/|loop|md\d|sr\d)")
+# 03/11 (Windows) : « /dev/null » de Git Bash, une fois résolu par Python, devient « D:/dev/null » : le lecteur
+# en tête est permis, et la comparaison se fait sur la forme en « / » (`as_posix`, identique sous Linux).
+_DEV_FREE = re.compile(r"(?:[A-Za-z]:)?/dev/(null|zero|stdout|stderr|stdin|tty|fd/\d+|shm/.*|pts/\d+)$|/proc/self/fd/\d+$")
+_DEV_DISK = re.compile(r"(?:[A-Za-z]:)?/dev/(sd|nvme|mmcblk|hd|vd|xvd|dm-|mapper/|disk/|loop|md\d|sr\d)")
 
 
 # --- fichiers protégés CITÉS (15/10, « lectures libres ») ---
@@ -5175,7 +5178,7 @@ def _judge_write(x: _X, ctx: _Ctx, out: list) -> None:
 
 
 def _judge_write_path(p: Path, out: list) -> None:
-    s = str(p)
+    s = p.as_posix()
     if _DEV_FREE.match(s):
         return
     _judge_fence(p, out)  # mission en cours : hors périmètre ou dossier interdit

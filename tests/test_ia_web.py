@@ -11,6 +11,7 @@ import pytest
 
 from astrel import attachments, config, ia_web, images_ia
 from astrel.ia_web import Choix, Etat, Refus
+from conftest import mode_prive
 
 PNG = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
                     "1f15c4890000000d49444154789c63f8cfc0500f0004850180848a6c210000000049454e44ae426082")
@@ -100,7 +101,7 @@ def test_comptes_json_ordre_filtre_et_droits(lieux):
         {"alias": "oa", "fournisseur": "openai"}, "pas un dict"])
     assert [c["alias"] for c in gardes] == ["boutique", "amw", "oa"]
     assert ia_web.comptes_du_service("gemini") == ["boutique", "amw"] and ia_web.comptes_du_service("chatgpt") == ["oa"]
-    assert oct(ia_web.chemin_comptes().stat().st_mode & 0o777) == "0o600"
+    assert mode_prive(ia_web.chemin_comptes(), 0o600)
 
 
 def test_comptes_json_illisible_aucun_compte(lieux):
@@ -123,7 +124,7 @@ def test_migration_v1_avec_copie(lieux):
     assert data["version"] == 2 and data["comptes"]["amw"]["services"]["gemini"]["n"] == 6
     assert data["comptes"]["amw"]["compte"] == {"a_reconnecter": True}
     copie = config.IMAGES_ETAT_FILE.with_name("etat.v1.json")
-    assert json.loads(copie.read_text(encoding="utf-8")) == v1 and oct(copie.stat().st_mode & 0o777) == "0o600"
+    assert json.loads(copie.read_text(encoding="utf-8")) == v1 and mode_prive(copie, 0o600)
 
 
 def test_quotas_par_compte_et_service_en_unites(lieux):
@@ -249,7 +250,7 @@ def test_etat_illisible_garde_avant_ecrasement(lieux):
     e.compter("amw", "gemini")
     gardes = list(config.IMAGES_ETAT_FILE.parent.glob("etat.illisible-*.json"))
     assert len(gardes) == 1 and gardes[0].read_text(encoding="utf-8") == "{tronqué"
-    assert oct(gardes[0].stat().st_mode & 0o777) == "0o600"
+    assert mode_prive(gardes[0], 0o600)
     assert json.loads(config.IMAGES_ETAT_FILE.read_text(encoding="utf-8"))["version"] == 2
 
 

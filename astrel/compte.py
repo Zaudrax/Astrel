@@ -257,7 +257,7 @@ class Compte:
             return {"ok": False, "error": "une connexion est en cours : annule-la d'abord"}
         try:
             proc = subprocess.run([config.CLAUDE_BIN, "auth", "logout"], stdin=subprocess.DEVNULL,
-                                  capture_output=True, text=True, timeout=LOGOUT_TIMEOUT_S)
+                                  capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=LOGOUT_TIMEOUT_S)
         except FileNotFoundError:
             return {"ok": False, "error": "Claude Code introuvable."}
         except (OSError, subprocess.SubprocessError) as exc:

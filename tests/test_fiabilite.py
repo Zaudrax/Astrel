@@ -21,6 +21,7 @@ from astrel import config, core, gel
 from astrel.brain import BrainEvent
 from astrel.platform import enfants
 from test_reports import astrel, ch, of, published  # noqa: F401 (fixtures)
+from conftest import mode_prive
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -139,7 +140,7 @@ def test_note_puis_traite_efface():
     a = attente_mod.attente
     assert a.noter("m1", "Range le dossier Photos.", "voix", "general")
     path = config.ATTENTE_FILE
-    assert path.exists() and (path.stat().st_mode & 0o777) == 0o600
+    assert path.exists() and mode_prive(path, 0o600)
     a.traites()
     assert not path.exists()
 

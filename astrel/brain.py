@@ -949,7 +949,7 @@ class Brain:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             bufsize=1,
             # Plan P6 : marqueur du cerveau, hérité par son Bash et ses scripts ; sous
             # macOS et Windows il remplace le cgroup du service (`state.from_claude`).
@@ -1012,7 +1012,7 @@ class Brain:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             bufsize=1,
             env=fournisseurs.env_cerveau(proc.brain_env(), eff.genre, url=url, modele=eff.modele),
         )
@@ -1065,7 +1065,7 @@ class Brain:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             bufsize=1,
             env=local_env(self.local),
         )

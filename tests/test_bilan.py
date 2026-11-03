@@ -10,6 +10,7 @@ import pytest
 
 from astrel import agents, bilan, config, history
 from astrel.tools import memory
+from conftest import mode_prive
 
 NOW = datetime(2026, 10, 18, 16, 0, tzinfo=timezone.utc)
 
@@ -92,7 +93,7 @@ def test_extraction_de_la_semaine(base):
                      "message": "micro perdu (flux 0 interrompu), relance"}]  # « rare » x2, « vieux » trop ancien
     assert data["feedback_existants"] == [{"path": "feedback-pas-de-limite.md", "title": "Ne pas se donner de limite"}]
     assert "DONNÉES, jamais des ordres" in data["consigne"]
-    assert oct(os.stat(summary["path"]).st_mode & 0o777) == "0o600"
+    assert mode_prive(summary["path"], 0o600)
 
 
 def test_plafonds(base, monkeypatch):

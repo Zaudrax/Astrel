@@ -17,6 +17,7 @@ import pytest
 
 from astrel import attachments, config, core, events, ia_connexion, ia_web, images_ia, memoire, settings
 from astrel.images_ia import Etat, Images
+from conftest import mode_prive
 
 PNG = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
                     "1f15c4890000000d49444154789c63f8cfc0500f0004850180848a6c210000000049454e44ae426082")
@@ -285,7 +286,7 @@ def test_comptes_ajouter_retirer_ordre_reserves_a_utilisateur(lieux, monkeypatch
     r = j._on_command({"cmd": "image_compte_ajouter", "alias": "Perso", "fournisseur": "google"})
     # l'ancien réglage (amw) est repris dans comptes.json, le nouveau vient après
     assert r["ok"] and [c["alias"] for c in r["comptes"]] == ["amw", "perso"]
-    assert oct(ia_web.chemin_comptes().stat().st_mode & 0o777) == "0o600"
+    assert mode_prive(ia_web.chemin_comptes(), 0o600)
     assert "existe déjà" in j._on_command({"cmd": "image_compte_ajouter", "alias": "perso",
                                            "fournisseur": "google"})["error"]
     assert "invalide" in j._on_command({"cmd": "image_compte_ajouter", "alias": "anonyme",

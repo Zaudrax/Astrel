@@ -22,6 +22,7 @@ from astrel.events import bus
 from astrel.minichat import MiniChat
 
 from test_lot_hud import make_astrel
+from conftest import mode_prive
 
 
 @pytest.fixture(autouse=True)
@@ -61,7 +62,7 @@ def test_nouveau_jeton_a_chaque_demarrage(tmp_path, monkeypatch):
     a = server._new_token()
     b = server._new_token()
     assert a != b and server.read_token() == b
-    assert (tmp_path / "hud-token").stat().st_mode & 0o777 == 0o600
+    assert mode_prive((tmp_path / "hud-token"), 0o600)
 
 
 def test_ticket_a_usage_unique_puis_cookie(hud):
@@ -496,7 +497,7 @@ def test_total_accorde_sans_question_et_journalise(monkeypatch, tmp_path):
     assert lines[0].split("\t")[1:3] == ["MODE", "activé"]
     date, tool, cmd = lines[-1].split("\t")[:3]
     assert tool == "Bash" and cmd.startswith("git push") and len(cmd) <= 200
-    assert config.TOTAL_LOG.stat().st_mode & 0o777 == 0o600
+    assert mode_prive(config.TOTAL_LOG, 0o600)
 
 
 def test_total_n_ouvre_pas_le_garde_fou(monkeypatch, tmp_path):

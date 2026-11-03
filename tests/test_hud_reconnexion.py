@@ -15,6 +15,7 @@ import pytest
 
 from astrel import config, guard, server
 from astrel.events import bus
+from conftest import mode_prive
 
 PORT = 47195
 BASE = f"http://127.0.0.1:{PORT}"
@@ -155,11 +156,11 @@ def test_cle_de_session_0600_a_cote_du_jeton_et_refaite_si_exposee(tmp_path):
     finally:
         srv.stop()
     key = tmp_path / config.HUD_SESSION_KEY_FILE.name
-    assert server.session_key_file() == key and key.stat().st_mode & 0o777 == 0o600
+    assert server.session_key_file() == key and mode_prive(key, 0o600)
     assert start_and_check(cookie) == 200  # même clé : accepté
     key.chmod(0o644)                       # lisible par d'autres : clé refaite, sessions fermées
     assert start_and_check(cookie) == 401
-    assert key.stat().st_mode & 0o777 == 0o600
+    assert mode_prive(key, 0o600)
 
 
 def start_and_check(cookie: str) -> int:

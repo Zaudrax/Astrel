@@ -436,7 +436,7 @@ def test_canal_protege_en_ecriture_lecture_libre(rel):
     même pendant une levée) ; les lire reste libre."""
     from astrel import guard
 
-    full = str(config.ROOT / rel)
+    full = (config.ROOT / rel).as_posix()  # en « / » : Git Bash mangerait les « \\ » (Windows)
     v = guard.assess("Edit", {"file_path": full, "old_string": "a", "new_string": "b"}, mode="total")
     assert v.needs_confirm and v.guard is True and not v.lift
     assert guard.assess("Bash", {"command": f"sed -i s/a/b/ {full}"}, mode="autonome").needs_confirm

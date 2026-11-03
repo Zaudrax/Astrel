@@ -11,6 +11,7 @@ from astrel import agents, audit, config, guard
 from astrel.whatsapp import WhatsApp
 from test_reports import ch, astrel  # noqa: F401  (fixtures)
 from test_whatsapp import Host, wa_env  # noqa: F401  (fixtures)
+from conftest import mode_prive
 
 
 def entries():
@@ -26,7 +27,7 @@ def test_ajout_seul_droits_et_filtre():
     assert got[0]["what"] == "Bash : un push | git push origin main" and got[0]["ok"] is True
     assert "sk-ant" not in got[1]["what"] and "[secret masqué]" in got[1]["what"]
     assert len(got[2]["what"]) == audit.WHAT_MAX and "ok" not in got[2]
-    assert oct(os.stat(audit.AUDIT_FILE).st_mode & 0o777) == "0o600"
+    assert mode_prive(audit.AUDIT_FILE, 0o600)
 
 
 def test_rotation(monkeypatch):

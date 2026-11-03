@@ -26,6 +26,7 @@ from astrel.fournisseurs import Effectif, Secret
 from astrel.settings import reglages
 from faux_openai import FauxOpenAI
 from test_reports import ch, astrel, of, published  # noqa: F401  (fixtures)
+from conftest import mode_prive
 
 ROOT = Path(__file__).resolve().parent.parent
 CLE = "sk-ant-api03-CLE-FACTICE-DU-TEST-0123456789abcdef"
@@ -92,7 +93,7 @@ def test_grok_au_catalogue_par_la_passerelle():
     assert fournisseurs.verifier_cle("xai", CLE_XAI) == ""
     assert fournisseurs.enregistrer_cle("xai", CLE_XAI) == {"ok": True}
     assert json.loads(config.SECRETS_FILE.read_text()) == {"CLE_API_XAI": CLE_XAI}
-    assert stat.S_IMODE(config.SECRETS_FILE.stat().st_mode) == 0o600 and fournisseurs.a_une_cle("xai")
+    assert mode_prive(config.SECRETS_FILE, 0o600) and fournisseurs.a_une_cle("xai")
 
 
 def test_grok_modele_plus_recent_sans_code(monkeypatch):
@@ -129,7 +130,7 @@ def test_cle_enregistree_0600_atomique_et_autres_secrets_gardes():
     assert fournisseurs.enregistrer_cle("cle_claude", CLE) == {"ok": True}
     data = json.loads(config.SECRETS_FILE.read_text())
     assert data == {"DEEPL_API_KEY": "deepl", "CLE_API_ANTHROPIC": CLE}
-    assert stat.S_IMODE(config.SECRETS_FILE.stat().st_mode) == 0o600
+    assert mode_prive(config.SECRETS_FILE, 0o600)
     assert config.secret("CLE_API_ANTHROPIC") == CLE and fournisseurs.a_une_cle("cle_claude")
     assert not list(config.SECRETS_FILE.parent.glob(".*.tmp"))
     assert fournisseurs.effacer_cle("cle_claude")["ok"]
@@ -545,7 +546,7 @@ def test_passerelle_reelle_jeton_cle_et_traces(monkeypatch, caplog):
     with FauxOpenAI() as srv:
         url = gw.start("openai", "faux-modele", "CLE_API_OPENAI", base=srv.url)
         token = config.PASSERELLE_JETON_FILE.read_text()
-        assert stat.S_IMODE(config.PASSERELLE_JETON_FILE.stat().st_mode) == 0o600 and len(token) >= 32
+        assert mode_prive(config.PASSERELLE_JETON_FILE, 0o600) and len(token) >= 32
         pid = gw._proc.pid
         raw = Path(f"/proc/{pid}/cmdline").read_bytes() + Path(f"/proc/{pid}/environ").read_bytes()
         assert CLE_OPENAI.encode() not in raw and token.encode() not in raw  # ni `ps`, ni environnement
