@@ -218,9 +218,9 @@ able to recognise a program started by Claude, as there is no cgroup.
 
 ## Licence
 
-Astrel is released under the [PolyForm Noncommercial License 1.0.0](LICENSE): non-commercial use
-only (personal use, research, teaching, charities and public bodies). Commercial use needs the
-author's permission. Components installed separately keep their own licences, listed in
-[NOTICE](NOTICE).
+Astrel is released under the [MIT License](LICENSE): you may use, modify and redistribute it,
+including commercially. Note that some components installed separately keep their own licences, and
+two are restricted to non-commercial use (the wake-word models and the Piper voices derived from
+Lessac). The full list is in [NOTICE](NOTICE).
 
 Author: Baptiste Renaud ([Zaudrax](https://github.com/Zaudrax)).

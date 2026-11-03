@@ -597,8 +597,8 @@ def test_arret_d_urgence_tue_le_worker_et_son_chrome(lieux, monkeypatch, tmp_pat
     job = v.submit("un chat")["job"]
     _attendre_etape(vus, job, "generation", timeout=10)
     chrome = int(pids.read_text())
-    worker = next(int(d.name) for d in Path("/proc").iterdir() if d.name.isdigit()
-                  and str(script).encode() in (d / "cmdline").read_bytes())
+    from astrel.platform import systeme
+    worker = next(iter(systeme.processus_avec(str(script))))  # /proc sous Linux, psutil ailleurs (03/11)
     assert ia_web.chrome_du_profil(Videos.profil("amw")) == [chrome]
     if par == "fichier":
         config.ESTOP_FILE.write_text("1")

@@ -560,8 +560,8 @@ Dit franchement, pour que tu ne cherches pas un bug là où il n'y en a pas :
 - **Langue** : l'interface, la voix et les consignes sont en français.
 - **WhatsApp** : fonction récente, par une bibliothèque non officielle (voir
   l'étape WhatsApp). Signale tout comportement étrange.
-- **Licence** : PolyForm Noncommercial 1.0.0 : usage
-  **non commercial** seulement.
+- **Licence** : MIT (code libre) ; deux composants
+  tiers restent **non commerciaux** (voir NOTICE).
 
 Si quelque chose ne marche pas sur ton système, le rapport à coller (voir
 « Dépannage ») est le meilleur moyen de le faire corriger.

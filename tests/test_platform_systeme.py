@@ -221,6 +221,7 @@ def test_astrel_relance_en_utf8_sous_windows(monkeypatch):
     from astrel import platform as plateforme
     appels = []
     monkeypatch.setattr(plateforme, "SYSTEM", "windows")
+    monkeypatch.setattr(plateforme, "_mode_utf8", lambda: False)  # la CI tourne déjà en mode UTF-8
     monkeypatch.setattr(plateforme.sys, "argv", ["astrel", "--text"])
     import subprocess as sp
     monkeypatch.setattr(sp, "call", lambda cmd: appels.append(cmd) or 7)

@@ -222,9 +222,9 @@ faute de cgroup.
 
 ## Licence
 
-Astrel est publié sous licence [PolyForm Noncommercial 1.0.0](LICENSE) : usage non commercial
-seulement (usage personnel, recherche, enseignement, associations et organismes publics). Un usage
-commercial demande l'accord de l'auteur. Les composants installés à part gardent leur propre
-licence ; la liste est dans [NOTICE](NOTICE).
+Astrel est publié sous licence [MIT](LICENSE) : tu peux l'utiliser, le modifier et le redistribuer,
+y compris dans un cadre commercial. Attention : certains composants installés à part gardent leur
+propre licence, et deux sont réservés à un usage non commercial (les modèles du mot d'éveil et les
+voix Piper dérivées de Lessac). La liste complète est dans [NOTICE](NOTICE).
 
 Auteur : Baptiste Renaud ([Zaudrax](https://github.com/Zaudrax)).

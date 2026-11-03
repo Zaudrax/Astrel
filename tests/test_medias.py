@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import stat
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -113,7 +114,8 @@ def test_refus_secrets_dossiers_prives_caches(monkeypatch):
     assert medias.refusal((root / "runtime" / "attachments" / "photo.png").resolve()) == ""
     projets = Path(config.WORKDIR)  # lu ici : le dépôt public le change plus haut (le clone, dans les projets)
     assert medias.refusal(projets / "x" / ".git" / "objects" / "a.png") == "fichier ou dossier caché"
-    assert medias.refusal(Path("/tmp/.cache/a.png")) == "fichier ou dossier caché"
+    temp = Path(tempfile.gettempdir()).resolve()  # /private/tmp (macOS), %TEMP% (Windows) : chemin RÉSOLU attendu
+    assert medias.refusal(temp / ".cache" / "a.png") == "fichier ou dossier caché"
     assert medias.refusal(projets / "x" / "api_keys.png") == "le nom ressemble à un secret"
     assert medias.refusal(projets / "x" / "photo.png") == ""
 

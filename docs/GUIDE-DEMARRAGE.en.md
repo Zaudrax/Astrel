@@ -561,8 +561,8 @@ Said plainly, so you don't hunt for a bug where there isn't one:
 - **Language**: the interface, the voice and the instructions are in French.
 - **WhatsApp**: a recent feature, through an unofficial library (see
   the WhatsApp step). Report any odd behavior.
-- **License**: PolyForm Noncommercial 1.0.0:
-  **non-commercial** use only.
+- **License**: MIT (free code); two third-party
+  components stay **non-commercial** (see NOTICE).
 
 If something doesn't work on your system, the report to paste (see
 "Troubleshooting") is the best way to get it fixed.

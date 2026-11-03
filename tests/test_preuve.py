@@ -150,6 +150,8 @@ def test_lien_dur_vers_un_fichier_hors_perimetre(projet, tmp_path):
 
 
 def test_fifo_et_socket_jamais_ouverts(projet):
+    if len(str(projet / "sock")) > 100:
+        pytest.skip("dossier temporaire trop long pour une socket Unix (macOS)")
     os.mkfifo(projet / "tube")  # une FIFO ouverte en lecture bloquerait : jamais ouverte
     s = socket.socket(socket.AF_UNIX)
     try:

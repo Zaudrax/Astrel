@@ -101,4 +101,4 @@ def test_aucun_fichier_ne_porte_l_ancien_nom():
 def test_la_liste_blanche_reste_en_place():
     """La liste blanche ne doit pas cacher un oubli : chaque entrée existe vraiment."""
     assert (ROOT / "NOTICE").is_file() and (ROOT / "LICENSE").is_file()
-    assert "PolyForm Noncommercial" in (ROOT / "LICENSE").read_text(encoding="utf-8")
+    assert "MIT License" in (ROOT / "LICENSE").read_text(encoding="utf-8")

@@ -1,6 +1,7 @@
 Astrel
 Copyright 2026 Baptiste Renaud (https://github.com/Zaudrax)
-Licence : PolyForm Noncommercial 1.0.0 (fichier LICENSE).
+Licence : MIT (fichier LICENSE). Le code d'Astrel est libre ; certains composants tiers ci-dessous
+sont, eux, réservés à un usage non commercial et gardent leur propre licence.
 
 COMPOSANTS TIERS
 
@@ -51,7 +52,7 @@ Modèles téléchargés par tools/fetch_models.py
     Challenge 2013, diffusées sous une licence de RECHERCHE qui exclut tout usage
     commercial (https://www.cstr.ed.ac.uk/projects/blizzard/2013/lessac_blizzard2013/license.html).
     Ces voix ne sont donc ni dans le domaine public ni libres de tout usage :
-    à réserver, comme Astrel, à un usage non commercial.
+    à réserver à un usage non commercial, même si le code d'Astrel est sous MIT.
 - MediaPipe blaze_face_short_range et gesture_recognizer (Google) : Apache-2.0.
 
 Node.js (npm)
