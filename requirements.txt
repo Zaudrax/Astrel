@@ -26,6 +26,9 @@ PySide6-Essentials==6.10.3 ; sys_platform != "linux"
 pycairo==1.28.0 ; sys_platform != "linux"
 # Raccourcis globaux hors Linux (03/11, astrel/platform/raccourcis.py) ; Linux : GNOME (hotkeys.sh).
 pynput==1.8.1 ; sys_platform != "linux"
+# Fuseaux horaires (zoneinfo) : Windows n'a pas la base du système (03/11, CI Windows : « No time zone
+# found with key Europe/Paris »).
+tzdata==2025.2 ; sys_platform == "win32"
 
 # Voix
 # Piper (GPL-3.0) : PROGRAMME SÉPARÉ. Ce paquet ne sert qu'à installer la commande `piper`, qu'Astrel lance

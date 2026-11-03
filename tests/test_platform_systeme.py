@@ -135,3 +135,60 @@ def test_job_object_reconnait_un_petit_enfant_detache_sans_marqueur():
     finally:
         systeme.tuer_arbre(cerveau.pid, systeme.SIGKILL)
         cerveau.wait(timeout=10)
+
+
+# ------------------------------------------------------------------ pont WSL2 vers Windows (03/11)
+
+@pytest.fixture
+def pont(monkeypatch):
+    from astrel.platform import wsl
+    appels = []
+
+    def faux_run(cmd, timeout=10.0, check=True, input=None, env=None):
+        appels.append((cmd, env, input))
+        if cmd[0] == "wslpath":
+            return "\\\\wsl.localhost\\Ubuntu\\home\\ami\\x"
+        if "Get-StartApps" in cmd[-1]:
+            return "Bloc-notes\tNotepad.exe\nCalculatrice\tMicrosoft.WindowsCalculator!App"
+        return ""
+    monkeypatch.setattr(wsl, "run", faux_run)
+    monkeypatch.setattr(wsl, "spawn", lambda cmd: appels.append((cmd, None, None)))
+    return wsl, appels
+
+
+def test_wsl_memes_fonctions_que_linux():
+    from astrel.platform import linux, wsl
+    publiques = {n for n in dir(linux) if not n.startswith("_") and callable(getattr(linux, n))
+                 and getattr(getattr(linux, n), "__module__", "") == linux.__name__}
+    assert publiques <= {n for n in dir(wsl) if callable(getattr(wsl, n))}
+
+
+def test_wsl_variables_par_wslenv(pont):
+    wsl, appels = pont
+    wsl.open_url("https://exemple.fr/a?b=1&c=2")
+    cmd, env, _ = appels[-1]
+    assert cmd[0] == "powershell.exe" and env["ASTREL_URL"] == "https://exemple.fr/a?b=1&c=2"
+    assert env["WSLENV"] == "ASTREL_URL"  # sans WSLENV, Windows ne verrait pas la variable
+    wsl.notify("Titre", "Texte")
+    assert set(appels[-1][1]["WSLENV"].split(":")) == {"ASTREL_TITRE", "ASTREL_TEXTE"}
+
+
+def test_wsl_chemins_et_applications(pont, tmp_path):
+    wsl, appels = pont
+    wsl.open_path(str(tmp_path))
+    assert appels[0][0][:2] == ["wslpath", "-w"] and appels[1][0][0] == "explorer.exe"
+    assert "Calculatrice" in wsl.open_app("calculatrice")
+    assert appels[-1][1]["ASTREL_APP"] == "Microsoft.WindowsCalculator!App"
+    wsl.media_control("next")
+    assert appels[-1][1]["ASTREL_TOUCHE"] == str(0xB0)
+    assert wsl.lock_screen() and appels[-1][0][0] == "rundll32.exe"
+
+
+def test_wsl_choisi_sous_wsl(monkeypatch):
+    from astrel import platform as plateforme
+    monkeypatch.setattr(plateforme, "_WSL", [True])
+    monkeypatch.setattr(plateforme, "SYSTEM", "linux")
+    assert plateforme.desktop_backend().__name__ == "astrel.platform.wsl"
+    assert plateforme.desktop_backend("linux").__name__ == "astrel.platform.linux"  # système demandé : tel quel
+    with pytest.raises(plateforme.Indisponible, match="WSL2"):
+        plateforme.desktop_backend().set_hotkeys(True)

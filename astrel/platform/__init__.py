@@ -50,9 +50,24 @@ def unavailable(what: str, why: str = "", system: str | None = None) -> Indispon
 _DESKTOP = {"linux": "linux", "macos": "macos", "windows": "windows", "autre": "degrade"}
 
 
+_WSL: list[bool] = []
+
+
+def sous_wsl() -> bool:
+    """Linux de WSL2 (03/11) : le bureau est celui de Windows. Lu une fois (/proc/version)."""
+    if not _WSL:
+        from .materiel import is_wsl
+        _WSL.append(SYSTEM == "linux" and is_wsl())
+    return _WSL[0]
+
+
 def desktop_backend(system: str | None = None) -> ModuleType:
-    """Module des actions du bureau pour ce système (ou celui demandé)."""
-    return importlib.import_module(f"{__name__}.{_DESKTOP[system or SYSTEM]}")
+    """Module des actions du bureau pour ce système (ou celui demandé). Sous WSL2 (03/11) : `wsl.py`,
+    le pont vers le bureau de Windows."""
+    nom = _DESKTOP[system or SYSTEM]
+    if system is None and nom == "linux" and sous_wsl():
+        nom = "wsl"
+    return importlib.import_module(f"{__name__}.{nom}")
 
 
 def python_exe() -> str:

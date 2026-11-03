@@ -499,7 +499,7 @@ def _ceiling_cat(target: str) -> str:
     p = _resolve(target)
     if _ceiling_write_label(p):
         return _ceiling_write_cat(p)
-    return _ceiling_write_cat(Path(os.path.normpath(_base() / os.path.expanduser(target.strip().strip("'\"")))))
+    return _ceiling_write_cat(Path(os.path.normpath(_base() / os.path.expanduser(_msys(target.strip().strip("'\""))))))
 
 
 def _ceiling_raw(c: str, ctx) -> str | None:
@@ -508,7 +508,7 @@ def _ceiling_raw(c: str, ctx) -> str | None:
     change l'interpréteur du hook alors que le chemin résolu tombe hors de la venv."""
     if not c or _DYN in c or _GLOB.search(c) or c.startswith("-"):
         return None
-    c = os.path.expanduser(c)
+    c = os.path.expanduser(_msys(c))
     for b in ([Path("/")] if c.startswith("/") else (ctx.cwds or [])):
         raw = Path(os.path.normpath(Path(b) / c))
         label = _ceiling_write_label(raw)
@@ -1460,8 +1460,21 @@ def _base() -> Path:
     return Path(cwd) if cwd and Path(cwd).is_absolute() else config.WORKDIR
 
 
+# 03/11/2026 (portage Windows, lot 3, autorisé par l'utilisateur) : le Bash de Claude Code sous Windows est
+# Git Bash, qui écrit « /c/Users/… » (aussi « /cygdrive/c/… », « /mnt/c/… ») ; Python sous Windows le lirait
+# « \\c\\Users… » sur le disque courant, et un fichier protégé passerait pour un autre. Ramené à « C:/Users/… ».
+_MSYS = re.compile(r"^/(?:cygdrive/|mnt/)?([A-Za-z])(?=/|$)")
+
+
+def _msys(raw: str) -> str:
+    if os.name != "nt":
+        return raw
+    m = _MSYS.match(raw)
+    return m.group(1).upper() + ":" + (raw[m.end():] or "/") if m else raw
+
+
 def _resolve(raw: str) -> Path:
-    p = Path(raw.strip().strip("'\"")).expanduser()
+    p = Path(_msys(raw.strip().strip("'\""))).expanduser()
     return (_base() / p).resolve() if not p.is_absolute() else p.resolve()
 
 

@@ -206,7 +206,10 @@ def test_tcp_jeton_refuse_aucune_commande(tcp, tmp_path, monkeypatch):
         with _handshake(port, b"faux") as s:
             s.sendall(b"wake")
             s.settimeout(3)
-            assert s.recv(100) == b""  # fermée sans réponse
+            try:
+                assert s.recv(100) == b""  # fermée sans réponse
+            except ConnectionResetError:
+                pass  # Windows : fermée sans réponse, données non lues → RST au lieu d'une fin propre
     finally:
         srv.stop()
         bus.set_command_handler(None)
@@ -354,7 +357,8 @@ def test_proc_voie_psutil(faux_systeme, systeme):
     me = os.getpid()
     assert proc.exists(me) and not proc.exists(_pid_mort()) and not proc.exists(0)
     assert proc.parent(me) == os.getppid()
-    assert proc.name(me) == psutil.Process(me).name()
+    nom = psutil.Process(me).name()
+    assert proc.name(me) == (nom[:-4] if nom.lower().endswith(".exe") else nom)  # sans « .exe » (Windows)
     assert proc.descends_from(me, os.getppid())
     assert not proc.uses_cgroup() and proc.cgroup_of(me) == ""
     assert proc.parent(_pid_mort()) is None

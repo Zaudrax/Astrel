@@ -252,6 +252,7 @@ def test_icones_de_la_variante_choisie(tmp_path):
     assert inst.launcher_icons(root) == []
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="icônes du lanceur et uninstall.sh : Linux")
 def test_icones_posees_puis_retirees_dans_un_home_temporaire(tmp_path, monkeypatch):
     from PIL import Image
 

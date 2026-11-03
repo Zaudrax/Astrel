@@ -282,7 +282,19 @@ GEMINI_TTS_STYLE = os.environ.get(
 )
 
 # --- Cerveau (Claude Code en mode headless, sur l'abonnement) ---
-CLAUDE_BIN = os.environ.get("ASTREL_CLAUDE_BIN", "claude")
+def _claude_bin() -> str:
+    """03/11 (CI Windows) : sous Windows, `claude` est un claude.exe ou un claude.cmd (npm) ; sans son chemin
+    complet, Popen ne trouve pas un .cmd (« fichier introuvable » au lancement du cerveau)."""
+    choisi = os.environ.get("ASTREL_CLAUDE_BIN")
+    if choisi:
+        return choisi
+    if sys.platform == "win32":
+        import shutil
+        return shutil.which("claude") or "claude"
+    return "claude"
+
+
+CLAUDE_BIN = _claude_bin()
 # Dossier des projets : ASTREL_WORKDIR (posé par le service), sinon le profil,
 # sinon ~/Projets (même défaut que `install.py --projets`).
 WORKDIR = Path(os.environ.get("ASTREL_WORKDIR") or str(PROFILE.get("projets") or "").strip()

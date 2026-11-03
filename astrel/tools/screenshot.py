@@ -85,10 +85,30 @@ def capture_windows() -> Path:
     return dest
 
 
+def capture_wsl() -> Path:
+    """03/11 : sous WSL2, l'écran est celui de WINDOWS : PowerShell de Windows écrit le PNG directement
+    dans le dossier Linux (chemin traduit par `wslpath -w`, transmis par WSLENV)."""
+    dest = _temp_png()
+    chemin = subprocess.run(["wslpath", "-w", str(dest)], capture_output=True, text=True, timeout=10).stdout.strip()
+    proc = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", _PS_CAPTURE],
+        capture_output=True, text=True, timeout=30, env={**os.environ, "ASTREL_PNG": chemin, "WSLENV": "ASTREL_PNG"},
+    )
+    if proc.returncode != 0 or not dest.exists() or dest.stat().st_size == 0:
+        dest.unlink(missing_ok=True)
+        raise RuntimeError((proc.stderr or "capture impossible").strip()[:300])
+    return dest
+
+
 def capturer(system: str | None = None, ecran: str | None = None, autoriser: bool = False) -> tuple[Path, str]:
     """(chemin du PNG, légende d'une ligne ; "" si le système ne sait pas choisir l'écran)."""
+    from astrel.platform import sous_wsl
+    explicite_systeme = system is not None
     system = system or SYSTEM
     ecran = (ecran or "").strip()
+    if system == "linux" and not explicite_systeme and sous_wsl():
+        return capture_wsl(), (f"Choix de l'écran (« {ecran} ») non pris en charge sous WSL2 : tout le bureau Windows."
+                               if ecran else "")
     if system == "linux":
         from astrel import ecrans
         from astrel.platform.linux_capture import capture as capture_linux
