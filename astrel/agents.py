@@ -113,7 +113,9 @@ def load_agents(folder: Path | None = None, efforts: bool = True) -> dict[str, d
         body = body.replace(METIERS_MARK, METIERS_DIR.as_posix())
         for fiche in missing_fiches(body):
             log.warning("agent %s : fiche de métier citée absente : %s", path.name, fiche)
-        out[name] = {**meta, "prompt": body}
+        # 03/11 (demande : « par défaut les agents sont en effort moyen, il faut que ce soit élevé ») : un agent
+        # sans effort déclaré prend « high », pas l'effort par défaut du CLI.
+        out[name] = {"effort": DEFAULT_EFFORT, **meta, "prompt": body}
     if efforts:
         for name, effort in chosen_efforts().items():
             if name in out:
@@ -188,6 +190,7 @@ def write_agents() -> Path | None:
 # sonde du lot 0 sur le CLI 2.1.285 : définitions remplacées, prompt et modèle du cerveau intacts),
 # sinon au prochain démarrage du cerveau. L'effort réellement pris par un agent : non observé.
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+DEFAULT_EFFORT = "high"  # 03/11 : effort des agents sans effort déclaré (demande de l'utilisateur)
 EFFORT_FILE = config.RUNTIME / "agent-effort.json"
 _written: dict[str, dict[str, Any]] | None = None  # dernières définitions écrites
 _loaded: dict[str, str] | None = None              # effort par métier reçu par le CLI en marche

@@ -2,6 +2,7 @@
 name: bilan
 description: Bilan hebdomadaire des corrections (réflexe bilan-hebdo) : lit en LECTURE SEULE runtime/bilan/<semaine>.json, propose au plus 5 leçons et rend UN compte rendu decision. N'écrit rien.
 model: sonnet
+effort: high
 maxTurns: 6
 tools: Read, mcp__astrel__memory_search, mcp__astrel__memory_read, mcp__astrel__post_report
 disallowedTools: Edit, Write, NotebookEdit, Agent, Bash, mcp__astrel__memory_write

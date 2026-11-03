@@ -14,7 +14,12 @@ from pathlib import Path
 import pytest
 
 # 03/11 (portage) : bulle GTK = Linux, avec PyGObject et pycairo du système ; ailleurs, la bulle Qt (test_bulle_qt.py).
-pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="bulle GTK : Linux seulement")
+import importlib.util  # noqa: E402
+
+pytestmark = pytest.mark.skipif(
+    not sys.platform.startswith("linux") or importlib.util.find_spec("gi") is None
+    or importlib.util.find_spec("cairo") is None,
+    reason="bulle GTK : Linux, avec PyGObject et pycairo du système (absents de la CI)")
 
 ROOT = Path(__file__).resolve().parent.parent
 

@@ -106,7 +106,9 @@ def test_reflexion_jamais_dite():
     assert [e.text for e in out if e.kind == "text"] == ["Oui."] and out[-1].text == "Oui."
 
 
-@pytest.mark.skipif(not shutil.which("claude"), reason="CLI claude absent")
+# 03/11 (CI) : le VRAI Claude Code ; celui de tools/ci/faux-claude ne parle à aucun Ollama.
+@pytest.mark.skipif(not shutil.which("claude") or "faux-claude" in (shutil.which("claude") or ""),
+                    reason="vrai CLI claude absent")
 def test_vrai_cli_contre_faux_ollama(monkeypatch, tmp_path):
     """Bout à bout : le VRAI CLI, lancé comme le fait Astrel en mode léger, parle au faux
     Ollama (/v1/messages) ; aucun outil annoncé, aucun quota de l'abonnement."""

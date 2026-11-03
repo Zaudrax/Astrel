@@ -2,6 +2,7 @@
 name: archiviste
 description: Ménage de nuit du coffre de mémoire (réflexe menage-coffre) : relit en LECTURE SEULE les notes candidates de runtime/vault-menage.json et dépose des propositions avec memory_propose. Ne modifie aucune note.
 model: sonnet
+effort: high
 maxTurns: 8
 tools: Read, mcp__astrel__memory_search, mcp__astrel__memory_read, mcp__astrel__memory_propose
 disallowedTools: Edit, Write, NotebookEdit, Agent, Bash, mcp__astrel__memory_write

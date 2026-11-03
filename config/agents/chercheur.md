@@ -2,7 +2,7 @@
 name: chercheur
 description: Recherche en LECTURE SEULE (fichiers, historique des conversations, mémoire, web), faits courts avec leur source. Pour localiser, collecter, comparer ; pas pour coder. Modèle léger par défaut, model sonnet pour une synthèse délicate.
 model: haiku
-effort: medium
+effort: high
 omitClaudeMd: true
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch, mcp__astrel__memory_search, mcp__astrel__memory_read, mcp__astrel__memory_list, mcp__astrel__history_search
 disallowedTools: Edit, Write, NotebookEdit, Agent
