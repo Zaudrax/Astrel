@@ -64,7 +64,7 @@ jobs:
         os: [macos-14, windows-2022]
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ github.ref_name != 'portage' }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -94,5 +94,7 @@ jobs:
         run: '"$VPY" -m pytest -q -p no:cacheprovider tests/test_platform.py tests/test_install.py tests/test_ipc.py'
       - name: Suite complète (mesure)
         if: always()
+        # 03/11 : délai sur l'ÉTAPE, pas sur le job : un job coupé perd tout son journal (macOS restait muet).
+        timeout-minutes: 40
         shell: bash
-        run: '"$VPY" -m pytest -q -p no:cacheprovider --durations=15 --timeout=120' 
+        run: '"$VPY" -m pytest -q -p no:cacheprovider -o console_output_style=count --durations=25 --timeout=120' 
