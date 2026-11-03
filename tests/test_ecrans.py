@@ -87,6 +87,7 @@ def test_lister_vide_hors_linux_et_en_panne(monkeypatch):
     monkeypatch.setattr(sys, "platform", "darwin")
     assert ecrans.lister() == []
     monkeypatch.setattr(sys, "platform", "linux")
+    pytest.importorskip("gi")  # PyGObject vient du système (absent de la CI)
     from gi.repository import Gio
 
     def panne(*_a, **_k):
@@ -164,6 +165,7 @@ def test_nom_qui_contient_et_reste_un_seul_ecran(liste):
 
 def test_assembler_ecran_sans_mode_erreur_propre(liste):
     """Fiche 2 du testeur : un écran sans mode en cours (w = h = 0) faisait planter cv2.resize."""
+    pytest.importorskip("gi")
     import cv2
     import numpy as np
 

@@ -197,6 +197,7 @@ def _png(w: int, h: int, couleur: int = 0) -> bytes:
 def portail(monkeypatch, tmp_path):
     """Portail ScreenCast simulé : `etat["streams"]` = flux rendus par Start (jeton déjà accordé :
     le portable seul, comme le 20/10), images tirées par nœud. Écrans = disposition mesurée."""
+    pytest.importorskip("gi")  # portail ScreenCast : PyGObject vient du système (absent de la CI)
     from astrel import ecrans
     from astrel.platform import linux_capture as lc
     from test_ecrans import ETAT_MESURE
@@ -335,6 +336,7 @@ def test_liste_des_ecrans_illisible_comme_avant(portail, monkeypatch):
 
 
 def test_screenshot_premiere_ligne_chemin_puis_legende(monkeypatch, capsys, tmp_path):
+    pytest.importorskip("gi")
     from astrel import ecrans
 
     recu = {}

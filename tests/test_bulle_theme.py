@@ -17,8 +17,9 @@ import sys
 import time
 from pathlib import Path
 
-import cairo
 import pytest
+
+cairo = pytest.importorskip("cairo")  # bulle : pycairo vient du système (absent de la CI)
 
 from astrel import bubble_premium as bp
 from astrel import theme

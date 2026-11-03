@@ -111,10 +111,11 @@ def test_refus_secrets_dossiers_prives_caches(monkeypatch):
     assert "privé" in medias.refusal(root / "vault" / "note.png")
     assert "privé" in medias.refusal(config.IMAGES_PROFILS.resolve() / "gemini" / "Cookies")
     assert medias.refusal((root / "runtime" / "attachments" / "photo.png").resolve()) == ""
-    assert medias.refusal(Path(f"{chemins_machine.PROJETS}/x/.git/objects/a.png")) == "fichier ou dossier caché"
+    projets = Path(config.WORKDIR)  # lu ici : le dépôt public le change plus haut (le clone, dans les projets)
+    assert medias.refusal(projets / "x" / ".git" / "objects" / "a.png") == "fichier ou dossier caché"
     assert medias.refusal(Path("/tmp/.cache/a.png")) == "fichier ou dossier caché"
-    assert medias.refusal(Path(f"{chemins_machine.PROJETS}/x/api_keys.png")) == "le nom ressemble à un secret"
-    assert medias.refusal(Path(f"{chemins_machine.PROJETS}/x/photo.png")) == ""
+    assert medias.refusal(projets / "x" / "api_keys.png") == "le nom ressemble à un secret"
+    assert medias.refusal(projets / "x" / "photo.png") == ""
 
 
 def test_lien_sortant_refuse(med, tmp_path):

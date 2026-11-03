@@ -6,7 +6,10 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageChops
+
+pytest.importorskip("cairo")  # tools/logo.py dessine l'étoile de la bulle (pycairo, absent de la CI)
 
 from astrel import theme
 
