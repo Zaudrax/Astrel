@@ -99,3 +99,39 @@ def test_faux_claude_tient_une_session():
     assert [e["type"] for e in evts] == ["system", "assistant", "result"]
     assert evts[0]["subtype"] == "init" and evts[2]["is_error"] is False
     assert subprocess.run([sys.executable, str(faux), "inconnu"], capture_output=True).returncode == 2
+
+
+# ------------------------------------------------------------------ Job Object du cerveau (lot 3)
+
+def test_job_object_absent_hors_windows():
+    from astrel.platform import proc
+    if sys.platform == "win32":
+        pytest.skip("Windows : voir le test suivant")
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait()
+    assert proc.rattacher_au_cerveau(p) is False and proc.in_brain_job(os.getpid()) is False
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Job Object : Windows seulement")
+def test_job_object_reconnait_un_petit_enfant_detache_sans_marqueur():
+    from astrel import state
+    from astrel.platform import proc
+    script = ("import subprocess, sys, time\n"
+              "sys.stdin.readline()\n"  # attend d'être rattaché avant de lancer quoi que ce soit
+              "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], env={'SYSTEMROOT': "
+              "__import__('os').environ.get('SYSTEMROOT', '')}, creationflags=0x00000008)\n"  # DETACHED_PROCESS
+              "print(p.pid, flush=True)\n"
+              "time.sleep(60)\n")
+    cerveau = subprocess.Popen([sys.executable, "-c", script], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    try:
+        assert proc.rattacher_au_cerveau(cerveau)
+        cerveau.stdin.write("go\n")
+        cerveau.stdin.flush()
+        petit = int(cerveau.stdout.readline())
+        assert proc.in_brain_job(petit) is True
+        assert proc.brain_marker(petit) is not True  # environnement vidé : le marqueur ne le voit plus
+        assert state.from_claude(petit, claude_pid=None) is True  # le Job Object, lui, le voit
+        assert proc.in_brain_job(os.getpid()) is False
+    finally:
+        systeme.tuer_arbre(cerveau.pid, systeme.SIGKILL)
+        cerveau.wait(timeout=10)

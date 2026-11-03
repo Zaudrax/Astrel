@@ -154,8 +154,9 @@ def from_claude(pid: int, claude_pid: int | None, service_cg: str | None = None)
 
     Vrai si : pid inconnu ou disparu (dans le doute, suspect), descendant du
     process Claude, ou membre du cgroup du service (hors le cœur lui-même).
-    macOS et Windows (pas de cgroup) : porteur du marqueur `ASTREL_BRAIN` du
-    cerveau, ou environnement illisible (P6 ; plus faible qu'un cgroup)."""
+    macOS et Windows (pas de cgroup) : membre du Job Object du cerveau (Windows,
+    03/11), porteur du marqueur `ASTREL_BRAIN` du cerveau, ou environnement
+    illisible (P6 ; sous macOS, plus faible qu'un cgroup)."""
     if pid <= 0 or not proc.exists(pid):
         return True
     if descends_from(pid, claude_pid):
@@ -163,6 +164,8 @@ def from_claude(pid: int, claude_pid: int | None, service_cg: str | None = None)
     if pid == os.getpid():
         return False  # le cœur lui-même (tests, appels internes)
     if not proc.uses_cgroup():
+        if proc.in_brain_job(pid):  # 03/11 : Windows, Job Object du cerveau (platform/proc.py)
+            return True
         marked = proc.brain_marker(pid)
         if marked is None:
             log.debug("environnement du process %s illisible : suspect", pid)

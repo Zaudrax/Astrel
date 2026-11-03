@@ -956,6 +956,7 @@ class Brain:
             # Plan P11 : sans aucune variable Anthropic ni clé de la machine (`env_cerveau`).
             env=fournisseurs.env_cerveau(proc.brain_env(), eff.genre, url=url, modele=eff.modele),
         )
+        proc.rattacher_au_cerveau(self._proc)  # 03/11 : Windows, Job Object (platform/proc.py)
         reglages.mark_applied("brain")  # réglages « au prochain redémarrage » : pris
         if agents_file:
             agents.mark_loaded()  # plan P28 : l'effort de chaque métier, tel que reçu par ce process
@@ -1015,6 +1016,7 @@ class Brain:
             bufsize=1,
             env=fournisseurs.env_cerveau(proc.brain_env(), eff.genre, url=url, modele=eff.modele),
         )
+        proc.rattacher_au_cerveau(self._proc)  # 03/11 : Windows, Job Object (platform/proc.py)
         reglages.mark_applied("brain")
         self._start_readers()
 
@@ -1067,6 +1069,7 @@ class Brain:
             bufsize=1,
             env=local_env(self.local),
         )
+        proc.rattacher_au_cerveau(self._proc)  # 03/11 : Windows, Job Object (platform/proc.py)
         self._start_readers()
 
     def stop(self) -> None:

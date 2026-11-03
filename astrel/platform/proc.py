@@ -52,6 +52,112 @@ def uses_cgroup() -> bool:
     return _linux()
 
 
+# ------------------------------------------------------------------ Job Object du cerveau (Windows)
+# 03/11/2026 (portage, lot 3, autorisé par l'utilisateur) : l'équivalent Windows du cgroup du service.
+# Le process du cerveau est placé, dès son lancement, dans un Job Object propre au cœur ; tout ce
+# qu'il lance ensuite y naît (pas de sortie permise : JOB_OBJECT_LIMIT_BREAKAWAY_OK n'est pas posé),
+# même détaché, environnement vidé ou parent disparu. `IsProcessInJob` le reconnaît alors, là où le
+# marqueur `ASTREL_BRAIN` ne suffisait pas. KILL_ON_JOB_CLOSE : le cœur parti, tout l'arbre de
+# Claude s'arrête (l'équivalent de PR_SET_PDEATHSIG et de l'arrêt du service).
+# Fenêtre restante : ce que le CLI lancerait AVANT d'être rattaché (quelques millisecondes après
+# son démarrage, il n'a encore rien lancé) ; le marqueur couvre ce cas.
+
+_JOB_KILL_ON_CLOSE = 0x2000
+_JOB_EXTENDED_LIMITS = 9
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_job_handle = None
+
+
+def _kernel32():
+    import ctypes
+    from ctypes import wintypes
+
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.CreateJobObjectW.restype = wintypes.HANDLE
+    k.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
+    k.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    k.OpenProcess.restype = wintypes.HANDLE
+    k.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    k.IsProcessInJob.argtypes = (wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL))
+    k.CloseHandle.argtypes = (wintypes.HANDLE,)
+    k.SetInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD)
+    return k
+
+
+def _job():
+    """Le Job Object du cerveau, créé au premier usage (Windows seulement)."""
+    global _job_handle
+    if _job_handle is None:
+        import ctypes
+
+        k = _kernel32()
+        h = k.CreateJobObjectW(None, None)
+        if not h:
+            raise OSError(ctypes.get_last_error(), "CreateJobObjectW")
+
+        class _Basic(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                        ("LimitFlags", ctypes.c_uint32), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", ctypes.c_uint32),
+                        ("Affinity", ctypes.c_size_t), ("PriorityClass", ctypes.c_uint32),
+                        ("SchedulingClass", ctypes.c_uint32)]
+
+        class _Io(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_uint64) for n in ("ReadOperationCount", "WriteOperationCount",
+                                                       "OtherOperationCount", "ReadTransferCount",
+                                                       "WriteTransferCount", "OtherTransferCount")]
+
+        class _Extended(ctypes.Structure):
+            _fields_ = [("BasicLimitInformation", _Basic), ("IoInfo", _Io), ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+        info = _Extended()
+        info.BasicLimitInformation.LimitFlags = _JOB_KILL_ON_CLOSE
+        if not k.SetInformationJobObject(h, _JOB_EXTENDED_LIMITS, ctypes.byref(info), ctypes.sizeof(info)):
+            log.warning("Job Object du cerveau : KILL_ON_JOB_CLOSE refusé (%s)", ctypes.get_last_error())
+        _job_handle = h
+    return _job_handle
+
+
+def rattacher_au_cerveau(p) -> bool:
+    """Windows : place le process du cerveau (`subprocess.Popen`) dans le Job Object du cœur.
+    Ailleurs : rien (le cgroup ou le marqueur suffisent). Un échec est journalisé, jamais fatal :
+    le marqueur reste."""
+    if SYSTEM != "windows":
+        return False
+    try:
+        import ctypes
+
+        if not _kernel32().AssignProcessToJobObject(_job(), int(p._handle)):
+            raise OSError(ctypes.get_last_error(), "AssignProcessToJobObject")
+        return True
+    except (OSError, AttributeError) as exc:
+        log.warning("cerveau hors du Job Object (%s) : seul le marqueur le reconnaîtra", exc)
+        return False
+
+
+def in_brain_job(pid: int) -> bool | None:
+    """Windows : le process est-il dans le Job Object du cerveau ? None si illisible ou si le
+    cerveau n'a jamais été rattaché ; False ailleurs."""
+    if SYSTEM != "windows" or _job_handle is None:
+        return None if SYSTEM == "windows" else False
+    import ctypes
+    from ctypes import wintypes
+
+    k = _kernel32()
+    h = k.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not h:
+        return None
+    try:
+        dedans = wintypes.BOOL()
+        if not k.IsProcessInJob(h, _job_handle, ctypes.byref(dedans)):
+            return None
+        return bool(dedans.value)
+    finally:
+        k.CloseHandle(h)
+
+
 # ------------------------------------------------------------------ parent, existence, nom
 
 def exists(pid: int) -> bool:

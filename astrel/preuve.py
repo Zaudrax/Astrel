@@ -80,6 +80,13 @@ _OID = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 _REF = re.compile(r"refs/heads/[A-Za-z0-9._/-]{1,200}")
 _BRANCHE = re.compile(r"[A-Za-z0-9._/-]{1,100}")
 _CONTROLE_CAR = re.compile(r"[\x00-\x1f\x7f]")
+# 03/11/2026 (portage Windows, lot 3, autorisé par l'utilisateur) : sous Windows, un chemin « C:\\x\\y » est
+# ramené à la forme interne « /C:/x/y » (`_canon`) : toute la logique en « / » reste la même, les
+# comparaisons ignorent la casse (`_sous`), et l'ouverture passe par l'API Windows (`_OuvertureWindows`).
+WINDOWS = os.name == "nt"
+_LECTEUR = re.compile(r"^[A-Za-z]:[\\/]")
+_RESERVES = re.compile(r"^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3]|conin\$|conout\$)(\..*)?$",
+                       re.IGNORECASE)
 _PORTABLE = (hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_DIRECTORY") and os.open in os.supports_dir_fd
              and os.stat in os.supports_dir_fd)
 
@@ -110,17 +117,55 @@ def _chaine(v: Any, nom: str, maxi: int) -> str:
     return v
 
 
+def _canon(chemin: str) -> str:
+    """Windows : « C:\\x\\y » ou « C:/x/y » → « /C:/x/y » (forme interne) ; ailleurs, inchangé."""
+    if not WINDOWS:
+        return chemin
+    if chemin.startswith(("\\\\", "//")):
+        raise CritereInvalide(f"chemin réseau refusé : {chemin[:80]}")
+    if _LECTEUR.match(chemin):
+        return "/" + chemin[0].upper() + ":" + chemin[2:].replace("\\", "/")
+    return chemin.replace("\\", "/")
+
+
+def _systeme(chemin: str) -> str:
+    """Forme interne → chemin du système (Windows : « /C:/x/y » → « C:\\x\\y ») ; ailleurs, inchangé."""
+    if WINDOWS and re.match(r"^/[A-Za-z]:(/|$)", chemin):
+        return chemin[1:3] + "\\" + chemin[4:].replace("/", "\\")
+    return chemin
+
+
+def affiche(chemin: str) -> str:
+    """Chemin à montrer à Claude et à donner à son Bash (Git Bash sous Windows : « C:/x/y »)."""
+    return _systeme(chemin).replace("\\", "/") if WINDOWS else chemin
+
+
+def _absolu(chemin: str) -> bool:
+    return chemin.startswith("/") or (WINDOWS and bool(_LECTEUR.match(chemin)))
+
+
 def _parties(chemin: str) -> list[str]:
-    """Composants d'un chemin ABSOLU, sans « . » ni « .. » ni partie vide douteuse."""
+    """Composants d'un chemin ABSOLU, sans « . » ni « .. » ni partie vide douteuse. Windows : le
+    premier composant est le lecteur (« C: ») ; ni flux de données (« a.txt:flux »), ni nom de
+    périphérique réservé (CON, NUL, COM1…), ni point ou espace final (Windows les retire)."""
+    chemin = _canon(chemin)
     if not chemin.startswith("/"):
         raise CritereInvalide(f"chemin absolu attendu : {chemin[:80]}")
     parts = [p for p in chemin.split("/") if p]
     if any(p in (".", "..") for p in parts):
         raise CritereInvalide(f"« . » et « .. » sont refusés dans un chemin : {chemin[:80]}")
+    if WINDOWS:
+        if not parts or not re.fullmatch(r"[A-Z]:", parts[0]):
+            raise CritereInvalide(f"chemin absolu attendu (avec son lecteur, « C:\\… ») : {chemin[:80]}")
+        for p in parts[1:]:
+            if ":" in p or _RESERVES.match(p) or p.endswith((".", " ")) or any(c in p for c in '<>"|?*'):
+                raise CritereInvalide(f"nom refusé sous Windows : {p[:40]}")
     return parts
 
 
 def _sous(parts: list[str], racine: list[str]) -> bool:
+    if WINDOWS:  # Windows ignore la casse : « C:/Projets » et « c:/projets » sont le même dossier
+        parts, racine = [p.casefold() for p in parts], [p.casefold() for p in racine]
     return len(parts) >= len(racine) and parts[:len(racine)] == racine
 
 
@@ -129,7 +174,10 @@ def _racine_de(chemin: str, scope: list[str]) -> str:
     parts = _parties(chemin)
     meilleure = ""
     for r in scope:
-        rp = [p for p in str(r).split("/") if p]
+        try:
+            rp = _parties(str(r))
+        except CritereInvalide:
+            continue
         if rp and _sous(parts, rp) and len(rp) > len([p for p in meilleure.split("/") if p]):
             meilleure = "/" + "/".join(rp)
     if not meilleure:
@@ -144,8 +192,8 @@ def _chemin(v: Any, nom: str, scope: list[str]) -> str:
 
 
 def _rel(v: Any) -> str:
-    s = _chaine(v, "attendus", MAX_CHEMIN)
-    if s.startswith("/"):
+    s = _chaine(v, "attendus", MAX_CHEMIN).replace("\\", "/") if WINDOWS else _chaine(v, "attendus", MAX_CHEMIN)
+    if s.startswith("/") or (WINDOWS and ":" in s):
         raise CritereInvalide(f"« attendus » : nom relatif au dossier, pas absolu : {s[:80]}")
     parts = [p for p in s.split("/") if p]
     if not parts or any(p in (".", "..") for p in parts):
@@ -277,7 +325,7 @@ def lire_lignes(texte: str, base: str) -> dict:
             raise CritereInvalide(f"ligne {n} : chemin manquant")
         if brut == ".":
             return base
-        return brut if brut.startswith("/") else base.rstrip("/") + "/" + brut
+        return brut if _absolu(brut) else base.rstrip("/\\") + "/" + brut
 
     lignes = [ligne.strip() for ligne in str(texte or "").splitlines()]
     lignes = [(n, ligne) for n, ligne in enumerate(lignes, 1) if ligne and not ligne.startswith("#")]
@@ -330,7 +378,7 @@ def empreinte_critere(critere: dict) -> str:
 def commande_attendue(c: dict) -> str:
     """Le texte EXACT que Claude doit lancer (le dossier fait partie de la commande : le dossier
     courant de l'outil Bash ne se lit pas dans le flux)."""
-    return f"cd {shlex.quote(c['dossier'])} && {c['commande']}"
+    return f"cd {shlex.quote(affiche(c['dossier']))} && {c['commande']}"
 
 
 def decrire(critere: dict | None) -> list[str]:
@@ -342,13 +390,13 @@ def decrire(critere: dict | None) -> list[str]:
         t = c["type"]
         if t == "fichier_existe":
             taille = f" d'au moins {c['taille_min']} octets" if c.get("taille_min") else ""
-            out.append(f"le {c['genre']} {c['chemin']} existe{taille}")
+            out.append(f"le {c['genre']} {affiche(c['chemin'])} existe{taille}")
         elif t == "fichier_contient":
-            out.append(f"{c['chemin']} {'ne contient pas' if c.get('absent') else 'contient'} « {c['texte']} »")
+            out.append(f"{affiche(c['chemin'])} {'ne contient pas' if c.get('absent') else 'contient'} « {c['texte']} »")
         elif t == "empreinte":
-            out.append(f"{c['chemin']} a l'empreinte sha256 {c['sha256']}")  # entière : 12 car. = un « préfixe »
+            out.append(f"{affiche(c['chemin'])} a l'empreinte sha256 {c['sha256']}")  # entière : 12 car. = un « préfixe »
         elif t == "dossier_contient":
-            out.append(f"{c['chemin']} contient {', '.join(c['attendus'][:5])}"
+            out.append(f"{affiche(c['chemin'])} contient {', '.join(c['attendus'][:5])}"
                        + (f" (et {len(c['attendus']) - 5} autres)" if len(c["attendus"]) > 5 else ""))
         elif t == "git_head":
             bits = []
@@ -356,12 +404,12 @@ def decrire(critere: dict | None) -> list[str]:
                 bits.append(f"sur la branche {c['branche']}")
             if c.get("avance"):
                 bits.append("avec un HEAD différent de celui du lancement")
-            out.append(f"le dépôt {c['depot']} " + (" et ".join(bits) or "est lisible"))
+            out.append(f"le dépôt {affiche(c['depot'])} " + (" et ".join(bits) or "est lisible"))
         elif t == "commande_observee":
             out.append(f"la commande « {commande_attendue(c)} », lancée par toi avec l'outil Bash, réussit "
                        "après ta dernière modification")
     for f in critere.get("figer", []):
-        out.append(f"{f} n'a pas changé depuis le lancement")
+        out.append(f"{affiche(f)} n'a pas changé depuis le lancement")
     return out
 
 
@@ -386,12 +434,12 @@ def _points_de_montage() -> frozenset[str]:
 
 def _lecture_permise(chemin: str) -> bool:
     """Le garde-fou demanderait-il pour LIRE ce fichier (secret) ? `runtime/` : jamais lu ici."""
-    parts = [p for p in chemin.split("/") if p]
-    runtime = [p for p in str(config.RUNTIME.resolve()).split("/") if p]
+    parts = _parties(chemin)
+    runtime = _parties(str(config.RUNTIME.resolve()))
     if _sous(parts, runtime):
         return False
     from . import guard  # import tardif : le garde-fou est lourd, et ce module reste testable seul
-    return not guard.classify("Read", {"file_path": chemin}).needs_confirm
+    return not guard.classify("Read", {"file_path": _systeme("/" + "/".join(parts))}).needs_confirm
 
 
 class _Ouverture:
@@ -462,6 +510,132 @@ class _Ouverture:
             self.fd = -1
 
 
+class _OuvertureWindows:
+    """Windows (03/11/2026) : même contrat que `_Ouverture`, par l'API Windows.
+
+    1. Chaque composant sous le lecteur est examiné SANS le suivre (`lstat`) : ni lien symbolique
+       ni « point d'analyse » (jonction, point de montage, lien de OneDrive : tout reparse point est
+       refusé, code « lien »), ni fichier spécial ; même volume que la racine ; racine = celle du
+       lancement (numéro de volume et index du fichier).
+    2. Le dernier composant est ouvert par `CreateFileW` avec FILE_FLAG_OPEN_REPARSE_POINT (aucune
+       redirection suivie) et un partage en LECTURE seule (personne n'écrit pendant la lecture).
+    3. Le vrai chemin du handle ouvert (`GetFinalPathNameByHandleW`) doit être exactement celui
+       demandé : un dossier remplacé par une jonction entre l'examen et l'ouverture est vu là. La
+       lecture se fait ensuite sur CE handle (pas de course entre contrôle et lecture).
+    4. Lien dur (plus d'un nom) : refusé, comme sous Unix."""
+
+    _GENERIC_READ, _READ_ATTRIBUTES = 0x80000000, 0x80
+    _SHARE_READ, _SHARE_WRITE, _SHARE_DELETE = 1, 2, 4
+    _OPEN_EXISTING = 3
+    _OPEN_REPARSE_POINT, _BACKUP_SEMANTICS = 0x00200000, 0x02000000
+    _ATTR_DIRECTORY, _ATTR_REPARSE = 0x10, 0x400
+
+    def __init__(self, chemin: str, racine: str, ancre: dict | None, dossier: bool) -> None:
+        parts, rparts = _parties(chemin), _parties(racine)
+        if not _sous(parts, rparts):
+            raise _Bloque("hors_perimetre")
+        self.fd, self.st, self.racine_st = -1, None, None
+        for i in range(1, len(parts) + 1):
+            p = _systeme("/" + "/".join(parts[:i]))  # « /C: » → « C:\\ »
+            try:
+                st = os.lstat(p)
+            except FileNotFoundError:
+                raise _Absent() from None
+            except (OSError, ValueError):
+                raise _Bloque("illisible") from None
+            if stat.S_ISLNK(st.st_mode) or getattr(st, "st_file_attributes", 0) & self._ATTR_REPARSE:
+                raise _Bloque("lien")
+            if i < len(parts) and not stat.S_ISDIR(st.st_mode):
+                raise _Absent()
+            if not (stat.S_ISDIR(st.st_mode) or stat.S_ISREG(st.st_mode)):
+                raise _Bloque("special")
+            if self.racine_st is not None and st.st_dev != self.racine_st.st_dev:
+                raise _Bloque("montage")
+            if i == len(rparts):
+                if ancre and (st.st_dev, st.st_ino) != (ancre.get("dev"), ancre.get("ino")):
+                    raise _Bloque("racine")
+                self.racine_st = st
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.CreateFileW.restype = wintypes.HANDLE
+        k.CreateFileW.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                                  wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+        k.GetFinalPathNameByHandleW.argtypes = (wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD)
+        k.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+        class _Info(ctypes.Structure):
+            _fields_ = [("attributs", wintypes.DWORD), ("creation", ctypes.c_uint64), ("acces", ctypes.c_uint64),
+                        ("ecriture", ctypes.c_uint64), ("volume", wintypes.DWORD), ("taille_haut", wintypes.DWORD),
+                        ("taille_bas", wintypes.DWORD), ("liens", wintypes.DWORD), ("index_haut", wintypes.DWORD),
+                        ("index_bas", wintypes.DWORD)]
+
+        k.GetFileInformationByHandle.argtypes = (wintypes.HANDLE, ctypes.POINTER(_Info))
+        dernier = os.lstat(_systeme("/" + "/".join(parts)))
+        est_dossier = stat.S_ISDIR(dernier.st_mode)
+        acces = self._READ_ATTRIBUTES if est_dossier else self._GENERIC_READ
+        partage = self._SHARE_READ | ((self._SHARE_WRITE | self._SHARE_DELETE) if est_dossier else 0)
+        h = k.CreateFileW(_systeme("/" + "/".join(parts)), acces, partage, None, self._OPEN_EXISTING,
+                          self._OPEN_REPARSE_POINT | self._BACKUP_SEMANTICS, None)
+        if not h or h == wintypes.HANDLE(-1).value:
+            err = ctypes.get_last_error()
+            raise _Bloque("instable" if err in (2, 3, 32) else "illisible")  # absent depuis, ou en cours d'écriture
+        garder = False
+        try:
+            buf = ctypes.create_unicode_buffer(1024)
+            n = k.GetFinalPathNameByHandleW(h, buf, len(buf), 0)
+            if not 0 < n < len(buf):
+                raise _Bloque("illisible")
+            reel = buf.value
+            if reel.startswith("\\\\?\\UNC\\"):
+                raise _Bloque("montage")
+            if reel.startswith("\\\\?\\"):
+                reel = reel[4:]
+            if _canon(reel).rstrip("/").casefold() != ("/" + "/".join(parts)).casefold():
+                raise _Bloque("instable")  # le chemin a été détourné entre l'examen et l'ouverture
+            info = _Info()
+            if not k.GetFileInformationByHandle(h, ctypes.byref(info)):
+                raise _Bloque("illisible")
+            if info.attributs & self._ATTR_REPARSE:
+                raise _Bloque("lien")
+            if self.racine_st is not None and info.volume != (self.racine_st.st_dev & 0xFFFFFFFF):
+                raise _Bloque("montage")
+            if bool(info.attributs & self._ATTR_DIRECTORY) != est_dossier:
+                raise _Bloque("instable")
+            if dossier and not est_dossier:
+                raise _Bloque("genre", attendu="dossier")
+            if not est_dossier and info.liens > 1:
+                raise _Bloque("lien_dur")
+            if est_dossier:
+                self.st = os.stat(_systeme("/" + "/".join(parts)), follow_symlinks=False)
+            else:
+                self.fd = msvcrt.open_osfhandle(h, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+                garder = True  # le descripteur possède maintenant le handle
+                self.st = os.fstat(self.fd)
+            if len(parts) == len(rparts):
+                if ancre and (self.st.st_dev, self.st.st_ino) != (ancre.get("dev"), ancre.get("ino")):
+                    raise _Bloque("racine")
+                self.racine_st = self.st
+        except BaseException:
+            if self.fd >= 0:
+                os.close(self.fd)
+                self.fd = -1
+            raise
+        finally:
+            if not garder:
+                k.CloseHandle(h)
+
+    def close(self) -> None:
+        if self.fd >= 0:
+            os.close(self.fd)
+            self.fd = -1
+
+
+_Ouvrir = _OuvertureWindows if WINDOWS else _Ouverture
+
+
 def _lire(o: _Ouverture, maxi: int, garde: Callable[[], None]) -> bytes:
     """Contenu du fichier ouvert, au plus `maxi` octets ; « instable » s'il change pendant la lecture."""
     avant = o.st
@@ -528,7 +702,7 @@ class _Lecteur:
             raise _Bloque("hors_perimetre") from None
         if not self.lecture_permise(chemin):
             raise _Bloque("protege")
-        return _Ouverture(chemin, racine, self.ancres.get(racine), dossier)
+        return _Ouvrir(chemin, racine, self.ancres.get(racine), dossier)
 
     def contenu(self, chemin: str, maxi: int) -> bytes:
         """Deux essais si le fichier change pendant la lecture, puis « instable »."""
@@ -577,7 +751,7 @@ def _git_dir(lect: _Lecteur, depot: str) -> tuple[str, str]:
         ligne = lect.contenu(point_git, 4096).decode("utf-8", "replace").strip()
         if not ligne.startswith("gitdir:") or _CONTROLE_CAR.search(ligne):
             raise _Bloque("git")
-        cible = ligne[7:].strip()
+        cible = _canon(ligne[7:].strip()) if _absolu(ligne[7:].strip()) else ligne[7:].strip()
         if not cible.startswith("/"):
             cible = depot.rstrip("/") + "/" + cible
         gitdir = _normaliser(cible)
@@ -586,7 +760,7 @@ def _git_dir(lect: _Lecteur, depot: str) -> tuple[str, str]:
         c = lect.contenu(gitdir + "/commondir", 4096).decode("utf-8", "replace").strip()
         if not c or _CONTROLE_CAR.search(c):
             raise _Bloque("git")
-        commun = _normaliser(c if c.startswith("/") else gitdir + "/" + c)
+        commun = _normaliser(_canon(c) if _absolu(c) else gitdir + "/" + c)
     except _Absent:
         pass
     return gitdir, commun
@@ -786,11 +960,12 @@ def ancrer(critere: dict | None, scope: list[str], doit_arreter: Callable[[], bo
     racines = []
     for r in scope:
         try:
-            o = _Ouverture(str(r), str(r), None, dossier=True)
+            r = "/" + "/".join(_parties(str(r)))  # forme interne : la clé que `_racine_de` cherchera
+            o = _Ouvrir(r, r, None, dossier=True)
         except (_Bloque, _Absent, OSError, ValueError, CritereInvalide):
             continue  # dossier à créer par la mission, ou spécial : vérifié sans ancre
         try:
-            racines.append({"chemin": str(r), "dev": o.st.st_dev, "ino": o.st.st_ino})
+            racines.append({"chemin": r, "dev": o.st.st_dev, "ino": o.st.st_ino})
         finally:
             o.close()
     out: dict[str, Any] = {"racines": racines, "figer": [], "heads": []}
