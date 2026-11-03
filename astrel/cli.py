@@ -180,7 +180,12 @@ def open_hud() -> int:
             if pages:
                 _close_older_huds(opened_at)
             return 0
-    subprocess.Popen(["xdg-open", url], start_new_session=True)
+    if shutil.which("xdg-open"):
+        subprocess.Popen(["xdg-open", url], start_new_session=True)
+    else:
+        # 03/11 : macOS et Windows n'ont pas xdg-open ; navigateur par défaut du système.
+        import webbrowser
+        webbrowser.open(url)
     return 0
 
 

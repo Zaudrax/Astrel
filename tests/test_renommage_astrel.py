@@ -5,7 +5,7 @@ Contrôle de fin du chantier : plus aucun fichier du projet ne contient l'ancien
 son nom. ROUGE tant que les lots 1 à 7 du plan ne sont pas tous faits (variables d'environnement,
 paquet Python, serveur MCP, services, dossier, données) : le message d'échec dit où il en reste.
 
-Liste blanche (plan P42) : `reference/` (absent de ce dépôt), NOTICE, LICENSE, le
+Liste blanche (plan P42) : NOTICE, LICENSE, le
 modèle openWakeWord tiers `hey_jarvis_v0.1.onnx`, et ce fichier lui-même (il doit nommer ce qu'il
 cherche). Hors contrôle : venvs, node_modules, données d'entraînement, `runtime/`, `logs/` (données,
 lot 6), `.git`, caches, binaires.
@@ -23,7 +23,7 @@ ANCIEN = re.compile("jarvis", re.I)
 # Dossiers jamais parcourus (données, dépendances, caches) : par NOM, à tout niveau.
 SAUTES = {"node_modules", "__pycache__", ".pytest_cache", ".git", ".eveil-donnees", ".rtk"}
 # Dossiers de premier niveau hors contrôle : venvs, données (lot 6) et liste blanche du plan.
-SAUTES_RACINE = {"runtime", "logs", "reference"}
+SAUTES_RACINE = {"runtime", "logs"}
 # Fichiers de la liste blanche (chemins relatifs à la racine).
 BLANCHE = {"NOTICE", "LICENSE", "tests/test_renommage_astrel.py"}
 BLANCHE_NOMS = {"hey_jarvis_v0.1.onnx"}
@@ -101,5 +101,4 @@ def test_aucun_fichier_ne_porte_l_ancien_nom():
 def test_la_liste_blanche_reste_en_place():
     """La liste blanche ne doit pas cacher un oubli : chaque entrée existe vraiment."""
     assert (ROOT / "NOTICE").is_file() and (ROOT / "LICENSE").is_file()
-    # Dépôt public : pas de dossier reference/ ; la licence est celle du projet.
     assert "PolyForm Noncommercial" in (ROOT / "LICENSE").read_text(encoding="utf-8")

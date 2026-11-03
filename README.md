@@ -16,8 +16,8 @@ montre ce qu'il fait pendant qu'il le fait.
 **Un garde-fou avant chaque action.** Claude tourne sans demander de permission au CLI, mais un hook
 `PreToolUse` (`hooks/permission_hook.py`, logique dans `astrel/guard.py`) juge chaque appel d'outil.
 Les commandes Bash sont analysées de façon structurée : suppressions récursives, écritures vers des
-fichiers sensibles, commandes déguisées. Ce qui est grave (supprimer, envoyer, payer, `sudo`,
-`git push`…) attend une réponse à la voix, d'un clic dans le HUD ou d'un geste devant la webcam.
+fichiers sensibles, commandes déguisées. Ce qui est grave (supprimer, envoyer, payer, partager,
+`sudo`…) attend une réponse à la voix, d'un clic dans le HUD ou d'un geste devant la webcam.
 Un hook qui plante refuse. Au troisième refus d'affilée dans un même message, un disjoncteur dit à
 Claude d'arrêter de contourner et de demander. Avant chaque écriture de Claude, le hook garde la
 version d'avant : « annule ce que tu viens de faire » rétablit le dernier lot de fichiers. Claude ne peut ni répondre « oui » à sa propre demande ni desserrer le
@@ -42,11 +42,11 @@ passe jamais par la ligne de commande et un cookie signé. Le markdown des répo
 nœuds DOM d'une liste fermée, sans `innerHTML`. Une bulle flottante (GTK) donne l'état d'un coup
 d'œil et reçoit les questions de confirmation.
 
-**Une équipe d'agents pour les projets de l'utilisateur.** Astrel délègue à des sous-agents
-définis dans `config/agents/` (codeur, testeur, relecteur, planificateur, chercheur…), chacun avec
-sa fiche de métier. Après un codeur, un testeur puis un relecteur repassent derrière. Un hook choisit
-le modèle de chaque sous-agent : une tâche de code part toujours sur Opus. Les gros chantiers
-passent par un mode plan : un plan écrit, relu dans le HUD, puis exécuté.
+**Des agents spécialisés, lancés en fond pour les tâches longues.** Une recherche sur plusieurs
+sites, une semaine de mails à trier : Astrel confie ce qui prend du temps à des sous-agents définis
+dans `config/agents/`, chacun avec sa fiche de métier, et la conversation continue pendant ce temps.
+Le HUD montre ce que fait chaque agent et ce qu'il a coûté. Il prévient quand l'un d'eux s'emballe.
+Les gros chantiers passent par un mode plan : un plan écrit, relu dans le HUD, puis exécuté.
 
 **De la mémoire et des jetons comptés.** Notes en Markdown dans un coffre local, rappelées avant
 chaque message ; historique des conversations indexé en SQLite FTS5 (`history_search`). Quand le
@@ -92,7 +92,7 @@ flowchart LR
     Claude --> Hook{"Hook PreToolUse<br/>garde-fou"}
     Hook -->|autorisé| Outils["Terminal, fichiers,<br/>MCP Astrel, navigateur"]
     Hook -->|grave| Accord(["Accord de l'utilisateur :<br/>voix, HUD, bulle, geste"])
-    Claude --> Agents["Sous-agents<br/>codeur, testeur, relecteur"]
+    Claude --> Agents["Agents spécialisés<br/>tâches longues, en fond"]
     Coeur --> Voix["Voix phrase par phrase<br/>Edge, Piper en secours"] --> HP((Haut-parleur))
     Coeur <--> HUD["HUD web<br/>127.0.0.1 seulement"]
     Coeur <--> Bulle["Bulle GTK"]
@@ -108,8 +108,9 @@ texte des réponses, jamais le son du micro.
 |---|---|
 | **Debian 13**, GNOME, Wayland | Utilisé tous les jours : c'est la machine de référence. |
 | Ubuntu 24.04, Debian 12 | Mêmes paquets ; pas encore essayé sur une machine neuve. |
-| Windows 11 + WSL2 | Prévu (son par WSLg), pas vérifié. Ni bulle ni raccourcis. |
-| macOS, Windows natif | Portés sur le papier (couche `astrel/platform/`), **jamais lancés sur une vraie machine**. |
+| Windows 10 ou 11 + WSL2 | **La voie conseillée sous Windows** : le code Linux, dans Ubuntu. Premier essai en cours. |
+| macOS | Porté sur le papier (couche `astrel/platform/`), **jamais lancé sur une vraie machine**. |
+| Windows natif | **Pas encore prêt** : le démarrage plante (deux appels propres à Linux à adapter). |
 
 La bulle, les raccourcis globaux, le démarrage automatique et la transcription sur carte graphique
 ne marchent que sous Linux. Hors Linux, la protection contre un programme lancé par Claude est plus
@@ -139,8 +140,8 @@ le HUD ouvre un guide de démarrage ([docs/GUIDE-DEMARRAGE.md](docs/GUIDE-DEMARR
 du mode d'emploi est dans [docs/UTILISATION.md](docs/UTILISATION.md) et
 [docs/DEPANNAGE.md](docs/DEPANNAGE.md).
 
-Une nouvelle installation démarre en mode prudent : il demande aussi pour les commits, les comptes
-connectés et l'écriture dans le dossier personnel. `./run.sh doctor` vérifie que le garde-fou est en
+Une nouvelle installation démarre en mode prudent : il demande aussi pour les comptes connectés et
+l'écriture dans le dossier personnel. `./run.sh doctor` vérifie que le garde-fou est en
 place et n'a pas changé.
 
 Pour essayer le HUD sans micro ni abonnement : `.venv/bin/python tools/hud_demo.py` puis `./hud.sh`.
@@ -163,30 +164,45 @@ python3.12 install.py                     # installateur commun (aucun sudo)
 Le son passe par sounddevice, installé avec Astrel ; macOS demande l'accès au micro au premier
 lancement. Le dossier des projets est `~/Projets`, ou celui de la variable `ASTREL_WORKDIR`.
 
-### Windows (expérimental)
+### Windows : par WSL2
 
-**Par WSL2, la voie conseillée, non vérifiée.** Dans PowerShell lancé en administrateur :
-`wsl --install -d Ubuntu-24.04`, redémarrer, puis suivre la partie Debian ou Ubuntu dans la
-fenêtre Ubuntu. WSL n'a pas toujours systemd : lancer alors Astrel avec
-`ASTREL_WORKDIR=~/Projets ./run.sh` et le HUD avec `./hud.sh`. Le son passe par WSLg ; le micro
-n'a pas été essayé (`./run.sh --listen` pour le vérifier).
+Astrel tourne alors dans un Ubuntu intégré à Windows, avec le même code que sur la machine de
+référence. Il faut Windows 11, ou Windows 10 à jour (version 22H2), pour que WSLg transmette le son,
+le micro et les fenêtres. Cette voie est en cours de premier essai : signale tout ce qui coince.
 
-**En natif, jamais lancé sur une vraie machine.** Dans PowerShell :
+1. Dans PowerShell **lancé en administrateur** :
+   ```powershell
+   wsl --install -d Ubuntu-24.04
+   ```
+   Redémarre, ouvre « Ubuntu » depuis le menu Démarrer et crée l'utilisateur demandé.
+2. Vérifie que systemd tourne dans Ubuntu : `systemctl --user status` doit répondre. Sinon :
+   ```bash
+   printf '[boot]\nsystemd=true\n' | sudo tee /etc/wsl.conf
+   ```
+   puis `wsl --shutdown` dans PowerShell, et rouvre Ubuntu.
+3. Installe Claude Code **dans Ubuntu** et connecte-le à ton abonnement Claude (Pro ou Max) :
+   ```bash
+   curl -fsSL https://claude.ai/install.sh | bash
+   claude          # suis le lien de connexion, puis /exit
+   ```
+4. Installe Google Chrome dans Ubuntu : le HUD s'ouvre dans une fenêtre de Chrome, affichée sur le
+   bureau Windows par WSLg.
+   ```bash
+   wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+   sudo apt install ./google-chrome-stable_current_amd64.deb
+   ```
+5. Suis la partie **Debian ou Ubuntu** ci-dessus, dans la fenêtre Ubuntu. Clone Astrel dans le
+   dossier Linux (`~/Astrel`), pas sous `/mnt/c/…`, beaucoup plus lent.
+6. Vérifie le micro avec `./run.sh --listen`. Windows doit autoriser le micro aux applications de
+   bureau (Paramètres › Confidentialité et sécurité › Microphone).
 
-```powershell
-winget install Python.Python.3.12        # case « Add to PATH » cochée
-winget install Git.Git
-winget install OpenJS.NodeJS.LTS
-git clone https://github.com/Zaudrax/Astrel.git $HOME\Astrel
-cd $HOME\Astrel
-py tools\check_install.py
-.\install.ps1                            # refusé ? PowerShell -ExecutionPolicy Bypass -File .\install.ps1
-.venv\Scripts\python -m astrel
-.venv\Scripts\python -m astrel --hud     # dans un autre terminal
-```
+Une carte NVIDIA sert aussi sous WSL2 si son pilote Windows est à jour ; sinon le processeur
+transcrit, plus lentement. La bulle et les raccourcis globaux ne sont pas garantis sous WSLg.
 
-Installe Astrel dans ton profil (`C:\Users\<toi>\…`), pas à la racine d'un disque : le canal
-local passe par 127.0.0.1 avec un jeton écrit dans le dossier d'Astrel.
+### Windows natif : pas encore prêt
+
+`install.ps1` existe, mais Astrel plante au démarrage tant que deux appels propres à Linux ne sont
+pas adaptés (serveur du HUD). Passe par WSL2 en attendant.
 
 **Hors Linux, ce qui manque encore :** la bulle, les raccourcis globaux, le démarrage automatique
 (Astrel se lance à la main), la transcription sur carte graphique (elle passe par le processeur)

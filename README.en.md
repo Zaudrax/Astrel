@@ -16,7 +16,7 @@ while it does it.
 **A guardrail before every action.** Claude runs without the CLI's permission prompts, but a
 `PreToolUse` hook (`hooks/permission_hook.py`, logic in `astrel/guard.py`) judges every tool call.
 Bash commands are parsed structurally: recursive deletes, writes to sensitive files, disguised
-commands. Anything serious (deleting, sending, paying, `sudo`, `git push`…) waits for an answer by
+commands. Anything serious (deleting, sending, paying, sharing, `sudo`…) waits for an answer by
 voice, a click in the HUD or a gesture in front of the webcam. A hook that crashes denies. After three refusals in a row within one message, a circuit breaker
 tells Claude to stop working around it and ask. Before each write by Claude, the hook keeps the
 previous version: "undo what you just did" restores the last batch of files. Claude
@@ -41,11 +41,11 @@ appears on a command line and a signed cookie. Markdown in answers is rendered a
 closed list, without `innerHTML`. A floating bubble (GTK) shows the state at a glance and receives
 confirmation questions.
 
-**A team of agents for the user's projects.** Astrel delegates to sub-agents defined in
-`config/agents/` (coder, tester, reviewer, planner, researcher…), each with its role sheet. After a
-coder, a tester then a reviewer check the work. A hook picks each sub-agent's model: a coding task
-always runs on Opus. Large jobs go through a plan mode: a written plan, reviewed in the HUD, then
-carried out.
+**Specialised agents running in the background for long tasks.** A search across several sites, a
+week of email to sort: Astrel hands the slow work to sub-agents defined in `config/agents/`, each
+with its role sheet, and the conversation goes on in the meantime. The HUD shows what each agent is
+doing and what it has cost, and warns when one of them runs away. Large jobs go through a plan
+mode: a written plan, reviewed in the HUD, then carried out.
 
 **Memory, and tokens kept in check.** Markdown notes in a local vault, recalled before each
 message; conversation history indexed with SQLite FTS5 (`history_search`). When the context goes
@@ -91,7 +91,7 @@ flowchart LR
     Claude --> Hook{"PreToolUse hook<br/>guardrail"}
     Hook -->|allowed| Tools["Terminal, files,<br/>Astrel MCP, browser"]
     Hook -->|serious| Consent(["User's consent:<br/>voice, HUD, bubble, gesture"])
-    Claude --> Agents["Sub-agents<br/>coder, tester, reviewer"]
+    Claude --> Agents["Specialised agents<br/>long tasks, in the background"]
     Core --> Voice["Sentence-by-sentence voice<br/>Edge, Piper fallback"] --> Spk((Speaker))
     Core <--> HUD["Web HUD<br/>127.0.0.1 only"]
     Core <--> Bubble["GTK bubble"]
@@ -107,8 +107,9 @@ receives the text of the answers, never the microphone audio.
 |---|---|
 | **Debian 13**, GNOME, Wayland | Used every day: this is the reference machine. |
 | Ubuntu 24.04, Debian 12 | Same packages; not yet tried on a fresh machine. |
-| Windows 11 + WSL2 | Planned (sound through WSLg), not verified. No bubble, no shortcuts. |
-| macOS, native Windows | Ported on paper (`astrel/platform/` layer), **never run on a real machine**. |
+| Windows 10 or 11 + WSL2 | **The recommended route on Windows**: the Linux code, inside Ubuntu. First trial under way. |
+| macOS | Ported on paper (`astrel/platform/` layer), **never run on a real machine**. |
+| Native Windows | **Not ready yet**: startup crashes (two Linux-only calls to adapt). |
 
 The bubble, global shortcuts, autostart and GPU transcription work on Linux only. Outside Linux,
 protection against a program started by Claude is weaker: there is no cgroup to recognise it.
@@ -135,8 +136,8 @@ systemctl --user start astrel         # the assistant
 The step-by-step guide is in [docs/INSTALLATION.md](docs/INSTALLATION.md) (in French). On first
 launch the HUD opens a getting-started guide ([docs/GUIDE-DEMARRAGE.en.md](docs/GUIDE-DEMARRAGE.en.md)).
 
-A new installation starts in cautious mode: it also asks before commits, connected accounts and
-writes in the home folder. `./run.sh doctor` checks that the guardrail is in place and unchanged.
+A new installation starts in cautious mode: it also asks before using connected accounts and
+writing in the home folder. `./run.sh doctor` checks that the guardrail is in place and unchanged.
 
 To try the HUD without a microphone or a subscription: `.venv/bin/python tools/hud_demo.py`, then
 `./hud.sh`.
@@ -159,30 +160,46 @@ python3.12 install.py                     # shared installer (no sudo)
 Sound goes through sounddevice, installed with Astrel; macOS asks for microphone access on first
 launch. The projects folder is `~/Projets`, or the one in the `ASTREL_WORKDIR` variable.
 
-### Windows (experimental)
+### Windows: through WSL2
 
-**Through WSL2, the recommended route, not verified.** In PowerShell run as administrator:
-`wsl --install -d Ubuntu-24.04`, restart, then follow the Debian or Ubuntu part in the Ubuntu
-window. WSL does not always have systemd: in that case start Astrel with
-`ASTREL_WORKDIR=~/Projets ./run.sh` and the HUD with `./hud.sh`. Sound goes through WSLg; the
-microphone has not been tried (`./run.sh --listen` to check it).
+Astrel then runs in an Ubuntu built into Windows, with the same code as on the reference machine.
+You need Windows 11, or an up-to-date Windows 10 (version 22H2), so that WSLg carries sound, the
+microphone and windows. This route is being tried for the first time: report anything that gets
+in the way.
 
-**Native, never run on a real machine.** In PowerShell:
+1. In PowerShell **run as administrator**:
+   ```powershell
+   wsl --install -d Ubuntu-24.04
+   ```
+   Restart, open "Ubuntu" from the Start menu and create the user it asks for.
+2. Check that systemd runs inside Ubuntu: `systemctl --user status` must answer. If not:
+   ```bash
+   printf '[boot]\nsystemd=true\n' | sudo tee /etc/wsl.conf
+   ```
+   then `wsl --shutdown` in PowerShell, and reopen Ubuntu.
+3. Install Claude Code **inside Ubuntu** and sign it in to your Claude subscription (Pro or Max):
+   ```bash
+   curl -fsSL https://claude.ai/install.sh | bash
+   claude          # follow the sign-in link, then /exit
+   ```
+4. Install Google Chrome inside Ubuntu: the HUD opens in a Chrome window, shown on the Windows
+   desktop by WSLg.
+   ```bash
+   wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+   sudo apt install ./google-chrome-stable_current_amd64.deb
+   ```
+5. Follow the **Debian or Ubuntu** part above, in the Ubuntu window. Clone Astrel into the Linux
+   folder (`~/Astrel`), not under `/mnt/c/…`, which is much slower.
+6. Check the microphone with `./run.sh --listen`. Windows must allow desktop apps to use the
+   microphone (Settings › Privacy & security › Microphone).
 
-```powershell
-winget install Python.Python.3.12        # tick "Add to PATH"
-winget install Git.Git
-winget install OpenJS.NodeJS.LTS
-git clone https://github.com/Zaudrax/Astrel.git $HOME\Astrel
-cd $HOME\Astrel
-py tools\check_install.py
-.\install.ps1                            # refused? PowerShell -ExecutionPolicy Bypass -File .\install.ps1
-.venv\Scripts\python -m astrel
-.venv\Scripts\python -m astrel --hud     # in another terminal
-```
+An NVIDIA card also works under WSL2 if its Windows driver is up to date; otherwise the CPU does
+the transcription, more slowly. The bubble and global shortcuts are not guaranteed under WSLg.
 
-Install Astrel in your profile (`C:\Users\<you>\…`), not at the root of a drive: the local channel
-goes through 127.0.0.1 with a token written in Astrel's folder.
+### Native Windows: not ready yet
+
+`install.ps1` exists, but Astrel crashes at startup until two Linux-only calls are adapted (HUD
+server). Use WSL2 in the meantime.
 
 **Still missing outside Linux:** the bubble, global shortcuts, autostart (Astrel is started by
 hand), GPU transcription (the CPU does it) and the `doctor` health check. The guardrail is less

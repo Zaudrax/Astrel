@@ -1,5 +1,5 @@
 """Groupe « Mises à jour » de la page « Réglages » (17/10, plan P4, lot 7) : version,
-`git fetch`, `update.py` (jamais update.sh) seulement hors d'un dépôt bloqué et sans fichier suivi
+`git fetch`, `update.py` (jamais update.sh) seulement avec une origine et sans fichier suivi
 modifié. Faux git : rien n'est lancé pour de vrai."""
 import types
 
@@ -48,12 +48,11 @@ def test_version_et_depot_sans_identifiants(git):
     assert lines["Dépôt"] == "https://github.com/ami/astrel.git" and lines["État"] == "pas encore vérifié"
 
 
-def test_depot_bloque_tout_grise(git, monkeypatch):
+def test_sans_depot_d_origine_tout_grise(git):
     m, state, calls, launched = git
-    monkeypatch.setattr(maj_mod, "BLOCKED_ORIGINS", ("ancien-depot",))
-    state["origin"] = "https://github.com/exemple/ancien-depot.git"
+    state["origin"] = ""
     a = actions(m.view())
-    assert a["check"]["disabled"] and a["update"]["disabled"] and "bloqué" in a["update"]["reason"]
+    assert a["check"]["disabled"] and a["update"]["disabled"] and "origine" in a["update"]["reason"]
     assert m.run("update")["ok"] is False and m.run("check")["ok"] is False
     assert launched == [] and not any(c[0] == "fetch" for c in calls)
     assert reglages.action("maj", "update", {})["ok"] is False

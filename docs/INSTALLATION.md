@@ -27,6 +27,15 @@ flowchart LR
    et demande un nom d'utilisateur et un mot de passe : choisis-les (le mot de
    passe ne s'affiche pas quand tu le tapes, c'est normal).
 4. Toutes les commandes suivantes se tapent **dans cette fenêtre Ubuntu**.
+5. Vérifie que systemd tourne : `systemctl --user status` doit répondre. Sinon :
+   `printf '[boot]\nsystemd=true\n' | sudo tee /etc/wsl.conf`, puis
+   `wsl --shutdown` dans PowerShell, et rouvre Ubuntu.
+6. Installe Google Chrome dans Ubuntu (le HUD s'ouvre dans sa fenêtre) :
+   ```bash
+   wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+   sudo apt install ./google-chrome-stable_current_amd64.deb
+   ```
+7. Clone Astrel dans le dossier Linux (`~/Astrel`), jamais sous `/mnt/c/…`.
 
 Windows 11 fournit le son et les fenêtres à WSL (WSLg). Le micro dans WSL n'a
 pas encore été essayé avec Astrel : l'étape 6 dit comment le vérifier.

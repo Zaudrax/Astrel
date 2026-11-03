@@ -1,7 +1,7 @@
 """Capture et restitution audio via PipeWire en ligne de commande.
 
 ⚠️ On évite volontairement PortAudio (`sounddevice`) : il exige le paquet système
-`libportaudio2`, absent de la machine de référence. `parecord`/`paplay` sont déjà là et suffisent.
+`libportaudio2`, absent de cette machine. `parecord`/`paplay` sont déjà là et suffisent.
 
 Portage (P2, lot 5) : ce moteur « pulse » reste celui de Linux, inchangé. Sous
 macOS et Windows, où il n'y a pas PipeWire, le moteur `sounddevice` (PortAudio

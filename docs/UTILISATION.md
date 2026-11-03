@@ -100,7 +100,7 @@ corriger et ranger ces notes toi-même : c'est voulu.
 `./run.sh --voices` fait parler toutes les voix disponibles ; le badge de voix
 du HUD permet d'en changer à chaud.
 
-Autre voix possible : **Charon, la voix native de Gemini**.
+La voix la plus naturelle est **Charon, la voix native de Gemini**.
 On la retrouve par l'API TTS de Gemini : poser `GEMINI_API_KEY` dans
 `config/secrets.json` (`{"GEMINI_API_KEY": "…"}`, clé gratuite sur
 aistudio.google.com), puis choisir « Gemini Charon ». Si Gemini tombe (réseau,

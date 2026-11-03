@@ -3,8 +3,7 @@
 - Version : `astrel.__version__` et le commit en cours.
 - « Vérifier » : `git fetch` (fil à part), puis le nombre de commits d'avance du dépôt.
 - « Mettre à jour » : lance `update.py` (JAMAIS `update.sh`), détaché (il relance Astrel),
-  SEULEMENT si le dépôt d'origine n'est pas bloqué (`BLOCKED_ORIGINS`) et si
-  aucun fichier suivi n'est modifié ; sinon le bouton est grisé avec sa raison.
+  SEULEMENT s'il y a un dépôt d'origine et si aucun fichier suivi n'est modifié ; sinon le bouton est grisé avec sa raison.
 Rien n'est jamais poussé.
 """
 from __future__ import annotations
@@ -21,7 +20,6 @@ from . import __version__, config
 
 log = logging.getLogger("astrel.maj")
 
-BLOCKED_ORIGINS: tuple[str, ...] = ()  # morceaux d'adresse d'un dépôt d'origine à ne jamais mettre à jour
 FETCH_TIMEOUT_S = 60.0
 LOCAL_CACHE_S = 30.0
 
@@ -80,8 +78,6 @@ class MiseAJour:
         origin = str(state.get("origin") or "").lower()
         if not origin:
             return "aucun dépôt d'origine"
-        if any(b in origin for b in BLOCKED_ORIGINS):
-            return "dépôt d'origine bloqué : ce n'est pas celui d'Astrel, mise à jour à la main"
         return ""
 
     # ------------------------------------------------------------------ vue
