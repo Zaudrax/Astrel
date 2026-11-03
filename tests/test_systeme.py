@@ -2,6 +2,7 @@
 session (systemd --user), bulle (autostart), raccourcis GNOME (hotkeys.sh). Ni systemctl ni
 gsettings réels : dossier personnel du test, commandes simulées."""
 import types
+from pathlib import Path
 
 import pytest
 
@@ -60,11 +61,10 @@ def test_memes_fonctions_partout():
     for mod in (linux, macos, windows, degrade):
         for name in FUNCS:
             assert callable(getattr(mod, name)), (mod.__name__, name)
-    for mod in (macos, windows, degrade):
-        with pytest.raises(Indisponible, match="indisponible"):
-            mod.autostart_state()
-        with pytest.raises(Indisponible, match="indisponible"):
-            mod.set_hotkeys(True)
+    with pytest.raises(Indisponible, match="indisponible"):
+        degrade.autostart_state()
+    with pytest.raises(Indisponible, match="indisponible"):
+        degrade.set_hotkeys(True)
 
 
 def test_demarrage_avec_la_session(machine):
@@ -131,3 +131,58 @@ def test_refuse_a_claude(astrel, published, machine):
     _, _, ran = machine
     res = j.on_command({"cmd": "settings_set", "key": "systeme.autostart", "value": False, "_from_claude": True})
     assert res["ok"] is False and not any("disable" in c for c in ran)
+
+
+# --- 03/11 (portage) : démarrage automatique et raccourcis de Windows et macOS ---
+
+def test_windows_demarrage_par_le_dossier_demarrage(tmp_path, monkeypatch):
+    dem = tmp_path / "Startup"
+    pyw = tmp_path / "pythonw.exe"
+    pyw.write_text("")
+    monkeypatch.setattr(windows, "_demarrage", lambda: dem)
+    monkeypatch.setattr(windows, "_pythonw", lambda: pyw)
+    lances = []
+
+    def faux_powershell(cmd, env, **k):
+        lances.append((env["ASTREL_CIBLE"], env["ASTREL_ARGS"]))
+        Path(env["ASTREL_LIEN"]).write_text("lnk")
+    monkeypatch.setattr(windows.subprocess, "run", faux_powershell)
+    assert windows.autostart_state() == {"service": False, "bubble": False}
+    assert "démarrera" in windows.set_autostart(True)
+    assert "bulle" in windows.set_autostart(True, bubble=True)
+    assert windows.autostart_state() == {"service": True, "bubble": True}
+    assert lances == [(str(pyw), "-m astrel"), (str(pyw), "-m astrel.bulle_qt")]
+    windows.set_autostart(False)
+    assert windows.autostart_state() == {"service": False, "bubble": True}
+    pyw.unlink()
+    with pytest.raises(Indisponible, match="install.ps1"):
+        windows.autostart_state()
+
+
+def test_macos_demarrage_par_launchagents(tmp_path, monkeypatch):
+    import plistlib
+    monkeypatch.setattr(macos.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(macos.subprocess, "run", lambda *a, **k: None)
+    assert macos.autostart_state() == {"service": False, "bubble": False}
+    macos.set_autostart(True)
+    macos.set_autostart(True, bubble=True)
+    agent = plistlib.loads((tmp_path / "Library" / "LaunchAgents" / "fr.astrel.coeur.plist").read_bytes())
+    assert agent["RunAtLoad"] is True and agent["ProgramArguments"][1:] == ["-m", "astrel"]
+    assert agent["KeepAlive"] == {"SuccessfulExit": False}
+    macos.set_autostart(False, bubble=False)
+    assert macos.autostart_state() == {"service": True, "bubble": False}
+
+
+def test_raccourcis_retenus_et_ecoutes(tmp_path, monkeypatch):
+    from astrel.platform import raccourcis
+    monkeypatch.setattr(raccourcis, "FICHIER", tmp_path / "raccourcis.json")
+    monkeypatch.setattr(raccourcis.config, "RUNTIME", tmp_path)
+    ecoute = []
+    monkeypatch.setattr(raccourcis, "demarrer", lambda: ecoute.append("on") or True)
+    monkeypatch.setattr(raccourcis, "arreter", lambda: ecoute.append("off"))
+    assert not windows.hotkeys_state()
+    assert "Ctrl+Alt+J" in windows.set_hotkeys(True)
+    assert macos.hotkeys_state() and ecoute == ["on"]
+    windows.set_hotkeys(False)
+    assert not windows.hotkeys_state() and ecoute == ["on", "off"]
+    assert set(raccourcis.TOUCHES.values()) == {"wake", "toggle", "stop", "pause toggle", "hud"}

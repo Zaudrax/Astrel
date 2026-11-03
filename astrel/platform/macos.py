@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 from . import unavailable
@@ -198,19 +199,61 @@ def windows_summary() -> str:
                        "raison": "macOS ne donne la liste des fenêtres qu'avec l'autorisation d'accessibilité"})
 
 
-# --- démarrage automatique et raccourcis (17/10, plan P4, lot 8) : pas encore portés ---
+# --- démarrage automatique et raccourcis (03/11/2026, portage) ---
+# Démarrage : deux LaunchAgents de l'utilisateur (~/Library/LaunchAgents), lus à l'ouverture de session :
+# Astrel, et la bulle Qt. Raccourcis clavier : écoutés par le cœur (`platform/raccourcis.py`, pynput ;
+# autorisation « Surveillance de l'entrée » à donner une fois).
+
+_AGENTS = {"service": ("fr.astrel.coeur", ["-m", "astrel"]), "bubble": ("fr.astrel.bulle", ["-m", "astrel.bulle_qt"])}
+
+
+def _agent(cle: str) -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{_AGENTS[cle][0]}.plist"
+
 
 def autostart_state() -> dict:
-    raise unavailable("Démarrage automatique", "pas encore porté", system="macos")
+    from .. import config
+    if not Path(config.VENV_PYTHON).exists():
+        raise unavailable("Démarrage automatique", "Astrel n'est pas installé : lance install.py", system="macos")
+    return {k: _agent(k).exists() for k in _AGENTS}
+
+
+def _poser(cle: str, on: bool) -> None:
+    import plistlib
+
+    from .. import config
+    chemin = _agent(cle)
+    if not on:
+        if chemin.exists():
+            subprocess.run(["launchctl", "unload", str(chemin)], capture_output=True, timeout=15)
+        chemin.unlink(missing_ok=True)
+        return
+    etiquette, args = _AGENTS[cle]
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    chemin.write_bytes(plistlib.dumps({
+        "Label": etiquette, "ProgramArguments": [str(config.VENV_PYTHON), *args],
+        "WorkingDirectory": str(config.ROOT), "RunAtLoad": True,
+        "KeepAlive": {"SuccessfulExit": False},  # relancé après un plantage, pas après « Éteindre »
+        "StandardOutPath": str(config.LOGS / f"{etiquette}.log"),
+        "StandardErrorPath": str(config.LOGS / f"{etiquette}.log"),
+    }))
 
 
 def set_autostart(on: bool, bubble: bool | None = None) -> str:
-    raise unavailable("Démarrage automatique", "pas encore porté", system="macos")
+    """Comme sous Linux : `bubble` None = Astrel seul ; sinon la bulle seule (Astrel inchangé)."""
+    autostart_state()
+    if bubble is None:
+        _poser("service", on)
+        return "Astrel démarrera avec ta session." if on else "Astrel ne démarrera plus avec ta session."
+    _poser("bubble", bubble)
+    return "La bulle s'ouvrira avec ta session." if bubble else "La bulle ne s'ouvrira plus avec ta session."
 
 
 def hotkeys_state() -> bool:
-    raise unavailable("Raccourcis clavier", "pas encore portés", system="macos")
+    from . import raccourcis
+    return raccourcis.actif()
 
 
 def set_hotkeys(on: bool) -> str:
-    raise unavailable("Raccourcis clavier", "pas encore portés", system="macos")
+    from . import raccourcis
+    return raccourcis.regler(on)

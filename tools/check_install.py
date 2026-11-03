@@ -318,12 +318,26 @@ def check_installed() -> list[Check]:
     return res
 
 
+def check_cairo_macos() -> Check:
+    """03/11 (portage) : la bulle de macOS dessine avec cairo ; pycairo n'a pas de roue toute prête
+    sous macOS et se compile à l'installation, avec cairo et pkg-config de Homebrew."""
+    if shutil.which("pkg-config") is None:
+        return Check("cairo (bulle)", MANQUE, "pkg-config absent : pycairo ne se compilera pas",
+                     "brew install cairo pkg-config")
+    code, _out_ = _out(["pkg-config", "--modversion", "cairo"])
+    if code != 0:
+        return Check("cairo (bulle)", MANQUE, "bibliothèque cairo absente", "brew install cairo pkg-config")
+    return Check("cairo (bulle)", OK, _out_.strip())
+
+
 def run_checks(ci: bool = False) -> list[Check]:
     s = system()
     res = [check_system(s), check_python(s), check_venv(s), check_git(s)]
     res += check_claude(s, ci)
     res.append(check_node(s))
     res += check_audio(s, ci)
+    if s == "macos":
+        res.append(check_cairo_macos())
     if s == "linux" and not is_wsl():
         res += check_linux_desktop(ci)
     res += [check_gpu(s), check_browser(s), check_disk()]

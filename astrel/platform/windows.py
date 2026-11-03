@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 
 from . import unavailable
@@ -231,19 +232,63 @@ def windows_summary() -> str:
         ensure_ascii=False)
 
 
-# --- démarrage automatique et raccourcis (17/10, plan P4, lot 8) : pas encore portés ---
+# --- démarrage automatique et raccourcis (03/11/2026, portage) ---
+# Démarrage : deux raccourcis dans le dossier « Démarrage » du menu Démarrer de l'utilisateur (aucun droit
+# d'administrateur), qui lancent `pythonw` (sans fenêtre de console) : Astrel, et la bulle Qt.
+# Raccourcis clavier : écoutés par le cœur (`platform/raccourcis.py`, pynput).
+
+_LIENS = {"service": ("Astrel.lnk", "-m astrel"), "bubble": ("Astrel bulle.lnk", "-m astrel.bulle_qt")}
+
+
+def _demarrage() -> Path:
+    return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / \
+        "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+
+
+def _pythonw() -> Path:
+    from .. import config
+    return Path(config.VENV_PYTHON).with_name("pythonw.exe")
+
 
 def autostart_state() -> dict:
-    raise unavailable("Démarrage automatique", "pas encore porté", system="windows")
+    """{"service": Astrel lancé à l'ouverture de session ?, "bubble": bulle aussi ?}."""
+    if not _pythonw().exists():
+        raise unavailable("Démarrage automatique", "Astrel n'est pas installé : lance install.ps1", system="windows")
+    return {k: (_demarrage() / nom).exists() for k, (nom, _a) in _LIENS.items()}
+
+
+def _lien(cle: str, on: bool) -> None:
+    from .. import config
+    nom, args = _LIENS[cle]
+    chemin = _demarrage() / nom
+    if not on:
+        chemin.unlink(missing_ok=True)
+        return
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    script = ("$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:ASTREL_LIEN); "
+              "$s.TargetPath = $env:ASTREL_CIBLE; $s.Arguments = $env:ASTREL_ARGS; "
+              "$s.WorkingDirectory = $env:ASTREL_DOSSIER; $s.WindowStyle = 7; $s.Save()")
+    env = {**os.environ, "ASTREL_LIEN": str(chemin), "ASTREL_CIBLE": str(_pythonw()), "ASTREL_ARGS": args,
+           "ASTREL_DOSSIER": str(config.ROOT)}
+    subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], env=env, check=True,
+                   capture_output=True, timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
 def set_autostart(on: bool, bubble: bool | None = None) -> str:
-    raise unavailable("Démarrage automatique", "pas encore porté", system="windows")
+    """Comme sous Linux : `bubble` None = Astrel seul ; sinon la bulle seule (Astrel inchangé)."""
+    autostart_state()  # lève Indisponible si rien à régler
+    if bubble is None:
+        _lien("service", on)
+        return "Astrel démarrera avec ta session." if on else "Astrel ne démarrera plus avec ta session."
+    _lien("bubble", bubble)
+    return "La bulle s'ouvrira avec ta session." if bubble else "La bulle ne s'ouvrira plus avec ta session."
 
 
 def hotkeys_state() -> bool:
-    raise unavailable("Raccourcis clavier", "pas encore portés", system="windows")
+    from . import raccourcis
+    return raccourcis.actif()
 
 
 def set_hotkeys(on: bool) -> str:
-    raise unavailable("Raccourcis clavier", "pas encore portés", system="windows")
+    from . import raccourcis
+    return raccourcis.regler(on)

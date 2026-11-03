@@ -1748,5 +1748,7 @@
  "critère de fin vérifié par Astrel": "end criterion checked by Astrel",
  "une mission est en pause : l'utilisateur la reprend ou l'arrête d'abord": "a mission is paused: the user resumes or stops it first",
  "la vérification ne s'est pas terminée à temps : à toi de décider": "the check didn't finish in time: your decision",
- "critère de fin refusé : une commande observée se choisit par l'utilisateur seulement (formulaire du HUD)": "end criterion refused: an observed command can only be chosen by the user (HUD form)"
+ "critère de fin refusé : une commande observée se choisit par l'utilisateur seulement (formulaire du HUD)": "end criterion refused: an observed command can only be chosen by the user (HUD form)",
+ "pkg-config absent : pycairo ne se compilera pas": "pkg-config missing: pycairo will not build",
+ "bibliothèque cairo absente": "cairo library missing"
 }

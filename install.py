@@ -238,6 +238,31 @@ def install_linux_autostart(root: Path, workdir: str) -> None:
         print("   raccourcis clavier : GNOME seulement, non posés")
 
 
+def retenir_projets(workdir: str) -> None:
+    """Windows et macOS (03/11) : pas de service pour porter ASTREL_WORKDIR ; le dossier des projets est
+    retenu dans config/profile.json (`projets`), relu par config.WORKDIR au lancement."""
+    f = ROOT / "config" / "profile.json"
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+        data = data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        data = {}
+    if data.get("projets") != workdir:
+        data["projets"] = workdir
+        f.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def install_autostart_bureau(py: str, workdir: str) -> None:
+    """Windows et macOS (03/11) : Astrel et sa bulle à l'ouverture de session (dossier « Démarrage » ou
+    LaunchAgents), raccourcis Ctrl+Alt+J… écoutés par Astrel ; par la couche `astrel/platform`."""
+    retenir_projets(workdir)
+    code = ("from astrel.platform import desktop_backend as d; b = d(); "
+            "print('   ' + b.set_autostart(True)); print('   ' + b.set_autostart(True, bubble=True)); "
+            "print('   ' + b.set_hotkeys(True))")
+    if run([py, "-c", code], check=False) != 0:
+        print("   démarrage automatique non posé : Réglages › Système dans le HUD")
+
+
 def has_systemd() -> bool:
     return bool(shutil.which("systemctl")) and Path("/run/systemd/system").exists()
 
@@ -332,8 +357,13 @@ def main(argv: list[str] | None = None) -> int:
         if not Path(workdir).is_dir():
             print("   ⚠ ce dossier n'existe pas : crée-le ou relance avec --projets DOSSIER")
         install_linux_autostart(ROOT, workdir)
+    elif sys_name in ("windows", "macos"):
+        print(f"   dossier des projets : {workdir}")
+        if not Path(workdir).is_dir():
+            print("   ⚠ ce dossier n'existe pas : crée-le ou relance avec --projets DOSSIER")
+        install_autostart_bureau(str(py), workdir)
     else:
-        print("   pas encore de démarrage automatique sur ce système (portage en cours) : lance Astrel à la main.")
+        print("   pas de démarrage automatique sur ce système : lance Astrel à la main.")
 
     step(7, total, "Empreinte du garde-fou")
     if sys_name != "linux":
@@ -352,7 +382,8 @@ def main(argv: list[str] | None = None) -> int:
               "  journalctl --user -u astrel -f    # le journal en direct")
     else:
         launcher = r".venv\Scripts\python -m astrel" if sys_name == "windows" else ".venv/bin/python -m astrel"
-        print(f"Pour démarrer : {launcher}   (puis, dans un autre terminal : {launcher} --hud)")
+        print(f"Pour démarrer maintenant : {launcher}   (puis, dans un autre terminal : {launcher} --hud ;\n"
+              f"la bulle : {launcher}.bulle_qt). À la prochaine session, tout démarre seul.")
     return 0
 
 

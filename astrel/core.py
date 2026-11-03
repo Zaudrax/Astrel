@@ -3078,6 +3078,10 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         self.hud.start()
         self.control_server.start()
         self.confirm_server.start()
+        from . import platform as plateforme
+        if plateforme.SYSTEM in ("windows", "macos"):  # 03/11 : raccourcis globaux (Linux : GNOME, hotkeys.sh)
+            from .platform import raccourcis
+            raccourcis.au_demarrage()
         self._check_ipc()
         graph.set_voice(self.speaker.voice)
         graph.publish()

@@ -24,6 +24,8 @@ sounddevice==0.5.6 ; sys_platform != "linux"
 # Windows ; sous macOS il se compile (`brew install cairo pkg-config` avant l'installation).
 PySide6-Essentials==6.10.3 ; sys_platform != "linux"
 pycairo==1.28.0 ; sys_platform != "linux"
+# Raccourcis globaux hors Linux (03/11, astrel/platform/raccourcis.py) ; Linux : GNOME (hotkeys.sh).
+pynput==1.8.1 ; sys_platform != "linux"
 
 # Voix
 # Piper (GPL-3.0) : PROGRAMME SÉPARÉ. Ce paquet ne sert qu'à installer la commande `piper`, qu'Astrel lance

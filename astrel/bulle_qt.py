@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
 import sys
 import threading
 import time
@@ -94,23 +93,7 @@ class _Relais(QtCore.QObject):
         self.rappel.connect(lambda f: f())
 
 
-def ouvrir_hud() -> None:
-    """Le HUD, comme `./hud.sh` sous Linux : `python -m astrel --hud`, détaché."""
-    _detache([plateforme.python_exe(), "-m", "astrel", "--hud"])
-
-
-def allumer_astrel() -> None:
-    _detache([plateforme.python_exe(), "-m", "astrel"])
-
-
-def _detache(cmd: list[str]) -> None:
-    kw: dict = {"cwd": str(config.ROOT), "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
-                "stderr": subprocess.DEVNULL}
-    if plateforme.SYSTEM == "windows":
-        kw["creationflags"] = 0x00000008 | 0x00000200 | 0x08000000  # DETACHED, NEW_PROCESS_GROUP, NO_WINDOW
-    else:
-        kw["start_new_session"] = True
-    subprocess.Popen(cmd, **kw)
+ouvrir_hud, allumer_astrel = plateforme.ouvrir_hud, plateforme.allumer_astrel
 
 
 def _ecrans() -> list[tuple[int, int, int, int]]:

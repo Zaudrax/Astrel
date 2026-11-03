@@ -87,3 +87,27 @@ def console_utf8() -> None:
                 flux.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
+
+
+def lancer_detache(cmd: list[str]) -> None:
+    """Programme d'Astrel lancé à part, qui survit à celui qui le lance (bulle, raccourcis)."""
+    import subprocess
+
+    from .. import config
+
+    kw: dict = {"cwd": str(config.ROOT), "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL}
+    if SYSTEM == "windows":
+        kw["creationflags"] = 0x00000008 | 0x00000200 | 0x08000000  # DETACHED, NEW_PROCESS_GROUP, NO_WINDOW
+    else:
+        kw["start_new_session"] = True
+    subprocess.Popen(cmd, **kw)
+
+
+def ouvrir_hud() -> None:
+    """Le HUD, comme `./hud.sh` sous Linux : `python -m astrel --hud`, détaché."""
+    lancer_detache([python_exe(), "-m", "astrel", "--hud"])
+
+
+def allumer_astrel() -> None:
+    lancer_detache([python_exe(), "-m", "astrel"])

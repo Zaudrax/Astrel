@@ -72,6 +72,9 @@ jobs:
       - name: Faux Claude Code dans le PATH
         shell: bash
         run: echo "$GITHUB_WORKSPACE/tools/ci/faux-claude" >> "$GITHUB_PATH"
+      - name: cairo pour la bulle (macOS, comme dans le README)
+        if: runner.os == 'macOS'
+        run: brew install cairo pkg-config
       - name: Contrôle de la machine (avant installation)
         run: python tools/check_install.py --ci
       - name: "Dépendances complètes (mesure : quelles roues manquent ?)"
