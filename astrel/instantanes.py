@@ -52,6 +52,7 @@ MAX_TOTAL = 64 * 1024 * 1024
 LOT_INACTIF_S = 600  # sans `prompt_id` : un nouveau lot après 10 min sans écriture
 WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_BINAIRE = getattr(os, "O_BINARY", 0)  # Windows : octets tels quels, jamais de « \n » changé en « \r\n »
 
 _DOSSIERS_EXCLUS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".rtk"}
 _SECRET_NOM = re.compile(
@@ -536,7 +537,7 @@ def _avant(payload: dict) -> int:
                 d = _lot_dir(lot)
                 d.mkdir(mode=0o700, exist_ok=True)
                 nom = f"{len(lot['fichiers'])}-{int(now * 1000) % 100000}.bin"
-                fd = os.open(d / nom, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600)
+                fd = os.open(d / nom, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _BINAIRE, 0o600)
                 with os.fdopen(fd, "wb") as fh:
                     fh.write(contenu)
                 entree.update(avant=_sha_bytes(contenu), copie=nom, taille=len(contenu), mode=mode)
@@ -634,13 +635,21 @@ def _dans_dossier(p: Path, action) -> None:
 
 def _remplacer(contenu: bytes, mode) -> object:
     def action(dfd, nom: str) -> None:
-        tmp = f".{nom}.astrel-annule.{os.getpid()}"
+        # 03/11 (CI Windows) : sans `dir_fd`, `nom` est le chemin ENTIER ; le temporaire prend son seul nom
+        # de fichier (« .C:\\…\\a.py… » était refusé par pathlib).
+        tmp = f".{os.path.basename(nom)}.astrel-annule.{os.getpid()}"
         kw = {"dir_fd": dfd} if dfd is not None else {}
         if dfd is None:
-            tmp = str(Path(nom).with_name(tmp))
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600, **kw)
+            tmp = os.path.join(os.path.dirname(nom), tmp)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _BINAIRE, 0o600, **kw)
         try:
             with os.fdopen(fd, "wb") as fh:
+                if dfd is None:
+                    # Sans `dir_fd` : le temporaire ouvert doit être là où on l'a demandé. Un dossier remplacé
+                    # par un lien ou une jonction depuis le jugement se voit ici, avant toute écriture.
+                    vrai = _vrai_chemin(fh.fileno())
+                    if vrai is not None and not systeme.meme_chemin(vrai, tmp):
+                        raise _Refus("chemin changé")
                 fh.write(contenu)
                 if hasattr(os, "fchmod"):  # 03/11 : absent sous Windows avant Python 3.13
                     os.fchmod(fh.fileno(), mode if isinstance(mode, int) else 0o644)

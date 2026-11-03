@@ -176,6 +176,20 @@ def test_assistant_de_cle_imprime_la_cle_seule():
     assert fournisseurs.helper("abonnement") == ""
 
 
+def test_assistant_de_cle_sous_windows_entre_guillemets_doubles(monkeypatch):
+    """03/11 (CI Windows) : cmd.exe ne lit pas les « '…' » de shlex. Simulé sous Linux : chemins Windows."""
+    from pathlib import PureWindowsPath
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(fournisseurs, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(config, "VENV_PYTHON", PureWindowsPath(r"D:\a\Astrel\.venv\Scripts\python.exe"))
+    monkeypatch.setattr(config, "CLE_API_SCRIPT", PureWindowsPath(r"D:\a\Astrel\astrel\cle_api.py"))
+    monkeypatch.setattr(config, "SECRETS_FILE", PureWindowsPath(r"C:\Users\Jean Dupont\secrets.json"))
+    assert fournisseurs.helper("cle_claude") == (r'"D:\a\Astrel\.venv\Scripts\python.exe" -I '
+                                                 r'"D:\a\Astrel\astrel\cle_api.py" anthropic '
+                                                 r'"C:\Users\Jean Dupont\secrets.json"')
+
+
 def test_environnement_du_cerveau_sans_cle():
     base = {"PATH": "/usr/bin", "ANTHROPIC_API_KEY": "sk-shell", "ANTHROPIC_AUTH_TOKEN": "t",
             "ANTHROPIC_BASE_URL": "https://ailleurs", "CLE_API_OPENAI": CLE_OPENAI, "OPENAI_API_KEY": CLE_OPENAI,

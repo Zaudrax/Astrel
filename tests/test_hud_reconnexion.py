@@ -159,6 +159,8 @@ def test_cle_de_session_0600_a_cote_du_jeton_et_refaite_si_exposee(tmp_path):
     key = tmp_path / config.HUD_SESSION_KEY_FILE.name
     assert server.session_key_file() == key and mode_prive(key, 0o600)
     assert start_and_check(cookie) == 200  # même clé : accepté
+    if os.name == "nt":
+        return  # 03/11 : pas de bits « lisible par d'autres » sous Windows (droits NTFS du profil)
     key.chmod(0o644)                       # lisible par d'autres : clé refaite, sessions fermées
     assert start_and_check(cookie) == 401
     assert mode_prive(key, 0o600)

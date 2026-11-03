@@ -254,7 +254,9 @@ class Mission:
         scope = _abs_paths(spec.get("scope"), base)[:20]
         if not scope:
             return {"ok": False, "error": "il faut un périmètre : le ou les dossiers où la mission peut écrire"}
-        if "/" in scope:
+        # 03/11 (CI Windows) : une RACINE, quel que soit le système (« / », « C:\\ » : « / » y devient
+        # la racine du lecteur courant), jamais le seul texte « / ».
+        if any(Path(s).parent == Path(s) for s in scope):
             return {"ok": False, "error": "périmètre trop large : « / » ouvrirait tout le disque"}
         brut = spec.get("verification")
         critere = None

@@ -55,11 +55,7 @@ from . import events as events_mod
 from .channels import DEFAULT as CANAL_GENERAL
 from .channels import fold
 from .events import bus
-
-try:  # verrou entre processus (Linux, macOS) ; absent sous Windows : verrou du processus seul
-    import fcntl
-except ImportError:  # pragma: no cover
-    fcntl = None  # type: ignore[assignment]
+from .platform import systeme  # verrou entre processus : flock, ou msvcrt sous Windows (03/11)
 
 log = logging.getLogger("astrel.todo")
 
@@ -379,17 +375,10 @@ class Todo:
         `todo.json.lock` (un autre processus, script ou outil, qui écrirait le même fichier).
         Le fichier est relu sous le verrou s'il a changé : l'id est attribué d'après le disque."""
         with self._lock:
-            if fcntl is None:
-                yield
-                return
             path = TODO_FILE.with_name(TODO_FILE.name + ".lock")
             path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "a+") as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                try:
-                    yield
-                finally:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            with open(path, "a+") as f, systeme.verrou_fichier(f):  # 03/11 : verrou aussi sous Windows
+                yield
 
     @staticmethod
     def _signature(path: Path) -> tuple[int, int, int] | None:
@@ -473,7 +462,7 @@ class Todo:
                 f.write(text)
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(tmp, path)
+            systeme.remplacer(tmp, path)  # 03/11 : Windows refuse de remplacer un fichier ouvert ailleurs
         except OSError:
             tmp.unlink(missing_ok=True)
             raise  # jamais de fichier à moitié écrit après une coupure
@@ -699,7 +688,7 @@ class Todo:
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 tmp.write_text(text, encoding="utf-8")
-                os.replace(tmp, path)
+                systeme.remplacer(tmp, path)
             except OSError as exc:
                 tmp.unlink(missing_ok=True)
                 log.warning("note %s non écrite : %s", path.name, exc)

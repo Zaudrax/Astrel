@@ -15,7 +15,7 @@ from astrel import config, core, guard, preuve, totalgate
 from astrel import mission as mission_mod
 from astrel.mission import (ACCEPTED, ACTIVE, BLOCKED, DONE, PAUSED, STOPPED, TRAVAIL, VERIF_BLOCKED,
                             VERIF_FAILED, VERIFICATION, Mission)
-from conftest import remplacer_coeur
+from conftest import chemin_interne, remplacer_coeur
 
 
 @pytest.fixture
@@ -391,8 +391,8 @@ def test_le_hud_lance_avec_la_syntaxe_courte(jp, projet):
     assert not r["ok"] and "ligne 2" in r["error"]
     r = jp.on_command({"cmd": "mission", "action": "start", "_via": "hud", "spec": {
         "objective": "rapport", "channel": "projet", "verification_lignes": "existe RAPPORT.md"}})
-    assert r["ok"] and r["mission"]["critere"]["controles"][0]["chemin"] == str(projet / "RAPPORT.md")
-    assert r["mission"]["done_when"] == f"le fichier {projet / 'RAPPORT.md'} existe"
+    assert r["ok"] and r["mission"]["critere"]["controles"][0]["chemin"] == chemin_interne(projet / "RAPPORT.md")
+    assert r["mission"]["done_when"] == f"le fichier {(projet / 'RAPPORT.md').as_posix()} existe"  # Windows : « C:/… »
 
 
 # ------------------------------------------------------------------ revue indépendante du 02/11
@@ -443,7 +443,7 @@ def test_preuve_relative_lue_depuis_le_premier_dossier_du_perimetre(tmp_path, pr
     r = m.start({"objective": "bonjour", "scope": [str(projet)], "base": str(canal),
                  "verification_lignes": "contient BONJOUR.md :: P43 ok"})
     assert r["ok"], r  # avant : lu depuis le canal → « hors du périmètre »
-    assert m.data["critere"]["controles"][0]["chemin"] == str(projet / "BONJOUR.md")
+    assert m.data["critere"]["controles"][0]["chemin"] == chemin_interne(projet / "BONJOUR.md")
     m2 = Mission()
     r = m2.start({"objective": "x", "scope": [str(projet)], "base": str(canal),
                   "verification_lignes": f"existe {canal / 'a.md'}"})

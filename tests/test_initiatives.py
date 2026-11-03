@@ -13,6 +13,7 @@ import pytest
 from astrel import config, core, initiatives as I
 from astrel.senses import checks, reflex
 from astrel.settings import reglages
+from conftest import mode_prive
 from test_offre_quota import frais  # noqa: F401  (fixture)
 from test_reports import ch, astrel, of, published  # noqa: F401  (fixtures)
 
@@ -112,7 +113,7 @@ def test_pas_maintenant_double_puis_oui_remet_a_zero():
 
 def test_registre_0600_purge_7_jours_et_illisible():
     I.record("brief", LUNDI_9H, key="brief:2026-10-26", text="secret")
-    assert I.REGISTRY_FILE.stat().st_mode & 0o777 == 0o600
+    assert mode_prive(I.REGISTRY_FILE)
     I.record("brief", LUNDI_9H + timedelta(days=9))
     st = I.load()
     assert all(s["at"] > (LUNDI_9H + timedelta(days=2)).timestamp() for s in st["sent"])
@@ -530,7 +531,7 @@ def test_b1_registre_ne_suit_aucun_lien(tmp_path):
     I.REGISTRY_FILE.with_name(I.REGISTRY_FILE.name + ".tmp").symlink_to(victime)  # ancien nom fixe
     I.save(I._empty())
     assert victime.read_text() == "code important" and oct(os.stat(victime).st_mode & 0o777) == "0o666"
-    assert os.stat(I.REGISTRY_FILE).st_mode & 0o777 == 0o600 and not I.REGISTRY_FILE.is_symlink()
+    assert mode_prive(I.REGISTRY_FILE) and not I.REGISTRY_FILE.is_symlink()
     I.REGISTRY_FILE.unlink()
     I.REGISTRY_FILE.symlink_to(victime)
     with pytest.raises(OSError):

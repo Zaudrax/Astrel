@@ -175,3 +175,106 @@ def vrai_chemin_fd(fd: int) -> str | None:
 def meme_chemin(a: str, b: str) -> bool:
     """Même chemin, à la casse près sous Windows."""
     return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+
+def pid_existe(pid: int) -> bool:
+    """Un process porte-t-il ce pid (à nous ou non) ? Unix : `os.kill(pid, 0)` ; Windows : psutil, car
+    `os.kill(pid, 0)` y envoie CTRL_C_EVENT (0) au groupe console `pid` (WinError 87 sinon). 03/11, CI Windows."""
+    if pid <= 0:
+        return False
+    if UNIX:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+    try:
+        import psutil
+        return psutil.pid_exists(pid)
+    except ImportError:
+        return True  # sans psutil on ne sait pas : prudence (verrou vu tenu)
+
+
+@contextlib.contextmanager
+def verrou_fichier(f):
+    """Verrou EXCLUSIF entre processus sur le fichier ouvert `f`, attendu sans limite comme `flock` : `flock`
+    (Unix) ; Windows : `msvcrt.locking` du premier octet, réessayé (03/11, CI Windows : sans verrou, deux
+    processus attribuaient le même id de carte)."""
+    if UNIX:
+        import fcntl
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        return
+    import msvcrt
+    import time
+
+    fd = f.fileno()
+    os.lseek(fd, 0, os.SEEK_SET)  # msvcrt verrouille à partir de la position courante
+    while True:
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            break
+        except OSError:
+            time.sleep(0.01)
+    try:
+        yield
+    finally:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+
+def remplacer(src: str | os.PathLike, dst: str | os.PathLike, attente_s: float = 2.0) -> None:
+    """`os.replace`. Sous Windows, une cible ouverte ailleurs à cet instant (autre processus qui la lit,
+    antivirus, indexation) refuse d'être remplacée (WinError 5 ou 32) : réessayé un court moment (03/11)."""
+    if UNIX:
+        os.replace(src, dst)
+        return
+    import time
+
+    fin = time.monotonic() + attente_s
+    while True:
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if time.monotonic() >= fin:
+                raise
+            time.sleep(0.01)
+
+
+def verrou_tente(fd: int) -> bool:
+    """Verrou EXCLUSIF non bloquant sur le descripteur `fd` : True s'il est pris, False s'il est tenu ailleurs.
+    `flock` (Unix) ; `msvcrt.locking` du premier octet (Windows, 03/11 : il n'y avait aucun verrou). Rendu par
+    `rendre_verrou`, ou à la fermeture du descripteur."""
+    if UNIX:
+        import fcntl
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return False
+        return True
+    import msvcrt
+
+    os.lseek(fd, 0, os.SEEK_SET)
+    try:
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    except OSError:
+        return False
+    return True
+
+
+def rendre_verrou(fd: int) -> None:
+    """Rend le verrou de `verrou_tente` (Windows : explicitement, la fermeture le rend « sans délai garanti »)."""
+    with contextlib.suppress(OSError):
+        if UNIX:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return
+        import msvcrt
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)

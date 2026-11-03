@@ -9,6 +9,7 @@ import pytest
 from astrel import config
 from astrel import veille_secu as v
 from astrel.senses import checks
+from conftest import programme_python
 
 NOW = datetime(2026, 10, 19, 13, 0)        # un lundi
 REAL_GET = v._get                          # avant que la fixture ne coupe le réseau
@@ -431,15 +432,13 @@ def test_titres_courts_en_francais():
 
 def _faux_chrome(tmp_path, body: str) -> str:
     """Un « Chrome » exécutable qui note la page reçue puis exécute `body`."""
-    exe = tmp_path / "faux-chrome"
-    exe.write_text(f"#!{sys.executable}\nimport sys, pathlib, urllib.parse\n"
-                   "args = sys.argv[1:]\n"
-                   "out = next(a.split('=', 1)[1] for a in args if a.startswith('--print-to-pdf='))\n"
-                   "page = pathlib.Path(urllib.parse.unquote(urllib.parse.urlparse(args[-1]).path))\n"
-                   f"pathlib.Path({str(tmp_path / 'vu.txt')!r}).write_text(str(page) + '\\n' + ' '.join(args[:-1]))\n"
-                   + body)
-    exe.chmod(0o755)
-    return str(exe)
+    return programme_python(tmp_path / "faux-chrome", "import sys, pathlib, urllib.parse, urllib.request\n"
+                            "args = sys.argv[1:]\n"
+                            "out = next(a.split('=', 1)[1] for a in args if a.startswith('--print-to-pdf='))\n"
+                            # url2pathname : « /C:/… » d'une adresse file: redevient « C:\\… » sous Windows (03/11)
+                            "page = pathlib.Path(urllib.request.url2pathname(urllib.parse.urlparse(args[-1]).path))\n"
+                            f"pathlib.Path({str(tmp_path / 'vu.txt')!r}).write_text(str(page) + '\\n' + ' '.join(args[:-1]))\n"
+                            + body)
 
 
 def test_run_produit_le_pdf_et_efface_le_html(tmp_path, monkeypatch, capsys):

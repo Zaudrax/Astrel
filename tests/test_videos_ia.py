@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import chemins_machine  # chemins de la machine qui lance la suite
 import calendar
+import contextlib
 import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -185,7 +187,7 @@ def test_contrat_du_worker_et_evenement(lieux):
     assert e["type"] == "video" and e["affichage"] == "masquee" and e["fenetre"] == "24h"  # fenêtre du QUOTA
     assert e["service"] == e["moteur"] == "flow" and e["modele"] == "lite" and e["plafond"] == 50
     assert e["duree"] == 8 and e["fichiers"] == [] and e["sortie"] == str(lieux / "Videos-IA")
-    assert e["delai_s"] == videos_ia.DELAI_S == 360 and e["profil"].endswith("/profils/amw")
+    assert e["delai_s"] == videos_ia.DELAI_S == 360 and Path(e["profil"]).parts[-2:] == ("profils", "amw")
     assert [ev["etape"] for ev in vus if ev["job"] == r["job"]][:2] == ["file", "ouverture"]
     limite = time.time() + 2  # `on_fini` suit la publication de l'évènement, dans le fil des vidéos
     while not finies and time.time() < limite:
@@ -215,10 +217,15 @@ def test_image_de_depart_et_duree(lieux):
     (("un chat", "flow", "", 5), "durée non proposée"),
     (("un chat", "flow", "", "huit"), "durée non proposée"),
     (("un chat", "flow", "", 0, "relatif.png"), "chemin absolu attendu"),
-    (("un chat", "flow", "", 0, "/etc/hostname"), "hors des pièces jointes"),
+    (("un chat", "flow", "", 0, "HORS"), "hors des pièces jointes"),  # HORS : image hors des pièces jointes
     (("un chat", "flow", "", 0, ["/a.png", "/b.png"]), "une seule image"),
 ])
 def test_demandes_refusees_sans_rien_lancer(lieux, args, erreur):
+    if "HORS" in args:  # 03/11 : /etc/hostname n'existe ni sous macOS ni sous Windows (où il n'est pas absolu)
+        hors = lieux / "ailleurs" / "chat.png"
+        hors.parent.mkdir()
+        hors.write_bytes(PNG)
+        args = tuple(str(hors) if a == "HORS" else a for a in args)
     v, vus, w = _videos(lieux)
     r = v.submit(*args)
     assert r["ok"] is False and erreur in r["error"] and not vus and not w.entrees
@@ -593,22 +600,44 @@ def test_arret_d_urgence_tue_le_worker_et_son_chrome(lieux, monkeypatch, tmp_pat
     monkeypatch.setattr(ia_web, "ARRET_SONDE_S", 0.05)
     monkeypatch.setattr(ia_web, "ARRET_GRACE_S", 2.0)
     vus: list[dict] = []
+    import psutil
+
+    from astrel.platform import systeme
+
     v = Videos(publish=lambda kind, **ev: vus.append(ev), etat=Etat(), horloge=Horloge(MATIN))
     job = v.submit("un chat")["job"]
-    _attendre_etape(vus, job, "generation", timeout=10)
-    chrome = int(pids.read_text())
-    from astrel.platform import systeme
-    worker = next(iter(systeme.processus_avec(str(script))))  # /proc sous Linux, psutil ailleurs (03/11)
-    assert ia_web.chrome_du_profil(Videos.profil("amw")) == [chrome]
-    if par == "fichier":
-        config.ESTOP_FILE.write_text("1")
-    else:
+    workers: list[int] = []
+    chromes: list[int] = []
+    try:
+        _attendre_etape(vus, job, "generation", timeout=10)
+        chrome = int(pids.read_text())
+        workers = systeme.processus_avec(str(script))  # /proc sous Linux, psutil ailleurs (03/11)
+        chromes = ia_web.chrome_du_profil(Videos.profil("amw"))
+        # 03/11 (CI Windows) : le python.exe d'une venv Windows est un LANCEUR qui relance le vrai python en
+        # enfant, même ligne de commande : le faux Chrome y fait deux processus (lui et son enfant), tous deux
+        # sur le profil, tous deux à arrêter. Ailleurs, un seul.
+        assert workers and chrome in chromes, (workers, chromes, chrome)
+        assert all(p == chrome or psutil.Process(p).ppid() == chrome for p in chromes), (chromes, chrome)
+        if par == "fichier":
+            config.ESTOP_FILE.write_text("1")
+        else:
+            v.estop()
+        assert _attendre(vus, job, timeout=10)["code"] == "estop"
+        fin = time.time() + 10
+        while any(_vivant(p) for p in workers + chromes) and time.time() < fin:
+            time.sleep(0.05)
+        assert not any(_vivant(p) for p in workers + chromes) and ia_web.chrome_du_profil(Videos.profil("amw")) == []
+    finally:
+        # 03/11 : un échec ci-dessus laissait le worker tenir `ia_web.CHROME` 120 s : les tests vidéo SUIVANTS
+        # restaient « en_cours » (étape « ouverture », en attente du verrou) sous Windows. Toujours arrêté ici.
         v.estop()
-    assert _attendre(vus, job, timeout=10)["code"] == "estop"
-    fin = time.time() + 10
-    while (_vivant(worker) or _vivant(chrome)) and time.time() < fin:
-        time.sleep(0.05)
-    assert not _vivant(worker) and not _vivant(chrome) and ia_web.chrome_du_profil(Videos.profil("amw")) == []
+        fin = time.time() + 15
+        while (j := v.job(job)) is not None and j.etat not in ("fini", "echec") and time.time() < fin:
+            time.sleep(0.05)
+        for p in {*workers, *chromes, *systeme.processus_avec(str(script)),
+                  *ia_web.chrome_du_profil(Videos.profil("amw"))}:
+            with contextlib.suppress(OSError):
+                os.kill(p, systeme.SIGKILL)
 
 
 # ---------------------------------------------------------------- lot B3 : cœur, fil, outil MCP

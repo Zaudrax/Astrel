@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from astrel import brain, config, guard, instantanes
+from conftest import CheminBash
 
 # Droits Unix (bits de mode, dossier 0700 qui cache ses fichiers) : sans objet sous Windows, où le profil protège.
 unix = pytest.mark.skipif(os.name == "nt", reason="droits Unix")
@@ -144,7 +145,7 @@ def test_un_lot_par_message_et_on_remonte(proj):
 def test_redirection_shell(proj):
     f = proj / "out.txt"
     f.write_text("ancien")
-    assert _pre(None, tool="Bash", command=f"echo neuf > {f}") == 1
+    assert _pre(None, tool="Bash", command=f"echo neuf > {CheminBash(f)}") == 1  # Git Bash : « C:/… »
     f.write_text("neuf\n")
     _post()
     instantanes.restaurer()
@@ -174,11 +175,16 @@ def test_noms_de_secrets_jamais_copies(proj, name):
     assert not any((instantanes.DIR).rglob("*.bin"))
 
 
-def test_fichier_prive_et_lien_dur_jamais_copies(proj):
+@unix
+def test_fichier_prive_jamais_copie(proj):
     priv = proj / "prive.txt"
     priv.write_text("SECRET")
     priv.chmod(0o600)
     assert _pre(priv) == 0
+    assert not any(instantanes.DIR.rglob("*.bin"))
+
+
+def test_lien_dur_et_lien_jamais_copies(proj):
     src = proj / "src.txt"
     src.write_text("x")
     os.link(src, proj / "dur.txt")
@@ -444,10 +450,10 @@ def test_course_dossier_remplace_entre_resolution_et_ouverture(proj, faux_runtim
 
     def puis_remplace(chemin, *a, **k):
         r = vrai(chemin, *a, **k)
-        if not fait and str(chemin).endswith("real/creds.json"):
+        if not fait and str(chemin).replace("\\", "/").endswith("real/creds.json"):
             fait.append(1)
             os.rename(proj / "real", proj / "real.old")
-            (proj / "real").symlink_to(faux_runtime.parent)
+            (proj / "real").symlink_to(faux_runtime.parent, target_is_directory=True)  # Windows : lien de dossier
         return r
     monkeypatch.setattr(instantanes, "refus", puis_remplace)
     assert _pre(proj / "real" / "creds.json") == 0
@@ -596,3 +602,50 @@ def test_dossier_a_creer_n_est_pas_prive(tmp_path, monkeypatch):
     assert _pre(f, tool="Write") == 1
     os.chmod(projets / "app", 0o700)
     assert instantanes.refus(str(f)) == "secret"
+
+
+# --- sans `dir_fd` (Windows), simulé ici --------------------------------------------------------
+
+@pytest.fixture
+def sans_dir_fd(monkeypatch):
+    """03/11 (CI Windows) : `os.open` sans `dir_fd`, comme sous Windows : rétablir passe par le chemin entier."""
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+
+
+def test_annule_sans_dir_fd(proj, sans_dir_fd):
+    f = proj / "a.py"
+    f.write_text("avant\n")
+    _pre(f)
+    f.write_text("après\n")
+    _post()
+    assert instantanes.restaurer()["restaures"] == [str(f)] and f.read_bytes() == b"avant\n"
+    assert sorted(x.name for x in proj.iterdir()) == ["a.py"]  # aucun temporaire laissé
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="vrai chemin d'un descripteur : /proc (Linux)")
+def test_sans_dir_fd_dossier_remplace_par_un_lien_apres_le_jugement(proj, tmp_path, monkeypatch, sans_dir_fd):
+    """Le dossier du fichier devient un lien vers un dossier protégé ENTRE le dernier jugement et l'écriture :
+    le temporaire ouvert n'est pas là où on l'a demandé, rien n'est écrit (Windows : jonction)."""
+    d = proj / "sous"
+    d.mkdir()
+    f = d / "a.py"
+    f.write_text("avant")
+    _pre(f)
+    f.write_text("après")
+    _post()
+    garde = tmp_path / "garde"
+    garde.mkdir()
+    (garde / "a.py").write_text("après")
+    vrai, appels = instantanes.refus, []
+
+    def puis_remplace(chemin, *a, **k):
+        r = vrai(chemin, *a, **k)
+        appels.append(chemin)
+        if len(appels) == 2:  # celui de `_dans_dossier`, juste avant d'écrire
+            os.rename(d, proj / "ancien")
+            d.symlink_to(garde, target_is_directory=True)
+        return r
+    monkeypatch.setattr(instantanes, "refus", puis_remplace)
+    r = instantanes.restaurer()
+    assert len(appels) == 2 and r["restaures"] == [] and r["laisses"][0]["pourquoi"] == "chemin changé"
+    assert (garde / "a.py").read_text() == "après" and sorted(x.name for x in garde.iterdir()) == ["a.py"]

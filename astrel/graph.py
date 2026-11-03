@@ -315,7 +315,7 @@ class Graph:
                 text = path.read_text(encoding="utf-8")
             except OSError:
                 continue
-            rel = str(path.relative_to(VAULT))
+            rel = path.relative_to(VAULT).as_posix()  # 03/11 : « projets/x.md » aussi sous Windows
             title = path.stem
             m = re.search(r"^#\s+(.+)$", text, re.M)
             if m:
@@ -326,7 +326,7 @@ class Graph:
             notes[rel] = {
                 "title": title,
                 "summary": " ".join(body.split())[:180],
-                "folder": str(path.parent.relative_to(VAULT)) if path.parent != VAULT else "",
+                "folder": path.parent.relative_to(VAULT).as_posix() if path.parent != VAULT else "",
                 "links": links,
             }
         return notes

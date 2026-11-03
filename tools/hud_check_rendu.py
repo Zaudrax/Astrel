@@ -4823,6 +4823,11 @@ async def check_medias(p: Page) -> None:
     page, son, vidéo créée au clic), compte rendu avec médias, question à choix illustrée, « Ouvrir »
     seul pour un fichier trop gros, secret refusé ; micro retenu pendant la lecture (`media_playing`),
     un seul lecteur vivant ; CSP et 404 de la route ; Simple (taille et chemin masqués) ; 3 thèmes."""
+    # 03/11 (CI) : sans poppler, la carte PDF n'a pas de pages et la suite plantait sur `.media-step` absent
+    poppler = bool(shutil.which("pdfinfo") and shutil.which("pdftoppm"))
+    check("médias : poppler-utils présent (pdfinfo, pdftoppm) pour les aperçus PDF", poppler)
+    if not poppler:
+        return
     await p.send("Emulation.setDeviceMetricsOverride", width=1280, height=800, deviceScaleFactor=1, mobile=False)
     await p.until("!!window.__ws && window.__ws.readyState === 1", 10)
     await p.js("document.querySelectorAll('.modal-back').forEach(b => b.remove())")

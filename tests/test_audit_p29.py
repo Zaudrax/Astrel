@@ -158,7 +158,9 @@ def _clone_line(root: Path, isolated: bool) -> str:
     if not isolated:
         return f"{py} {script}"
     cache = (root / "hooks" / "__pycache__" / "isole").as_posix()
-    flags = "-I -S" if sys.platform.startswith("linux") else "-I"
+    # 03/11 (CI Windows) : les mêmes options que `config.hook_python_args` (-S sous Linux, -X utf8 sous Windows :
+    # sans lui, la raison accentuée sortait en cp1252 et la lecture UTF-8 du test perdait toute la sortie).
+    flags = " ".join(config.hook_python_args()[:-2])
     return f"{py} {flags} -X pycache_prefix={cache} {script} || exit 2"
 
 

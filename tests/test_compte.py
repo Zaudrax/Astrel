@@ -165,6 +165,16 @@ def test_connexion_abandonnee_au_bout_du_delai(fake, monkeypatch):
     assert lines(c.view())["Dernière connexion"]["text"].startswith("abandonnée")
 
 
+def test_arret_sous_windows_tue_l_arbre(monkeypatch):
+    """03/11 : sous Windows, `claude` est un claude.cmd qui lance node : l'arrêt vise tout l'arbre."""
+    tues = []
+    monkeypatch.setattr(compte_mod.systeme, "UNIX", False)
+    monkeypatch.setattr(compte_mod.systeme, "tuer_arbre", lambda pid, *a: tues.append(pid))
+    proc = compte_mod.subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    compte_mod._stop(proc)
+    assert tues == [proc.pid] and proc.poll() is not None
+
+
 def test_deconnexion(fake):
     c, d = fake
     write_state(d, loggedIn=True, authMethod="claude.ai")

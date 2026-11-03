@@ -138,6 +138,21 @@ test("safeHref", () => {
   assert.equal(safeHref("https://ex.fr/a"), "https://ex.fr/a");
 });
 
+// 03/11 (CI Windows, machine ~4 fois plus lente : 126 ms pour 100) : seuils de temps rapportés à la vitesse de
+// la machine, mesurée sur un rendu ORDINAIRE (le meilleur de 7). Les régressions visées (temps cubique) coûtent
+// des secondes : elles restent prises. Étalon sur la machine de l'utilisateur : 8,6 à 9,5 ms (lenteur 1).
+const ETALON_REF_MS = 9;
+const LENTEUR = (() => {
+  const md = Array.from({ length: 2000 }, (_, i) => `- **point ${i}** avec \`code\` et [lien](https://ex.fr/${i}) _x_`).join("\n");
+  let best = Infinity;
+  for (let k = 0; k < 7; k++) {
+    const t0 = performance.now();
+    renderMarkdown(md, fakeDoc());
+    best = Math.min(best, performance.now() - t0);
+  }
+  return Math.max(1, best / ETALON_REF_MS);
+})();
+
 test("parseBlocks et parseInline restent des données pures", () => {
   assert.deepEqual(parseBlocks("# T"), [{ type: "heading", level: 1, text: "T" }]);
   assert.deepEqual(parseInline("a `b`"), [{ t: "text", v: "a " }, { t: "code", v: "b" }]);
@@ -147,7 +162,7 @@ test("rapide : une longue réponse se re-rend en quelques millisecondes", () => 
   const md = Array.from({ length: 60 }, (_, i) => `- **point ${i}** avec \`code\` et [lien](https://ex.fr/${i})`).join("\n");
   const t0 = performance.now();
   for (let k = 0; k < 20; k++) render(md);
-  assert.ok((performance.now() - t0) / 20 < 20, "plus de 20 ms par rendu");
+  assert.ok((performance.now() - t0) / 20 < 20 * LENTEUR, `plus de ${(20 * LENTEUR).toFixed(0)} ms par rendu`);
 });
 
 // 15/10 (relecture) : une regex ambiguë sur `[…](…)` coûtait un temps cubique
@@ -166,7 +181,7 @@ test("PERFORMANCE : entrées hostiles de 100 000 caractères en moins de 100 ms"
     const t0 = performance.now();
     renderMarkdown(s, doc);
     const ms = performance.now() - t0;
-    assert.ok(ms < 100, `${name} : ${ms.toFixed(0)} ms`);
+    assert.ok(ms < 100 * LENTEUR, `${name} : ${ms.toFixed(0)} ms (lenteur ${LENTEUR.toFixed(1)})`);
   }
 });
 
@@ -250,6 +265,7 @@ test("PERFORMANCE : lignes à | hostiles de 100 000 caractères en moins de 100 
     "| a | b |\n|---|---|\n" + "| x | y |\n".repeat(N / 10), ("a|b\n").repeat(N / 4)]) {
     const t0 = performance.now();
     renderMarkdown(s, doc);
-    assert.ok(performance.now() - t0 < 100, `${s.slice(0, 12)} : ${(performance.now() - t0).toFixed(0)} ms`);
+    const ms = performance.now() - t0;
+    assert.ok(ms < 100 * LENTEUR, `${s.slice(0, 12)} : ${ms.toFixed(0)} ms (lenteur ${LENTEUR.toFixed(1)})`);
   }
 });

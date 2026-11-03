@@ -8,10 +8,15 @@ import json
 import os
 import socket
 import subprocess
+import types
 
 import pytest
 
 from astrel import config, guard, preuve
+from conftest import chemin_interne as interne
+
+# 03/11 (CI Windows) : un chemin absolu hors du projet sur tous les systèmes (Windows : lecteur courant).
+DEHORS = os.path.abspath("/etc/passwd")
 
 
 @pytest.fixture
@@ -62,7 +67,7 @@ def existe(chemin, genre="fichier", **k):
     ({"controles": [{"type": "fichier_existe", "chemin": "{P}/a", "genre": "fichier", "shell": "x"}]}, "champ inconnu"),
     ({"controles": [{"type": "fichier_existe", "chemin": "a", "genre": "fichier"}]}, "chemin absolu"),
     ({"controles": [{"type": "fichier_existe", "chemin": "{P}/../etc/passwd", "genre": "fichier"}]}, "« . » et « .. »"),
-    ({"controles": [{"type": "fichier_existe", "chemin": "/etc/passwd", "genre": "fichier"}]}, "hors du périmètre"),
+    ({"controles": [{"type": "fichier_existe", "chemin": DEHORS, "genre": "fichier"}]}, "hors du périmètre"),
     ({"controles": [{"type": "fichier_existe", "chemin": "{P}/a\x00b", "genre": "fichier"}]}, "contrôle"),
     ({"controles": [{"type": "fichier_existe", "chemin": "{P}/a", "genre": "fichier", "taille_min": True}]}, "entier"),
     ({"controles": [{"type": "fichier_existe", "chemin": "{P}/a", "genre": "lien"}]}, "fichier ou dossier"),
@@ -81,21 +86,24 @@ def existe(chemin, genre="fichier", **k):
 ])
 def test_schema_strict(projet, critere, motif):
     texte = json.dumps(critere) if not isinstance(critere, str) else critere
-    critere = json.loads(texte.replace("{P}", str(projet))) if not isinstance(critere, str) else critere
+    # 03/11 (CI Windows) : le chemin entre dans un texte JSON, ses « \ » échappés.
+    critere = json.loads(texte.replace("{P}", json.dumps(str(projet))[1:-1])) if not isinstance(critere, str) else critere
     with pytest.raises(preuve.CritereInvalide, match=motif):
         preuve.valider_critere(critere, [str(projet)])
 
 
 def test_schema_normalise_et_empreinte_stable(projet):
     c = preuve.valider_critere(json.dumps({"controles": [existe(f"{projet}//a/")]}), [str(projet)])
-    assert c == {"version": 1, "controles": [existe(projet / "a")], "figer": []}
-    autre = {"figer": [], "controles": [{"genre": "fichier", "chemin": str(projet / "a"), "type": "fichier_existe"}],
+    assert c == {"version": 1, "controles": [existe(interne(projet / "a"))], "figer": []}
+    autre = {"figer": [], "controles": [{"genre": "fichier", "chemin": interne(projet / "a"), "type": "fichier_existe"}],
              "version": 1}
     assert preuve.empreinte_critere(c) == preuve.empreinte_critere(autre)  # JSON canonique
 
 
 def test_injection_shell_traitee_comme_un_nom(projet):
-    r = verifier(projet, existe(f"{projet}/x; rm -rf ~"), existe(f"{projet}/$(touch {projet}/pwned)"))
+    # Windows refuse « : » dans un nom et un nom fini par une espace : la cible sans son lecteur, ${IFS} pour l'espace.
+    cible = os.path.splitdrive(projet.as_posix())[1]
+    r = verifier(projet, existe(f"{projet}/x; rm -rf ~"), existe(f"{projet}/$(touch${{IFS}}{cible}/pwned)"))
     assert codes(r) == [("echec", "absent"), ("echec", "absent")] and r["statut"] == "echec"
     assert not (projet / "pwned").exists()
 
@@ -173,14 +181,15 @@ def test_racine_remplacee_depuis_le_lancement(projet):
 def test_changement_de_systeme_de_fichiers(projet, monkeypatch):
     (projet / "monte").mkdir()
     (projet / "monte" / "a").write_text("x")
-    vrai = os.stat
-
-    def stat(chemin, *a, **k):
-        st = vrai(chemin, *a, **k)
-        if chemin == "monte":
-            return os.stat_result((st.st_mode, st.st_ino, st.st_dev + 1, *tuple(st)[3:]))
-        return st
-    monkeypatch.setattr(preuve.os, "stat", stat)
+    # 03/11 (CI Windows) : Unix examine « monte » par `stat(dir_fd=…)`, Windows par `lstat(chemin entier)`.
+    for nom in ("stat", "lstat"):
+        def decale(chemin, *a, _vrai=getattr(os, nom), **k):
+            st = _vrai(chemin, *a, **k)
+            if os.path.basename(str(chemin)) != "monte":
+                return st
+            champs = {c: getattr(st, c) for c in dir(st) if c.startswith("st_")}
+            return types.SimpleNamespace(**{**champs, "st_dev": st.st_dev + 1})
+        monkeypatch.setattr(preuve.os, nom, decale)
     assert codes(verifier(projet, existe(projet / "monte" / "a"))) == [("bloque", "montage")]
 
 
@@ -188,14 +197,21 @@ def test_fichier_modifie_pendant_la_lecture(projet, monkeypatch):
     f = projet / "log.txt"
     f.write_text("début\n")
     vrai = os.read
+    refus = []
 
     def read(fd, n):
-        with open(f, "a") as w:  # un processus de fond écrit pendant la vérification
-            w.write("encore\n")
+        try:
+            with open(f, "a") as w:  # un processus de fond écrit pendant la vérification
+                w.write("encore\n")
+        except PermissionError:
+            refus.append(1)
         return vrai(fd, n)
     monkeypatch.setattr(preuve.os, "read", read)
     r = verifier(projet, {"type": "fichier_contient", "chemin": str(f), "texte": "début"})
-    assert codes(r) == [("bloque", "instable")]
+    if os.name == "nt":  # 03/11 : ouvert sans partage en écriture, l'écrivain est refusé, la lecture reste entière
+        assert refus and codes(r) == [("ok", "texte_trouve")]
+    else:
+        assert codes(r) == [("bloque", "instable")]
 
 
 def test_fichier_trop_gros_et_delai(projet, monkeypatch):
@@ -221,6 +237,7 @@ def test_secret_et_runtime_refuses(projet, monkeypatch):
 def test_plateforme_sans_dir_fd_toujours_bloquee(projet, monkeypatch):
     (projet / "a").write_text("x")
     monkeypatch.setattr(preuve, "_PORTABLE", False)
+    monkeypatch.setattr(preuve, "_Ouvrir", preuve._Ouverture)  # Windows a son ouverture propre (test_preuve_windows)
     assert codes(verifier(projet, existe(projet / "a"), ancrage={})) == [("bloque", "plateforme")]
 
 
@@ -293,7 +310,7 @@ def test_git_head_branche_et_commit(projet):
     assert codes(verifier(projet, {**git, "branche": "main"})) == [("ok", "head")]
     assert codes(verifier(projet, {**git, "branche": "dev"})) == [("echec", "autre_branche")]
     inst = instantane(projet, {"controles": [{**git, "avance": True}]})
-    assert inst["ancrage"]["heads"] == [{"depot": str(projet), "sha": "a" * 40}]
+    assert inst["ancrage"]["heads"] == [{"depot": interne(projet), "sha": "a" * 40}]
     assert codes(preuve.verifier(inst)) == [("echec", "pas_de_commit")]
     (projet / ".git" / "refs" / "heads" / "main").write_text("b" * 40 + "\n")  # un commit de plus
     r = preuve.verifier(inst)
@@ -350,7 +367,7 @@ figer tests/test_calcul.py
         {"type": "dossier_contient", "chemin": f"{p}/dist", "attendus": ["index.html", "app.js"]},
         {"type": "git_head", "depot": p, "branche": "main"}, {"type": "git_head", "depot": p, "avance": True}]
     assert c["figer"] == [f"{p}/tests/test_calcul.py"]
-    assert preuve.valider_critere(c, [p])["controles"][4]["chemin"] == f"{p}/build/app bin"
+    assert preuve.valider_critere(c, [p])["controles"][4]["chemin"] == interne(f"{p}/build/app bin")
 
 
 @pytest.mark.parametrize("texte, motif", [
@@ -392,6 +409,8 @@ def test_entrees_mal_formees_refusees_proprement(projet):
     assert codes(verifier(projet, {"type": "git_head", "depot": str(projet)})) == [("bloque", "git")]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="table des montages de /proc : Linux ; sous Windows, un dossier de "
+                    "montage est un point d'analyse, refusé « lien » sans être traversé")
 def test_point_de_montage_sous_la_racine_jamais_stat(projet, monkeypatch):
     (projet / "fuse").mkdir()
     monkeypatch.setattr(preuve, "_points_de_montage", lambda: frozenset({str(projet / "fuse")}))
@@ -429,11 +448,12 @@ def verifier_cmd(projet, obs):
 
 def test_commande_attendue_porte_le_dossier(projet, tmp_path):
     c = preuve.valider_critere({"controles": [commande(tmp_path / "a b")]}, [str(tmp_path)])["controles"][0]
-    assert preuve.commande_attendue(c) == f"cd '{tmp_path}/a b' && .venv/bin/python -m pytest -q"
+    # Git Bash (Windows) reçoit « C:/… » (`preuve.affiche`)
+    assert preuve.commande_attendue(c) == f"cd '{tmp_path.as_posix()}/a b' && .venv/bin/python -m pytest -q"
 
 
 @pytest.mark.parametrize("c, motif", [
-    ({"type": "commande_observee", "dossier": "/etc", "commande": "true"}, "hors du périmètre"),
+    ({"type": "commande_observee", "dossier": os.path.dirname(DEHORS), "commande": "true"}, "hors du périmètre"),
     ({"type": "commande_observee", "dossier": "{p}", "commande": "true\nrm -rf /"}, "caractère de contrôle"),
     ({"type": "commande_observee", "dossier": "{p}", "commande": "x" * 301}, "1 à 300"),
     ({"type": "commande_observee", "dossier": "{p}", "commande": "   "}, "vide"),
@@ -475,5 +495,5 @@ def test_commande_observee_ne_lance_rien_meme_sans_observation(projet):
 def test_commande_observee_en_lignes(projet):
     brut = preuve.lire_lignes("commande . :: .venv/bin/python -m pytest -q\ncommand sous :: npm test", str(projet))
     c = preuve.valider_critere(brut, [str(projet)])["controles"]
-    assert c[0] == commande(projet) and c[1]["dossier"] == str(projet / "sous")
+    assert c[0] == commande(interne(projet)) and c[1]["dossier"] == interne(projet / "sous")
     assert "réussit après ta dernière modification" in preuve.decrire({"controles": c, "figer": []})[0]

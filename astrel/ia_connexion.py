@@ -95,15 +95,7 @@ def profil(alias: str) -> Path:
 
 
 def _pid_vivant(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return systeme.pid_existe(pid)  # 03/11 : sous Windows, os.kill(pid, 0) n'est pas un simple test
 
 
 def verrou_tenu(p: Path) -> bool:

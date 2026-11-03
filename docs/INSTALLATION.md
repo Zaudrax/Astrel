@@ -49,7 +49,7 @@ sudo apt update
 sudo apt install git python3 python3-venv python3-gi gir1.2-gtk-3.0 \
   gstreamer1.0-pipewire gir1.2-gstreamer-1.0 gstreamer1.0-plugins-good \
   pulseaudio-utils libnotify-bin xclip wireplumber libgtk-3-bin \
-  nodejs npm curl
+  nodejs npm curl poppler-utils
 ```
 
 | Paquet | Sert à |
@@ -60,6 +60,7 @@ sudo apt install git python3 python3-venv python3-gi gir1.2-gtk-3.0 \
 | `pulseaudio-utils` | le micro et le haut-parleur (`parecord`, `paplay`) |
 | `libnotify-bin`, `xclip`, `wireplumber`, `libgtk-3-bin` | notifications, presse-papiers, volume, ouvrir une application |
 | `nodejs`, `npm` | le navigateur piloté par Claude (facultatif) |
+| `poppler-utils` | l'aperçu des PDF dans le fil du HUD (facultatif) |
 
 Le HUD s'ouvre de préférence dans **Google Chrome** ou **Chromium** (fenêtre
 d'application) ; sinon dans ton navigateur par défaut.

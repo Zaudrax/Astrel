@@ -13,6 +13,7 @@ import pytest
 from astrel import config, confirm, core, guard, levee, totalgate
 from astrel.events import bus
 from astrel.settings import reglages
+from conftest import mode_prive
 from test_lot_hud import make_astrel
 
 R = config.ROOT
@@ -190,7 +191,7 @@ def test_accorde_seulement_le_levable_et_journalise(lj):
     lines = config.LIFT_LOG.read_text().splitlines()
     assert lines[0].split("\t")[1:3] == ["LEVÉE", "activée"]
     assert lines[-1].split("\t")[1:3] == ["Edit", "hud/src/main.js"]
-    assert config.LIFT_LOG.stat().st_mode & 0o777 == 0o600
+    assert mode_prive(config.LIFT_LOG)
 
 
 def test_sans_levee_rien_n_est_accorde(lj):

@@ -321,10 +321,28 @@ SENSITIVE_HOME = [Path.home() / p for p in (
     ".claude/agents", ".claude/commands", ".claude/skills", ".claude/plugins", ".claude/.credentials.json",
     ".claude/keybindings.json",
 )]
+_UNIX_SYSTEM = ("/etc", "/usr", "/boot", "/var", "/opt", "/bin", "/sbin", "/lib")
+# 03/11/2026 (portage Windows, autorisé par l'utilisateur) : sous Windows, une écriture système valait « sensible »
+# (libre en autonome) ; même verdict que /etc désormais. Dossiers du système et des programmes ; dossier
+# « Démarrage » (lance du code à l'ouverture de session, comme ~/.config/autostart) ; profils PowerShell
+# (comme ~/.bashrc). Et « /etc »… écrit sans lecteur (« /etc/hosts » : Write de Claude Code, Git Bash) :
+# critique sur chaque lecteur où il peut tomber (dossier courant, projets, Astrel, profil, système).
+if os.name == "nt":
+    _env = os.environ.get
+    _LECTEURS = sorted({Path(p).drive.upper() for p in (os.getcwd(), config.WORKDIR, config.ROOT, Path.home(),
+                                                        _env("SystemDrive", "C:") + "\\") if Path(p).drive})
+    WINDOWS_SYSTEM = [Path(_env(v) or defaut) for v, defaut in (
+        ("SystemRoot", "C:/Windows"), ("ProgramFiles", "C:/Program Files"),
+        ("ProgramFiles(x86)", "C:/Program Files (x86)"), ("ProgramW6432", "C:/Program Files"),
+        ("ProgramData", "C:/ProgramData"))] + [Path(d + r) for d in _LECTEURS for r in _UNIX_SYSTEM]
+    SENSITIVE_HOME += [Path(_env("APPDATA") or Path.home() / "AppData" / "Roaming")
+                       / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup",
+                       Path.home() / "Documents" / "WindowsPowerShell", Path.home() / "Documents" / "PowerShell"]
+else:
+    WINDOWS_SYSTEM = []
 CRITICAL_WRITE_ROOTS = [Path(p).expanduser() for p in (
-    "/etc", "/usr", "/boot", "/var", "/opt", "/bin", "/sbin", "/lib",
-    "~/.ssh", "~/.gnupg", "~/.config/systemd", "~/.local/share/keyrings",
-)] + SENSITIVE_HOME
+    *_UNIX_SYSTEM, "~/.ssh", "~/.gnupg", "~/.config/systemd", "~/.local/share/keyrings",
+)] + WINDOWS_SYSTEM + SENSITIVE_HOME
 
 
 # 24/10 (P29 lot B, demande de l'utilisateur) : cases de confirmation (Réglages › Garde-fou), écrites et
@@ -572,7 +590,7 @@ def _reaches_secret(c: str, cwds: list | None, glob: bool) -> bool:
     if not c or "://" in c:
         return False
     pat = c if glob else re.sub(r"([*?\[])", r"[\1]", c)  # joker cité : un caractère comme un autre
-    pat = os.path.expanduser(pat)
+    pat = _msys(os.path.expanduser(pat))  # 03/11 : « /c/Users/… » de Git Bash
     unknown_start = c.startswith(_DYN)  # « $X/… » : X peut être n'importe quel dossier
 
     def match(name: str, part: str) -> bool:
@@ -581,14 +599,14 @@ def _reaches_secret(c: str, cwds: list | None, glob: bool) -> bool:
         # partie inconnue (`$X`), si.
         if name.startswith(".") and not part.startswith((".", _DYN)):
             return False
-        return fnmatch.fnmatchcase(name, part.replace(_DYN, "*"))
+        return _fn_nom(name, part.replace(_DYN, "*"))
 
-    if unknown_start or (not pat.startswith("/") and cwds is None):
+    if unknown_start or (not _abs_txt(pat) and cwds is None):
         rest = [x for x in pat.split("/")[1 if unknown_start else 0:] if x not in ("", ".")]
         return any(len(rest) >= len(s.parts) - k and rest
                    and all(match(x, y) for x, y in zip(s.parts[k:], rest))
                    for s in SECRET_PATHS for k in range(1, len(s.parts)))
-    for b in ([Path("/")] if pat.startswith("/") else cwds):
+    for b in ([_racine()] if _abs_txt(pat) else cwds):
         parts = Path(os.path.normpath(Path(b) / pat)).parts
         # 01/11 (relecture, accord de l'utilisateur) : `cat w/creds.json` avec `w` → runtime/whatsapp-auth
         # passait (chemin jugé sans résoudre les liens). En PLUS du chemin écrit : la partie fixe
@@ -649,7 +667,26 @@ def _dir_part_match(name: str, part: str) -> bool:
     # comme `_reaches_secret` : un joker ne désigne un nom caché que s'il commence par « . »
     if name.startswith(".") and not part.startswith((".", _DYN)):
         return False
-    return fnmatch.fnmatchcase(name, part.replace(_DYN, "*"))
+    return _fn_nom(name, part.replace(_DYN, "*"))
+
+
+# 03/11/2026 (portage Windows, autorisé par l'utilisateur ; « jokers encore Unix » de la première CI) : NTFS ignore la
+# casse (« RUNTIME/Hud-Token » est le jeton), un chemin « C:/… » est absolu, « /x » vise le lecteur courant.
+_WIN_ABS = re.compile(r"[A-Za-z]:[\\/]")
+
+
+def _fn_nom(name: str, part: str) -> bool:
+    if os.name == "nt":
+        return fnmatch.fnmatchcase(name.lower(), part.lower())
+    return fnmatch.fnmatchcase(name, part)
+
+
+def _abs_txt(pat: str) -> bool:
+    return pat.startswith("/") or (os.name == "nt" and bool(_WIN_ABS.match(pat)))
+
+
+def _racine() -> Path:
+    return Path(os.path.abspath(os.sep)) if os.name == "nt" else Path("/")
 
 
 def _designates_claude_dir(c: str, bases: list | None, glob: bool, dirs=_CLAUDE_DIRS) -> bool:
@@ -659,16 +696,16 @@ def _designates_claude_dir(c: str, bases: list | None, glob: bool, dirs=_CLAUDE_
         c = c.split("=", 1)[1] if "=" in c else ""  # --directory=…
     if not c or "://" in c:
         return False
-    pat = os.path.expanduser(c if glob else re.sub(r"([*?\[])", r"[\1]", c))
+    pat = _msys(os.path.expanduser(c if glob else re.sub(r"([*?\[])", r"[\1]", c)))  # 03/11 : Git Bash
     unknown_start = c.startswith(_DYN)
     for d in dirs:
-        if unknown_start or (not pat.startswith("/") and bases is None):
+        if unknown_start or (not _abs_txt(pat) and bases is None):
             rest = [x for x in pat.split("/")[1 if unknown_start else 0:] if x not in ("", ".")]
             if rest and ".." not in rest and len(rest) < len(d.parts) and all(
                     _dir_part_match(x, y) for x, y in zip(d.parts[-len(rest):], rest)):
                 return True
             continue
-        for b in ([Path("/")] if pat.startswith("/") else bases):
+        for b in ([_racine()] if _abs_txt(pat) else bases):
             parts = Path(os.path.normpath(Path(b) / pat)).parts
             if len(parts) == len(d.parts) and all(_dir_part_match(x, y) for x, y in zip(d.parts, parts)):
                 return True
@@ -1464,7 +1501,18 @@ _CWD: contextvars.ContextVar[str] = contextvars.ContextVar("guard_cwd", default=
 
 def _base() -> Path:
     cwd = _CWD.get()
-    return Path(cwd) if cwd and Path(cwd).is_absolute() else config.WORKDIR
+    if cwd:
+        p = Path(_msys(cwd))
+        if absolu(p):
+            return p if p.is_absolute() else Path(os.path.abspath(p))
+    return config.WORKDIR
+
+
+def absolu(p: str | os.PathLike) -> bool:
+    """Chemin absolu. 03/11 (Windows) : aussi « /etc », « \\tmp » (enraciné, sans lecteur : lecteur courant) ;
+    avant, un `cwd` « /etc » était ignoré et « hosts » jugé dans les projets (libre)."""
+    q = Path(p)
+    return q.is_absolute() or (os.name == "nt" and bool(q.root))
 
 
 # 03/11/2026 (portage Windows, lot 3, autorisé par l'utilisateur) : le Bash de Claude Code sous Windows est
@@ -2954,7 +3002,7 @@ def _hits(p: Path, pattern: str | None, q: Path) -> bool:
     """`q` est-il STRICTEMENT dans ce que vise (p, motif) ?"""
     if p not in q.parents:
         return False
-    return pattern is None or fnmatch.fnmatchcase(q.relative_to(p).parts[0], pattern)
+    return pattern is None or _fn_nom(q.relative_to(p).parts[0], pattern)  # 03/11 : sans casse sous Windows
 
 
 # --- 23/10 (plan P29, demande de l'utilisateur) : catégorie de chaque étiquette ---
@@ -5074,7 +5122,9 @@ def _find_guard_hits(a: list[str], roots: list | None, skip_cache: bool = False,
             return True
         if not all(_fn(rel.name, pat, icase) for pat, icase in names):
             return False
-        shown = None if prefix is None else (prefix.rstrip("/") or "/") + "/" + str(rel)
+        # 03/11 : find écrit ses chemins en « / », Git Bash compris (str(rel) donnait « logs\\audit.jsonl »
+        # sous Windows : `find . -path './logs/a*' -delete` ne voyait plus le journal du garde-fou).
+        shown = None if prefix is None else (prefix.rstrip("/") or "/") + "/" + rel.as_posix()
         return all(shown is None or _fn(shown, pat, icase) for pat, icase in paths)
 
     prot = _protected_all() if targets is None else targets
@@ -5406,13 +5456,40 @@ def _union_cats(cat_items) -> tuple[str, ...]:
     return tuple(dict.fromkeys(c for _lvl, cs in cat_items for c in cs))
 
 
+# 03/11/2026 (portage Windows, autorisé par l'utilisateur) : `cat C:\Users\…\hud-token` NON cité. Git Bash mange les
+# « \ » (rien n'est lu, la commande échoue), mais l'intention est claire et un autre interpréteur (cmd.exe,
+# PowerShell, une ligne recitée pour `bash -c`) lirait le chemin tel quel : la commande est AUSSI jugée avec ces
+# chemins en « / », et le verdict le plus strict des deux l'emporte. Jamais moins strict que la lecture de Bash.
+_CHEMIN_WIN = re.compile(r"(?<![\w/\\])[A-Za-z]:\\[^\s;|&<>()`'\"]*")
+_LECTURE_WINDOWS = os.name == "nt"
+
+
+def _lecture_windows(cmd: str) -> str | None:
+    """La commande avec ses chemins « X:\\… » écrits en « / » ; None s'il n'y en a pas (ou hors Windows)."""
+    if not _LECTURE_WINDOWS or ":\\" not in cmd:
+        return None
+    autre = _CHEMIN_WIN.sub(lambda m: m.group(0).replace("\\", "/"), cmd)
+    return autre if autre != cmd else None
+
+
+def _rang(v: Verdict) -> tuple:
+    """Sévérité d'un verdict : demander, garde-fou (plafond, puis levable), non levable, critique."""
+    return (v.needs_confirm, v.guard is True, bool(v.guard), not v.lift, v.level == CRITICAL)
+
+
 def classify(tool_name: str, tool_input: dict, cwd: str | None = None) -> Verdict:
     """Gravité intrinsèque de l'action, indépendamment du mode. `cwd` : dossier
     courant de Claude (transmis par le hook), pour les chemins relatifs."""
     token = _CWD.set(str(cwd or ""))
     fence = _MISSION.set(mission_fence())  # barrière de la mission en cours (lue à chaque appel du hook)
     try:
-        return _classify(tool_name, tool_input)
+        v = _classify(tool_name, tool_input)
+        autre = _lecture_windows(str(tool_input.get("command", ""))) if tool_name == "Bash" else None
+        if autre is not None:
+            w = _classify(tool_name, {**tool_input, "command": autre})
+            if _rang(w) > _rang(v):
+                v = w
+        return v
     finally:
         _MISSION.reset(fence)
         _CWD.reset(token)

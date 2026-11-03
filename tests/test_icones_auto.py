@@ -166,7 +166,9 @@ SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">{}</svg>'
     '<html><svg xmlns="http://www.w3.org/2000/svg"/></html>',
     '<svg viewBox="0 0 24 24"><path d="M0 0"/></svg>',  # sans espace de noms SVG
     SVG.format('<path d="M0 0"/>') + "<x",  # XML cassé
-    SVG.format('<path d="' + "0" * 70_000 + '"/>'),  # trop gros
+    # trop gros ; nom court : pytest met l'identifiant du test dans PYTEST_CURRENT_TEST, que Windows limite
+    # à 32 767 caractères (03/11, CI Windows : ValueError avant même le test)
+    pytest.param(SVG.format('<path d="' + "0" * 70_000 + '"/>'), id="trop-gros"),
 ])
 def test_svg_refuse(body):
     assert icones.safe_svg(body.encode()) is False

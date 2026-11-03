@@ -3,15 +3,16 @@ aucun appel réseau réel, les services sont simulés par `httpx.MockTransport`.
 import functools
 import json
 import os
-import stat
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
 
 from astrel import config, guard, mcp_config
 from astrel.tools import agenda, connector, translate, transport
+from conftest import mode_prive
 
 _REAL_CLIENT = httpx.Client
 
@@ -172,6 +173,15 @@ def test_navitia_pas_de_trajet(tmp_path, monkeypatch):
 
 # --- CalDAV : lecture iCalendar ---
 
+PARIS = ZoneInfo("Europe/Paris")
+
+
+def _local(*args) -> datetime:
+    """Heure de Paris vue dans le fuseau de la machine. Linux et macOS : Paris aussi (TZ + tzset de
+    `isolated`) ; Windows n'a pas tzset (03/11, CI en UTC) : les attentes suivent le fuseau réel."""
+    return datetime(*args, tzinfo=PARIS).astimezone()
+
+
 ICS = (
     "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
     "BEGIN:VEVENT\r\nUID:1\r\nDTSTART:20270115T080000Z\r\nDTEND:20270115T090000Z\r\n"
@@ -186,13 +196,16 @@ ICS = (
 
 def test_ical_lecture():
     ev = {e["UID"]: e for e in agenda.parse_events(ICS)}
-    # 08:00 UTC en janvier = 9 h à Paris (heure d'hiver), même lu en été.
-    assert ev["1"]["DTSTART"].hour == 9
+    # 08:00 UTC en janvier = 9 h à Paris (heure d'hiver), même lu en été ; rendu en heure locale.
+    assert ev["1"]["DTSTART"] == datetime(2027, 1, 15, 8, tzinfo=timezone.utc)
+    assert ev["1"]["DTSTART"].astimezone(PARIS).hour == 9 and ev["1"]["DTSTART"].hour == _local(2027, 1, 15, 9).hour
     assert ev["1"]["SUMMARY"] == "Réunion, point Studio"
     assert ev["1"]["DESCRIPTION"] == "Ligne 1\nLigne 2"
     assert ev["2"]["DTSTART"] == date(2027, 1, 20) and ev["2"]["DTEND"] == date(2027, 1, 21)
-    assert ev["3"]["DTSTART"].hour == 14 and ev["3"]["DTEND"].hour == 15 and ev["3"]["DTEND"].minute == 30
-    assert agenda._say(ev["3"]["DTSTART"]) == "samedi 10 juillet à 14 h"
+    assert ev["3"]["DTSTART"] == _local(2027, 7, 10, 14) and ev["3"]["DTEND"] == _local(2027, 7, 10, 15, 30)
+    assert ev["3"]["DTSTART"].utcoffset() == _local(2027, 7, 10, 14).utcoffset()  # fuseau de la machine
+    ete = _local(2027, 7, 10, 14)
+    assert agenda._say(ev["3"]["DTSTART"]) == f"{agenda.JOURS[ete.weekday()]} {ete.day} juillet à {ete.hour} h"
 
 
 def test_recurrence_depliee_si_le_serveur_ne_le_fait_pas():
@@ -202,14 +215,30 @@ def test_recurrence_depliee_si_le_serveur_ne_le_fait_pas():
     ev = agenda.parse_events(ics)[0]
     lo = datetime(2026, 10, 1).astimezone()
     occ = agenda._expand(ev, lo, lo + timedelta(days=60))
-    days = [o["DTSTART"].date().isoformat() for o in occ]
+    days = [o["DTSTART"].astimezone(PARIS).date().isoformat() for o in occ]  # jours à Paris
     assert days == ["2026-10-05", "2026-10-19", "2026-10-26", "2026-11-02", "2026-11-09"]
-    # Après le passage à l'heure d'hiver (25/10), toujours 18 h.
-    assert all(o["DTSTART"].hour == 18 for o in occ)
+    # Après le passage à l'heure d'hiver (25/10), toujours 18 h (à Paris ; en heure locale de la machine).
+    assert all(o["DTSTART"].astimezone(PARIS).hour == 18 for o in occ)
+    assert all(o["DTSTART"].hour == _local(*map(int, d.split("-")), 18).hour for o, d in zip(occ, days))
+
+
+def test_recurrence_depliee_dans_le_fuseau_de_l_evenement():
+    """03/11 (vu sur la CI Windows, machine en UTC) : la règle se déplie à l'heure de SON fuseau, pas de celui
+    de la machine. Réunion de New York à 9 h, machine à Paris : Paris change d'heure le 25/10, New York le
+    01/11 ; avant, le 26/10 tombait à 10 h à New York."""
+    ny = ZoneInfo("America/New_York")
+    ics = ("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:ny\r\nDTSTART;TZID=America/New_York:20261019T090000\r\n"
+           "DURATION:PT1H\r\nRRULE:FREQ=WEEKLY;COUNT=4\r\nSUMMARY:Point\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+    ev = agenda.parse_events(ics)[0]
+    lo = datetime(2026, 10, 1, tzinfo=ny)
+    occ = agenda._expand(ev, lo, lo + timedelta(days=60))
+    assert [o["DTSTART"].astimezone(ny).strftime("%d/%m %H:%M") for o in occ] == [
+        "19/10 09:00", "26/10 09:00", "02/11 09:00", "09/11 09:00"]
+    assert all(o["DTEND"] - o["DTSTART"] == timedelta(hours=1) for o in occ)
 
 
 def test_ical_ecriture_pliee_et_echappee():
-    start = datetime(2027, 1, 15, 9, 0).astimezone()
+    start = _local(2027, 1, 15, 9, 0)
     ics = agenda.build_event("u@astrel", "Dîner ; chez Léa, " + "très " * 30, start, start + timedelta(hours=2),
                              reminder_minutes=15)
     for line in ics.split("\r\n"):
@@ -275,12 +304,18 @@ def test_caldav_bout_en_bout(tmp_path, monkeypatch):
     out = agenda.upcoming(days=3)
     assert out["calendrier"] == "Personnel"
     assert [e["titre"] for e in out["evenements"]] == ["Kiné"]
-    assert out["evenements"][0]["quand"].endswith("à 14 h 30") and out["evenements"][0]["fin"] == "15:30"
+    # 14 h 30 à Paris, dit en heure locale (Paris sous Linux et macOS, fuseau réel sous Windows : 03/11).
+    soon = (datetime.now() + timedelta(days=1)).replace(hour=14, minute=30, second=0, microsecond=0)
+    kine = soon.replace(tzinfo=PARIS).astimezone()
+    assert out["evenements"][0]["quand"].endswith(f"à {kine.hour} h 30")
+    assert out["evenements"][0]["fin"] == (kine + timedelta(hours=1)).strftime("%H:%M")
     res = agenda.create("Dentiste", "2030-01-02T10:00", duration_minutes=30, location="Albi")
     assert res["calendrier"] == "Personnel" and res["quand"] == "mercredi 2 janvier à 10 h"
     path, ics = created[0]
     assert path.startswith("/remote.php/dav/calendars/utilisateur/personal/") and path.endswith(".ics")
-    assert "DTSTART:20300102T090000Z" in ics and "DTEND:20300102T093000Z" in ics and "LOCATION:Albi" in ics
+    utc = datetime(2030, 1, 2, 10, 0).astimezone().astimezone(timezone.utc)  # 10 h locales : 09:00Z à Paris
+    assert f"DTSTART:{utc:%Y%m%dT%H%M%SZ}" in ics and f"DTEND:{utc + timedelta(minutes=30):%Y%m%dT%H%M%SZ}" in ics
+    assert "LOCATION:Albi" in ics
 
 
 def test_caldav_calendrier_demande_introuvable(tmp_path, monkeypatch):
@@ -311,7 +346,7 @@ def test_mcp_json_home_assistant_et_droits(tmp_path, monkeypatch):
     assert data["homeassistant"] == {"type": "http", "url": "http://homeassistant.local:8123/api/mcp",
                                      "headers": {"Authorization": "Bearer jeton"}}
     assert data["connecteurs"]["env"]["DEEPL_API_KEY"] == "env:fx"
-    assert stat.S_IMODE(os.stat(config.MCP_CONFIG_FILE).st_mode) == 0o600
+    assert mode_prive(config.MCP_CONFIG_FILE)
 
 
 def test_garde_fou_connecteurs_sensibles(tmp_path, monkeypatch):

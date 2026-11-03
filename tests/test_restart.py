@@ -16,16 +16,14 @@ import pytest
 
 from astrel import config
 from astrel.brain import Brain
+from conftest import programme_python
 
 QUIET_CLI = "import sys\nfor _ in sys.stdin:\n    pass\n"
 DYING_CLI = "import sys\nsys.exit(1)\n"
 
 
 def fake_cli(tmp_path, monkeypatch, body: str):
-    script = tmp_path / "claude"
-    script.write_text(f"#!{sys.executable}\n{body}", encoding="utf-8")
-    script.chmod(0o755)
-    monkeypatch.setattr(config, "CLAUDE_BIN", str(script))
+    monkeypatch.setattr(config, "CLAUDE_BIN", programme_python(tmp_path / "claude", body))
     monkeypatch.setattr(config, "WORKDIR", tmp_path)
     monkeypatch.setattr(config, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(config, "SESSION_FILE", tmp_path / "session.json")

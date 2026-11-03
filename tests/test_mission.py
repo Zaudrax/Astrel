@@ -16,12 +16,14 @@ from astrel import config, core, guard, totalgate
 from astrel import mission as mission_mod
 from astrel.mission import Mission
 from astrel.voice import speaker as speaker_mod
-from conftest import remplacer_coeur
+from conftest import CheminBash, remplacer_coeur
 
 W = config.WORKDIR.resolve()
 PROJ = W / "ProjetMission"          # périmètre de la mission (n'a pas besoin d'exister)
 SECRET = PROJ / "secret"           # dossier interdit, DANS le périmètre
-AUTRE = W / "AutreProjet"          # projet autorisé d'habitude, hors du périmètre
+AUTRE = CheminBash(W / "AutreProjet")  # projet autorisé d'habitude, hors du périmètre
+# 03/11 (CI Windows) : dans une commande Bash, un chemin s'écrit en « / » (Git Bash mange les « \ » hors guillemets).
+PROJ_BASH = CheminBash(PROJ)
 
 
 def wait_for(cond, timeout=3.0):
@@ -168,7 +170,7 @@ def test_sans_mission_rien_ne_change(grants):
     ("Edit", {"file_path": "src/a.py"}),  # relatif au dossier de Claude
     ("Write", {"file_path": "/tmp/essai.txt"}),
     ("Bash", {"command": "echo x > notes.txt && sed -i s/a/b/ src/a.py"}),
-    ("Bash", {"command": f"rm -rf {PROJ}/build && mkdir -p /tmp/x"}),
+    ("Bash", {"command": f"rm -rf {PROJ_BASH}/build && mkdir -p /tmp/x"}),
     ("Bash", {"command": f"cat {AUTRE}/README.md; grep -rn todo {AUTRE}"}),  # lire ailleurs : libre
     ("Bash", {"command": "python -m pytest -q"}),
 ])
@@ -256,7 +258,7 @@ def test_oui_pour_30_min_couvre_le_hors_perimetre(grants):
     ("Write", {"file_path": str(SECRET / "cle.txt")}),
     ("Bash", {"command": "echo x > secret/cle.txt"}),
     ("Bash", {"command": "cp -r modele/ secret/"}),
-    ("Bash", {"command": f"rm -rf {PROJ}"}),  # le dossier qui contient l'interdit
+    ("Bash", {"command": f"rm -rf {PROJ_BASH}"}),  # le dossier qui contient l'interdit
     ("Bash", {"command": "rm -rf ./*"}),
     ("Bash", {"command": "git checkout -- secret/"}),
     ("Bash", {"command": "git clean -fdx"}),

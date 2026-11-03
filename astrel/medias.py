@@ -102,7 +102,9 @@ def source_roots() -> list[Path]:
     """Dossiers d'où Astrel peut montrer un fichier (question 2 du plan, « Recommandé »).
     Noms anglais à côté des français : les mêmes dossiers sur un système en anglais."""
     home = Path.home()
-    roots = [config.RUNTIME / "attachments", config.IMAGES_RUNTIME, Path("/tmp"), config.WORKDIR]
+    roots = [config.RUNTIME / "attachments", config.IMAGES_RUNTIME, config.WORKDIR]
+    if systeme.UNIX:
+        roots.append(Path("/tmp"))  # 03/11 : sous Windows, « \\tmp » à la racine du lecteur, pas le temporaire
     roots.append(Path(tempfile.gettempdir()))  # 03/11 : le dossier temporaire du système (Windows : %TEMP%)
     roots += [home / d for d in ("Images", "Téléchargements", "Bureau", "Pictures", "Downloads", "Desktop")]
     return roots

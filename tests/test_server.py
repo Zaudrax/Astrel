@@ -8,6 +8,7 @@ import pytest
 from astrel import config
 from astrel.events import bus
 from astrel.server import HudServer
+from conftest import mode_prive
 
 
 @pytest.fixture(scope="module")
@@ -78,5 +79,4 @@ def test_websocket_instantane_et_commande(server):
 
 
 def test_jeton_en_0600(server):
-    mode = config.HUD_TOKEN_FILE.stat().st_mode & 0o777
-    assert mode == 0o600
+    assert mode_prive(config.HUD_TOKEN_FILE)

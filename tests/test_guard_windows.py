@@ -55,3 +55,28 @@ def test_lecture_d_un_secret_demandee(cible):
 def test_lire_le_code_reste_libre(cible):
     for forme in formes(cible):
         assert not guard.assess("Bash", {"command": f"grep -n def {forme}"}, mode="autonome").needs_confirm, forme
+
+
+def test_ecriture_systeme_windows_critique():
+    """03/11 : une écriture dans le système Windows valait « sensible » (libre en autonome) ; même verdict que /etc."""
+    import os
+
+    hosts = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "drivers" / "etc" / "hosts"
+    for outil, entree, cwd in (("Write", {"file_path": str(hosts), "content": "x"}, None),
+                               ("Write", {"file_path": "/etc/hosts", "content": "x"}, None),
+                               ("Write", {"file_path": "hosts", "content": "x"}, "/etc"),
+                               ("Bash", {"command": f"echo x >> '{hosts}'"}, None),
+                               ("Bash", {"command": f"echo x >> {hosts.as_posix()}"}, None)):
+        v = guard.assess(outil, entree, mode="autonome", cwd=cwd)
+        assert v.needs_confirm and v.level == guard.CRITICAL, (outil, entree, cwd)
+    demarrage = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    assert guard.assess("Write", {"file_path": str(demarrage / "x.bat"), "content": "x"}, mode="autonome").needs_confirm
+
+
+@pytest.mark.parametrize("cible", SECRETS, ids=lambda p: p.name)
+def test_secret_aux_antislashs_non_cites_ou_en_majuscules(cible):
+    """03/11 : `cat C:\\…\\hud-token` sans guillemets (Git Bash mange les « \\ », un autre interpréteur non) et
+    `cat RUNTIME/HUD-TOKEN` (NTFS ignore la casse) sont des lectures du secret."""
+    assert guard.assess("Bash", {"command": f"cat {cible.resolve()}"}, mode="autonome").needs_confirm
+    rel = cible.resolve().relative_to(config.ROOT.resolve()).as_posix().upper()
+    assert guard.assess("Bash", {"command": f"cat {rel}"}, mode="autonome", cwd=str(config.ROOT)).needs_confirm

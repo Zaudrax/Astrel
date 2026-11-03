@@ -495,7 +495,12 @@ def helper(genre: str) -> str:
         args = ("passerelle", config.PASSERELLE_JETON_FILE)
     else:
         return ""
-    return " ".join(shlex.quote(str(p)) for p in (config.VENV_PYTHON, "-I", config.CLE_API_SCRIPT, *args))
+    mots = (config.VENV_PYTHON, "-I", config.CLE_API_SCRIPT, *args)
+    if os.name == "nt":
+        # 03/11 (CI Windows) : cmd.exe ne connaît pas les « '…' » de shlex (« syntaxe du nom de fichier
+        # incorrecte ») ; entre « "…" », un chemin à « \\ » se lit pareil dans cmd.exe et dans Git Bash.
+        return " ".join(f'"{p}"' if re.search(r"[^\w.:=+-]", str(p)) else str(p) for p in mots)
+    return " ".join(shlex.quote(str(p)) for p in mots)
 
 
 class Etat:

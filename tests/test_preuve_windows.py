@@ -65,6 +65,17 @@ def test_lignes_du_hud_et_commande(comme_windows):
     assert all("/C:/" not in ligne for ligne in preuve.decrire({"controles": c, "figer": []}))
 
 
+def test_structure_de_get_file_information_by_handle():
+    """03/11 (CI Windows) : BY_HANDLE_FILE_INFORMATION telle que Windows l'écrit (FILETIME alignés sur 4).
+    Avec des dates en c_uint64, « liens » lisait l'index du fichier : tout fichier passait pour un lien dur."""
+    import ctypes
+    info = preuve._InfoFichier
+    assert ctypes.sizeof(info) == 52
+    assert (info.attributs.offset, info.creation.offset, info.acces.offset, info.ecriture.offset) == (0, 4, 12, 20)
+    assert (info.volume.offset, info.taille_haut.offset, info.taille_bas.offset) == (28, 32, 36)
+    assert (info.liens.offset, info.index_haut.offset, info.index_bas.offset) == (40, 44, 48)
+
+
 # ------------------------------------------------------------------ ouverture réelle (Windows)
 
 def _verif(dossier, *controles):

@@ -179,6 +179,18 @@ def _parse_dt(value: str, params: dict[str, str]) -> datetime | date:
         return naive.astimezone()   # fuseau Windows (« Romance Standard Time ») : heure locale
 
 
+def _zone(value: str, params: dict[str, str]) -> ZoneInfo | timezone | None:
+    """Fuseau dans lequel une récurrence se déplie (RFC 5545) : celui du TZID, UTC pour « …Z », None pour
+    une heure « flottante » (heure locale). 03/11 (CI Windows, machine en UTC) : déplier dans le fuseau de
+    la MACHINE décalait d'une heure, après un changement d'heure, un rendez-vous hebdomadaire de Paris."""
+    if value.strip().endswith("Z"):
+        return timezone.utc
+    try:
+        return ZoneInfo(params["TZID"]) if params.get("TZID") else None
+    except (KeyError, ValueError):
+        return None
+
+
 def _parse_duration(value: str) -> timedelta:
     m = re.fullmatch(r"([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?", value.strip())
     if not m:
@@ -210,6 +222,8 @@ def parse_events(ics: str) -> list[dict]:
             continue
         if name in ("DTSTART", "DTEND", "RECURRENCE-ID"):
             current[name] = _parse_dt(value, params)
+            if name == "DTSTART":
+                current["_fuseau"] = _zone(value, params)
         elif name == "EXDATE":
             current["exdates"] += [_parse_dt(v, params) for v in value.split(",") if v]
         elif name in ("SUMMARY", "LOCATION", "DESCRIPTION", "UID", "RRULE", "DURATION", "STATUS"):
@@ -235,25 +249,32 @@ def _expand(ev: dict, start: datetime, end: datetime) -> list[dict]:
     from dateutil.rrule import rrulestr
 
     first = ev["DTSTART"]
+    fuseau = ev.get("_fuseau")
     length = _as_dt(ev["DTEND"]) - _as_dt(first)
     anchor = _as_dt(first)
     rule = ev["RRULE"]
     if isinstance(first, date) and not isinstance(first, datetime):
         anchor = anchor.replace(tzinfo=None)
+        excluded = {_as_dt(x).replace(tzinfo=None) for x in ev["exdates"]}
+        lo, hi = (start - length).replace(tzinfo=None), end.replace(tzinfo=None)
     else:
+        # Déplié à l'heure murale du fuseau de l'événement (heure locale s'il n'en a pas), puis rendu en
+        # heure locale : 18 h à Paris reste 18 h à Paris après le changement d'heure, où que soit la machine.
+        def murale(v: datetime) -> datetime:
+            return (v.astimezone(fuseau) if fuseau else v.astimezone()).replace(tzinfo=None)
         # dateutil refuse un UNTIL en UTC face à une date de départ locale : on l'aligne.
-        rule = re.sub(r"UNTIL=(\d{8}T\d{6})Z", lambda m: "UNTIL=" + _parse_dt(m.group(1) + "Z", {})
+        rule = re.sub(r"UNTIL=(\d{8}T\d{6})Z", lambda m: "UNTIL=" + murale(_parse_dt(m.group(1) + "Z", {}))
                       .strftime("%Y%m%dT%H%M%S"), rule)
-        anchor = anchor.replace(tzinfo=None)
-    excluded = {_as_dt(x).replace(tzinfo=None) for x in ev["exdates"]}
-    lo, hi = (start - length).replace(tzinfo=None), end.replace(tzinfo=None)
+        anchor = murale(anchor)
+        excluded = {murale(_as_dt(x)) for x in ev["exdates"]}
+        lo, hi = murale(start - length), murale(end)
     out = []
     for occ in rrulestr(rule, dtstart=anchor).between(lo, hi, inc=True):
         if occ in excluded:
             continue
         inst = dict(ev)
         if isinstance(first, datetime):
-            inst["DTSTART"] = occ.astimezone()
+            inst["DTSTART"] = occ.replace(tzinfo=fuseau).astimezone() if fuseau else occ.astimezone()
         else:
             inst["DTSTART"] = occ.date()
         inst["DTEND"] = inst["DTSTART"] + length if isinstance(first, datetime) else occ.date() + length

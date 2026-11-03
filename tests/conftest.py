@@ -453,6 +453,16 @@ def prompt_de(cmd: list) -> str:
     return cmd[cmd.index("--append-system-prompt") + 1]
 
 
+def chemin_interne(chemin) -> str:
+    """03/11 (CI Windows) : un chemin tel que le critère de mission NORMALISÉ le garde (`preuve._canon`) : inchangé
+    ailleurs, « /C:/x/y » sous Windows (lecteur compris). Écrit sans `preuve`, pour que le test ne se juge pas seul."""
+    import os
+    if os.name != "nt":
+        return str(chemin)
+    p = Path(chemin).as_posix()
+    return "/" + p[0].upper() + p[1:]
+
+
 class CheminBash(type(Path())):
     """Chemin écrit en « / » (f-string, str) : il entre dans des commandes Bash, où Git Bash (Windows) mangerait
     les « \\ ». Identique sous Linux ; Windows comprend aussi « C:/… ». 03/11, CI Windows."""
@@ -462,3 +472,18 @@ class CheminBash(type(Path())):
 
     def __format__(self, spec: str) -> str:
         return format(str(self), spec)
+
+
+def programme_python(chemin, code: str) -> str:
+    """03/11 (CI Windows) : faux programme écrit en Python, lançable directement (comme un vrai binaire). Unix :
+    « #! » + bit d'exécution ; Windows ne lit pas les « #! » (WinError 193) : un `<nom>.cmd` lance le script,
+    comme les claude.cmd de npm. Rend le chemin à lancer."""
+    import sys
+    chemin = Path(chemin)
+    chemin.write_text(f"#!{sys.executable}\n{code}", encoding="utf-8")
+    chemin.chmod(0o755)
+    if sys.platform != "win32":
+        return str(chemin)
+    cmd = chemin.with_name(chemin.name + ".cmd")
+    cmd.write_text(f'@"{sys.executable}" "{chemin}" %*\r\n', encoding="utf-8")
+    return str(cmd)

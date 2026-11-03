@@ -588,11 +588,8 @@ def _link_lock_file() -> Path:
 
 def link_lock() -> int | None:
     """Prend le verrou d'appairage : un descripteur à rendre par `link_unlock`, None si
-    un autre appairage le tient. Sans `fcntl` (Windows natif), pas de verrou (-1)."""
-    try:
-        import fcntl
-    except ImportError:
-        return -1
+    un autre appairage le tient (-1 : verrou impossible à poser). 03/11 : aussi sous Windows
+    (`systeme.verrou_tente`), où le HUD et le terminal pouvaient relier en même temps."""
     path = _link_lock_file()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -600,9 +597,7 @@ def link_lock() -> int | None:
     except OSError as exc:
         log.warning("verrou d'appairage impossible : %s", exc.strerror or exc)
         return -1
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
+    if not systeme.verrou_tente(fd):
         os.close(fd)
         return None
     return fd
@@ -611,6 +606,7 @@ def link_lock() -> int | None:
 def link_unlock(fd: int | None) -> None:
     if fd is None or fd < 0:
         return
+    systeme.rendre_verrou(fd)
     try:
         os.close(fd)  # ferme et rend le verrou
     except OSError:
@@ -762,21 +758,26 @@ class Linker:
             saved = self._saved and self.wa.linked  # self.json écrit par le pont
             why, number = self._why, self._number
             fd, self._lock_fd = self._lock_fd, None
-            self._proc, self._stage, self._number = None, "", ""
+            self._stage, self._number = "", ""
             if not saved:
                 shutil.rmtree(config.WHATSAPP_AUTH_DIR, ignore_errors=True)  # rien de relié à moitié
             link_unlock(fd)
+        # 03/11 (CI Windows) : la fin n'est visible (`active` faux) qu'APRÈS l'évènement de fin et l'effacement
+        # de son rejeu ; avant, un HUD (ou un test) qui voyait l'appairage fini pouvait encore recevoir le code.
         if saved:
             log.info("WhatsApp relié depuis le HUD")
+            self.wa.set_enabled(True)  # activé avant « done » : qui voit « done » voit WhatsApp actif
             self._event("done", number=number)
-            bus.clear_sticky("whatsapp_link")  # plus rien de l'appairage n'est rejoué
-            self.wa.set_enabled(True)
-            return
-        why = why or ("rien n'a été relié" if code in (0, None) else f"le pont s'est arrêté (code {code})")
-        log.info("appairage WhatsApp non abouti : %s", why)
-        self._event("failed", reason=why)
-        bus.clear_sticky("whatsapp_link")
-        self.wa.publish()
+        else:
+            why = why or ("rien n'a été relié" if code in (0, None) else f"le pont s'est arrêté (code {code})")
+            log.info("appairage WhatsApp non abouti : %s", why)
+            self._event("failed", reason=why)
+        bus.clear_sticky("whatsapp_link")  # plus rien de l'appairage n'est rejoué
+        with self._lock:
+            if self._proc is proc:
+                self._proc = None
+        if not saved:
+            self.wa.publish()
 
     def confirm(self, ok: bool) -> dict:
         with self._lock:

@@ -2,6 +2,8 @@
 
 [Version française](README.md)
 
+**Talk to your computer. Claude Code does the work, and asks you first before anything you can't take back.**
+
 Astrel is a voice assistant that runs on your computer and hands the reasoning to Claude Code,
 Anthropic's CLI, on the user's own subscription. You say "Astrel", you talk, it acts (terminal,
 files, browser, desktop) and answers out loud. A local dashboard, the HUD, shows what it is doing
@@ -125,7 +127,7 @@ it, more slowly.
 ```bash
 sudo apt install git python3 python3-venv python3-gi gir1.2-gtk-3.0 \
   gstreamer1.0-pipewire gir1.2-gstreamer-1.0 pulseaudio-utils libnotify-bin \
-  xclip wireplumber nodejs npm curl
+  xclip wireplumber nodejs npm curl poppler-utils
 git clone https://github.com/Zaudrax/Astrel.git ~/Astrel && cd ~/Astrel
 python3 tools/check_install.py        # checks the machine, changes nothing
 ./install.sh --projets ~/Projets      # no sudo; --projets: the folder where Claude works
@@ -215,6 +217,11 @@ able to recognise a program started by Claude, as there is no cgroup.
   with several accounts.
 - No key-based provider, Claude included, has been tried with a real key yet; Codex and Grok
   Build have never run.
+
+## Contributing
+
+How to propose a fix, and the checks to run first: [CONTRIBUTING.md](CONTRIBUTING.md). Report security
+problems privately, never in an issue: [SECURITY.md](SECURITY.md).
 
 ## Licence
 

@@ -230,3 +230,103 @@ def test_astrel_relance_en_utf8_sous_windows(monkeypatch):
     assert fin.value.code == 7 and appels[0][1:] == ["-X", "utf8", "-m", "astrel", "--text"]
     monkeypatch.setattr(plateforme, "SYSTEM", "linux")
     plateforme.en_utf8("astrel")  # rien : pas de relance
+
+
+def test_remplacer_reessaie_sous_windows(tmp_path, monkeypatch):
+    """03/11 (CI Windows, todo à deux processus) : la cible ouverte ailleurs refuse un temps le remplacement."""
+    src, dst = tmp_path / "a.tmp", tmp_path / "a"
+    src.write_text("neuf")
+    dst.write_text("vieux")
+    vrai, refus = os.replace, [PermissionError(5, "Access is denied")] * 3
+
+    def replace(a, b):
+        if refus:
+            raise refus.pop()
+        vrai(a, b)
+
+    monkeypatch.setattr(systeme, "UNIX", False)
+    monkeypatch.setattr(systeme.os, "replace", replace)
+    systeme.remplacer(src, dst)
+    assert dst.read_text() == "neuf" and not refus
+    src.write_text("encore")
+    refus[:] = [PermissionError(5, "Access is denied")] * 1000
+    with pytest.raises(PermissionError):
+        systeme.remplacer(src, dst, attente_s=0.05)  # au-delà du délai : l'erreur remonte
+
+
+def test_verrou_fichier_sous_windows_attend_le_premier_octet(tmp_path, monkeypatch):
+    """03/11 : msvcrt.locking non bloquant réessayé ; verrou et déverrou sur le PREMIER octet."""
+    import types
+
+    appels: list[tuple[int, int]] = []
+    occupe = [True, True]
+
+    def locking(fd, mode, n):
+        appels.append((mode, os.lseek(fd, 0, os.SEEK_CUR)))
+        if mode == faux.LK_NBLCK and occupe:
+            occupe.pop()
+            raise OSError(36, "Resource deadlock avoided")
+
+    faux = types.SimpleNamespace(LK_NBLCK=2, LK_UNLCK=0, locking=locking)
+    monkeypatch.setitem(sys.modules, "msvcrt", faux)
+    monkeypatch.setattr(systeme, "UNIX", False)
+    with open(tmp_path / "x.lock", "a+") as f:
+        f.write("contenu")
+        f.flush()
+        with systeme.verrou_fichier(f):
+            assert appels == [(2, 0)] * 3
+    assert appels[-1] == (0, 0) and len(appels) == 4
+
+
+@unix
+def test_verrou_fichier_exclut_un_autre_processus(tmp_path):
+    lock = tmp_path / "x.lock"
+    code = ("import fcntl, sys\nf = open(sys.argv[1], 'a+')\n"
+            "try:\n    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)\n    print('libre')\n"
+            "except OSError:\n    print('tenu')\n")
+    with open(lock, "a+") as f, systeme.verrou_fichier(f):
+        assert subprocess.run([sys.executable, "-c", code, str(lock)], capture_output=True, text=True).stdout == "tenu\n"
+    assert subprocess.run([sys.executable, "-c", code, str(lock)], capture_output=True, text=True).stdout == "libre\n"
+
+
+def test_verrou_tente_sous_windows(tmp_path, monkeypatch):
+    """03/11 : verrou non bloquant (appairage WhatsApp) : refusé s'il est tenu, rendu sur le premier octet."""
+    import types
+
+    tenus: set[int] = set()
+
+    def locking(fd, mode, n):
+        assert os.lseek(fd, 0, os.SEEK_CUR) == 0 and n == 1
+        if mode == faux.LK_NBLCK:
+            if tenus:
+                raise OSError(13, "Permission denied")
+            tenus.add(fd)
+        else:
+            tenus.discard(fd)
+
+    faux = types.SimpleNamespace(LK_NBLCK=2, LK_UNLCK=0, locking=locking)
+    monkeypatch.setitem(sys.modules, "msvcrt", faux)
+    monkeypatch.setattr(systeme, "UNIX", False)
+    a = os.open(tmp_path / "l", os.O_RDWR | os.O_CREAT)
+    b = os.open(tmp_path / "l", os.O_RDWR)
+    try:
+        os.write(a, b"x")
+        assert systeme.verrou_tente(a) and not systeme.verrou_tente(b)
+        systeme.rendre_verrou(a)
+        assert systeme.verrou_tente(b)
+    finally:
+        os.close(a)
+        os.close(b)
+
+
+@unix
+def test_verrou_tente_unix(tmp_path):
+    a = os.open(tmp_path / "l", os.O_RDWR | os.O_CREAT)
+    b = os.open(tmp_path / "l", os.O_RDWR)
+    try:
+        assert systeme.verrou_tente(a) and not systeme.verrou_tente(b)
+        systeme.rendre_verrou(a)
+        assert systeme.verrou_tente(b)
+    finally:
+        os.close(a)
+        os.close(b)

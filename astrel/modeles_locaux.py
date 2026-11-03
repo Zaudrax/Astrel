@@ -48,6 +48,7 @@ DISQUE_FACTEUR, DISQUE_MARGE_GO = 1.2, 2.0
 DISQUE_RESTE_GO, DISQUE_RESTE_PART = 10.0, 0.15  # libres APRÈS le téléchargement (l'utilisateur, 19/10)
 SIZES_TTL_S = 86_400.0
 TAGS_TTL_S = 3.0
+VERSION_VUE_S = 5.0  # sonde « Ollama répond ? » des vues de la page (03/11)
 INSTALL_URL = "https://ollama.com/download"
 INSTALL_LINUX = "curl -fsSL https://ollama.com/install.sh | sh"
 PLACES = {"gpu": "rapide (carte graphique)", "mixte": "mixte, plus lent (carte et mémoire vive)",
@@ -255,6 +256,7 @@ class ModelesLocaux:
         self._sizes_at = 0.0
         self._sizes_busy = False
         self._installed: tuple[float, dict[str, int] | None] = (0.0, None)
+        self._version: tuple[float, str, str] = (0.0, "", "")  # (quand, adresse, version) : vues seulement
         self._dl: dict[str, Any] | None = None      # téléchargement en cours ou dernier résultat
         self._stop = threading.Event()
         self._last_push = 0.0
@@ -512,6 +514,20 @@ class ModelesLocaux:
 
     # --- vues de la page « Réglages » (groupe « Modèle local »)
 
+    def _version_vue(self) -> str:
+        """`ollama_version` pour les vues de la page (deux par page) : une sonde par `VERSION_VUE_S` au plus.
+        03/11 (CI Windows) : un port local fermé n'y est « refusé » qu'au bout du délai (SYN réessayés), soit
+        1 s par sonde ; Ollama absent, chaque page des Réglages coûtait 2 s. « Relire » oublie la valeur."""
+        now, url = time.monotonic(), config.OLLAMA_URL
+        with self._lock:
+            at, seen_url, version = self._version
+            if seen_url == url and at and now - at < VERSION_VUE_S:
+                return version
+        version = ollama_version()
+        with self._lock:
+            self._version = (time.monotonic(), url, version)
+        return version
+
     def materiel_view(self) -> dict:
         mat = materiel.detect()
         lines = []
@@ -530,7 +546,7 @@ class ModelesLocaux:
         if mat.wsl:
             lines.append({"label": "WSL", "level": "info",
                           "text": "Ollama installé dans Windows ou dans WSL : les deux marchent s'il répond ici"})
-        version = ollama_version()
+        version = self._version_vue()
         out: dict[str, Any] = {}
         if version:
             lines.append({"label": "Ollama", "text": f"version {version}, en marche", "level": "ok"})
@@ -551,7 +567,7 @@ class ModelesLocaux:
     def models_view(self) -> dict:
         self._refresh_sizes()
         mat = materiel.detect()
-        running = bool(ollama_version())
+        running = bool(self._version_vue())
         props, hidden = self.proposals(mat)
         chosen, active = self.chosen, self.active
         lines, actions = [], []
@@ -618,7 +634,7 @@ class ModelesLocaux:
         if verb == "refresh":
             materiel.forget()
             with self._lock:
-                self._installed = (0.0, None)
+                self._installed, self._version = (0.0, None), (0.0, "", "")
             return {"ok": True}
         if verb == "pull":
             return self.download(tag)

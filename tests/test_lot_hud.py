@@ -13,7 +13,7 @@ from astrel import config, core, guard, state
 from astrel.channels import Channels
 from astrel.events import bus
 from astrel.floor import floor
-from conftest import remplacer_coeur
+from conftest import mode_prive, remplacer_coeur
 
 
 class FakeSpeaker:
@@ -436,7 +436,7 @@ def test_image_jointe_reduite_a_256_ko(att_dir):
     sent = base64.b64decode(p.images[0]["data"])
     assert len(sent) <= 256 * 1024 and p.images[0]["media_type"] == "image/jpeg"
     saved = list((att_dir.ATTACH_DIR).iterdir())
-    assert len(saved) == 1 and saved[0].name.endswith("capture.jpg") and oct(saved[0].stat().st_mode)[-3:] == "600"
+    assert len(saved) == 1 and saved[0].name.endswith("capture.jpg") and mode_prive(saved[0])
     # 19/10 : `file` = le nom enregistré (jamais un chemin), pour la vignette du fil du HUD
     assert p.shown == [{"name": "capture.jpg", "image": True, "file": saved[0].name}]
 

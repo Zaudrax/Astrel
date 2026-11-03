@@ -2,6 +2,7 @@
 téléchargement par Ollama (faux serveur), Ollama absent = lien et commande seulement."""
 import json
 import stat
+import sys
 import time
 
 import pytest
@@ -36,9 +37,13 @@ def test_profils_factices_et_json(monkeypatch):
 
 
 def test_nvidia_smi_lu_et_carte_la_mieux_dotee(monkeypatch, tmp_path):
-    fake = tmp_path / "nvidia-smi"
-    fake.write_text("#!/bin/sh\necho 'NVIDIA GeForce RTX 4060 Laptop GPU, 8188'\necho 'Petite carte, 2048'\n")
-    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    if sys.platform == "win32":  # 03/11 : pas de « #! » sous Windows ; un .cmd se lance directement
+        fake = tmp_path / "nvidia-smi.cmd"
+        fake.write_text("@echo NVIDIA GeForce RTX 4060 Laptop GPU, 8188\r\n@echo Petite carte, 2048\r\n")
+    else:
+        fake = tmp_path / "nvidia-smi"
+        fake.write_text("#!/bin/sh\necho 'NVIDIA GeForce RTX 4060 Laptop GPU, 8188'\necho 'Petite carte, 2048'\n")
+        fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setattr(materiel, "_nvidia_smi", lambda: str(fake))
     assert materiel.nvidia() == ("NVIDIA GeForce RTX 4060 Laptop GPU", 8.0)
     monkeypatch.setattr(materiel, "_nvidia_smi", lambda: "")
@@ -233,3 +238,17 @@ def test_annulation_pendant_un_blocage_reseau_reste_annule(monkeypatch):
     local._dl = {"tag": "llama3.2:3b", "status": "en cours", "done": 0, "total": 1, "step": "", "error": ""}
     local._pull("llama3.2:3b", modeles_locaux.threading.Event())
     assert local._dl["status"] == "échec" and "disque plein" in local._dl["error"]  # sans annulation : échec
+
+
+def test_une_seule_sonde_d_ollama_par_page(monkeypatch):
+    """03/11 (CI Windows) : un port local fermé n'y répond qu'au bout du délai (1 s par sonde) ; la page des
+    Réglages ne sonde Ollama qu'une fois par 5 s, « Relire » repart de zéro."""
+    sondes = []
+    monkeypatch.setattr(modeles_locaux, "ollama_version", lambda timeout=1.0: sondes.append(1) or "")
+    local = modeles_locaux.local
+    local.materiel_view(), local.models_view()
+    reglages.describe()
+    assert len(sondes) == 1
+    assert local.run("refresh", {})["ok"]
+    local.materiel_view()
+    assert len(sondes) == 2

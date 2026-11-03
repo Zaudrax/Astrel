@@ -89,7 +89,10 @@ def test_echantillon_reel_et_rapide():
     t0 = time.perf_counter()
     for _ in range(20):
         x = memoire.sample()
-    assert (time.perf_counter() - t0) / 20 < 0.005  # ≈ 0,15 ms mesuré ; large marge
+    # ≈ 0,15 ms mesuré ; large marge. 03/11 : sous Windows, psutil lit le swap par un compteur PDH (~10 ms
+    # en CI) ; un échantillon toutes les 5 s (`PERIODE_S`) : 0,2 % de la boucle, budget à 50 ms.
+    budget = 0.05 if os.name == "nt" else 0.005
+    assert (time.perf_counter() - t0) / 20 < budget
     assert x["ram_total"] > 0 and 0 <= x["ram_dispo"] <= x["ram_total"] and 0 <= x["swap_pct"] <= 100
 
 
@@ -168,7 +171,8 @@ def test_reglages_declarent_le_matcher_du_navigateur(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "SETTINGS_FILE", tmp_path / "s.json")
     hooks = json.loads(brain.write_settings().read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
     nav = [h for h in hooks if h["matcher"] == "mcp__playwright.*__browser_navigate"]
-    assert len(nav) == 1 and str(config.ROUTE_HOOK_SCRIPT) in nav[0]["hooks"][0]["command"]
+    # chemins en « / » dans la ligne du hook (Git Bash sous Windows, 03/11) : identiques sous Unix
+    assert len(nav) == 1 and config.ROUTE_HOOK_SCRIPT.as_posix() in nav[0]["hooks"][0]["command"]
     assert hooks[0]["matcher"] == "*"  # le garde-fou reste le premier
 
 

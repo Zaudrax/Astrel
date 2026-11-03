@@ -26,10 +26,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import queue
 import select
 import stat
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -175,7 +177,7 @@ def fingerprint() -> dict[str, str]:
     """sha256 de chaque fichier du garde-fou, par chemin relatif (« absent » s'il manque)."""
     out = {}
     for path in GUARD_FILES:
-        rel = str(path.relative_to(config.ROOT))
+        rel = path.relative_to(config.ROOT).as_posix()  # 03/11 : mêmes clés sous Windows (pas de « \\ »)
         try:
             out[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
         except OSError:
@@ -245,11 +247,44 @@ def accept() -> tuple[bool, str]:
 
 # ------------------------------------------------------------------ MCP
 
-def _read_reply(proc: subprocess.Popen, rid: int, deadline: float) -> dict:
-    """Réponse JSON-RPC d'identifiant `rid` (les notifications et journaux sont sautés)."""
+def _lecteur(proc: subprocess.Popen) -> Callable[[float], bytes]:
+    """Lecture de la sortie du serveur avec un délai : `select` sous Unix ; sous Windows, `select` ne
+    prend que des sockets (WinError 10038, 03/11) : un fil lit le tube et passe les morceaux par une file."""
     assert proc.stdout is not None
-    buf = b""
     fd = proc.stdout.fileno()
+    if systeme.UNIX:
+        def lire(left: float) -> bytes:
+            if not select.select([fd], [], [], left)[0]:
+                raise TimeoutError("pas de réponse à temps")
+            return os.read(fd, 65536)
+        return lire
+    morceaux: queue.Queue[bytes] = queue.Queue()
+
+    def pomper() -> None:
+        try:
+            while chunk := os.read(fd, 65536):
+                morceaux.put(chunk)
+        except OSError:
+            pass
+        morceaux.put(b"")  # fin du tube
+
+    threading.Thread(target=pomper, name="doctor-mcp", daemon=True).start()
+
+    def lire_file(left: float) -> bytes:
+        try:
+            return morceaux.get(timeout=left)
+        except queue.Empty:
+            raise TimeoutError("pas de réponse à temps") from None
+    return lire_file
+
+
+def _read_reply(proc: subprocess.Popen, rid: int, deadline: float, lire: Callable[[float], bytes] | None = None,
+                reste: list[bytes] | None = None) -> dict:
+    """Réponse JSON-RPC d'identifiant `rid` (les notifications et journaux sont sautés). `lire` : le lecteur
+    du serveur (`_lecteur`), un seul par process ; `reste` garde ce qui suit la réponse pour l'appel suivant."""
+    lire = lire or _lecteur(proc)
+    reste = [b""] if reste is None else reste
+    buf = reste[0]
     while True:
         while b"\n" in buf:
             line, buf = buf.split(b"\n", 1)
@@ -258,13 +293,14 @@ def _read_reply(proc: subprocess.Popen, rid: int, deadline: float) -> dict:
             except ValueError:
                 continue
             if isinstance(msg, dict) and msg.get("id") == rid:
+                reste[0] = buf
                 if "error" in msg:
                     raise RuntimeError(str((msg["error"] or {}).get("message", "erreur")))
                 return msg.get("result") or {}
         left = deadline - time.monotonic()
-        if left <= 0 or not select.select([fd], [], [], left)[0]:
+        if left <= 0:
             raise TimeoutError("pas de réponse à temps")
-        chunk = os.read(fd, 65536)
+        chunk = lire(left)
         if not chunk:
             raise RuntimeError("le serveur s'est arrêté")
         buf += chunk
@@ -289,10 +325,11 @@ def probe_mcp(module: str, timeout: float = MCP_TIMEOUT_S) -> int:
         send({"id": 1, "method": "initialize", "params": {
             "protocolVersion": "2025-06-18", "capabilities": {},
             "clientInfo": {"name": "astrel-doctor", "version": "1"}}})
-        _read_reply(proc, 1, deadline)
+        lire, reste = _lecteur(proc), [b""]
+        _read_reply(proc, 1, deadline, lire, reste)
         send({"method": "notifications/initialized"})
         send({"id": 2, "method": "tools/list"})
-        return len(_read_reply(proc, 2, deadline).get("tools") or [])
+        return len(_read_reply(proc, 2, deadline, lire, reste).get("tools") or [])
     finally:
         try:
             proc.stdin.close()

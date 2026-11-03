@@ -26,6 +26,7 @@ import time
 from typing import Any, Callable
 
 from . import config
+from .platform import systeme
 
 log = logging.getLogger("astrel.compte")
 
@@ -283,6 +284,10 @@ def _fournisseur_line() -> dict | None:
 
 
 def _stop(proc: subprocess.Popen) -> None:
+    if not systeme.UNIX:
+        # 03/11 (CI Windows) : `claude.cmd` (npm) lance node en petit-enfant ; `terminate` ne tuerait que
+        # cmd.exe, et le petit-enfant, qui garde la sortie ouverte, laisserait la connexion « en cours ».
+        systeme.tuer_arbre(proc.pid)
     try:
         proc.terminate()
         proc.wait(timeout=3)

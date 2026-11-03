@@ -7,7 +7,6 @@ import io
 import json
 import os
 import shutil
-import stat
 import tempfile
 import threading
 import time
@@ -17,7 +16,7 @@ import pytest
 
 from astrel import config, core, medias, reports as reports_mod
 from astrel.events import bus
-from conftest import remplacer_coeur
+from conftest import mode_prive, remplacer_coeur
 
 PNG_HEAD = b"\x89PNG\r\n\x1a\n"
 
@@ -60,6 +59,14 @@ def write(d: Path, name: str, data: bytes) -> Path:
     return p
 
 
+def dehors(med: Path) -> str:
+    """Fichier qui existe, absolu, hors des dossiers permis (`med` seul) : remplace « /etc/passwd », qui n'est pas
+    absolu sous Windows (03/11, CI Windows : « chemin absolu exigé »)."""
+    d = med.parent / "ailleurs"
+    d.mkdir(exist_ok=True)
+    return str(write(d, "passwd", b"root:x:0:0"))
+
+
 # ------------------------------------------------------------------ type lu dans les octets
 
 @pytest.mark.parametrize("head, want", [
@@ -88,12 +95,14 @@ def test_le_nom_ne_compte_pas(med):
 # ------------------------------------------------------------------ sources permises
 
 def test_racines_du_plan():
-    roots = {str(r) for r in medias.source_roots()}
+    roots = set(medias.source_roots())
     home = Path.home()
-    for want in (config.RUNTIME / "attachments", config.IMAGES_RUNTIME, "/tmp", f"{chemins_machine.PROJETS}",
-                 home / "Images", home / "Téléchargements", home / "Bureau"):
-        assert str(want) in roots
-    assert str(home) not in roots and str(config.RUNTIME) not in roots
+    for want in (config.RUNTIME / "attachments", config.IMAGES_RUNTIME, Path(tempfile.gettempdir()),
+                 Path(f"{chemins_machine.PROJETS}"), home / "Images", home / "Téléchargements", home / "Bureau"):
+        assert want in roots
+    # 03/11 : « /tmp » sous Unix seulement (sous Windows, « \\tmp » à la racine du lecteur n'est pas le temporaire)
+    assert (Path("/tmp") in roots) == (os.name != "nt")
+    assert home not in roots and config.RUNTIME not in roots
 
 
 def test_refus_secrets_dossiers_prives_caches(monkeypatch):
@@ -131,9 +140,10 @@ def test_lien_sortant_refuse(med, tmp_path):
         medias.publish(med / "rien.png")
     with pytest.raises(ValueError, match="vide"):
         medias.publish(write(med, "vide.png", b""))
-    with pytest.raises(ValueError, match="ordinaire"):
-        os.mkfifo(med / "tube.png")
-        medias.publish(med / "tube.png")
+    if hasattr(os, "mkfifo"):  # 03/11 : pas de tube nommé dans le système de fichiers sous Windows
+        with pytest.raises(ValueError, match="ordinaire"):
+            os.mkfifo(med / "tube.png")
+            medias.publish(med / "tube.png")
 
 
 # ------------------------------------------------------------------ publication
@@ -144,9 +154,9 @@ def test_copie_privee_et_descripteur(med):
     assert medias.ID_RE.fullmatch(d["id"]) and d["name"] == "vue_.png"  # contrôle bidi retiré
     assert (d["kind"], d["mime"], d["size"], d["w"], d["h"], d["open_only"]) == ("image", "image/png", len(png), 40, 30, False)
     copy = medias.MEDIA_DIR / f"{d['id']}.png"
-    assert copy.read_bytes() == png and stat.S_IMODE(copy.stat().st_mode) == 0o600
-    assert stat.S_IMODE((medias.MEDIA_DIR / f"{d['id']}.json").stat().st_mode) == 0o600
-    assert stat.S_IMODE(medias.MEDIA_DIR.stat().st_mode) == 0o700
+    assert copy.read_bytes() == png and mode_prive(copy)
+    assert mode_prive(medias.MEDIA_DIR / f"{d['id']}.json")
+    assert mode_prive(medias.MEDIA_DIR, 0o700)
     assert medias.get(d["id"])["path"] == str(med / "vue‮.png")
     assert medias.get("../" + d["id"]) is None and medias.get(d["id"].upper()) is None and medias.get(None) is None
 
@@ -168,7 +178,7 @@ def test_plafonds_et_budget_ouvrir_seul(med, monkeypatch):
 
 
 def test_publier_plusieurs_et_resume(med):
-    ok, refused = medias.publish_many([str(write(med, "a.png", _png())), "/etc/passwd", str(write(med, "n.txt", b"bonjour")),
+    ok, refused = medias.publish_many([str(write(med, "a.png", _png())), dehors(med), str(write(med, "n.txt", b"bonjour")),
                                        ""] + [str(med / "a.png")] * 20)
     assert len(ok) + len(refused) == medias.MAX_ITEMS
     assert {"fichier": "passwd", "raison": "hors des dossiers permis"} in refused
@@ -207,7 +217,7 @@ def test_miniature_page_de_pdf_et_original(med):
     pdf = medias.publish(write(med, "doc.pdf", _pdf(2)))
     assert pdf["kind"] == "pdf" and pdf["pages"] == 2
     path, mime = medias.serve(pdf["id"], "page", "2")
-    assert mime == "image/png" and path.read_bytes()[:8] == PNG_HEAD and stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert mime == "image/png" and path.read_bytes()[:8] == PNG_HEAD and mode_prive(path)
     assert medias.serve(pdf["id"], "page", "2")[0] == path  # en cache
     for bad in ("0", "3", "-1", "x", "99999"):
         assert medias.serve(pdf["id"], "page", bad) is None
@@ -385,15 +395,15 @@ def published():
 
 def test_post_report_montre_les_fichiers(astrel, published, med):
     j, said = astrel
-    png, pdf = write(med, "vue.png", _png()), write(med, "doc.pdf", _pdf(1))
+    png, pdf, passwd = write(med, "vue.png", _png()), write(med, "doc.pdf", _pdf(1)), dehors(med)
     r = j.on_command({"cmd": "report", "text": "Voici le rendu.", "kind": "resultat",
-                      "files": [str(png), str(pdf), "/etc/passwd"]})
+                      "files": [str(png), str(pdf), passwd]})
     ev = [e for e in published if e["type"] == "report"][-1]
-    assert ev["report_files"] == [str(png), str(pdf), "/etc/passwd"]
+    assert ev["report_files"] == [str(png), str(pdf), passwd]
     assert [m["kind"] for m in ev["report_media"]] == ["image", "pdf"]
     assert r["acceptes"] == ["vue.png (image)", "doc.pdf (PDF)"]
     assert r["refuses"] == [{"fichier": "passwd", "raison": "hors des dossiers permis"}]
-    assert "/etc/passwd" not in " ".join(said)
+    assert passwd not in " ".join(said)
     r = j.on_command({"cmd": "report", "text": "Sans fichier."})
     ev = [e for e in published if e["type"] == "report"][-1]
     assert "report_media" not in ev and "acceptes" not in r
@@ -407,7 +417,7 @@ def test_show_media_carte_sans_voix(astrel, published, med):
     assert r["ok"] and ev["mid"] == r["mid"] and ev["title"] == "Deux [31m fichiers"
     assert [m["kind"] for m in ev["items"]] == ["image", "audio"] and said == []
     assert any(e.get("mid") == r["mid"] for e in bus.snapshot()["history"])  # rejoué à la reconnexion
-    bad = j.on_command({"cmd": "show_media", "items": ["/etc/passwd"]})
+    bad = j.on_command({"cmd": "show_media", "items": [dehors(med)]})
     assert not bad["ok"] and bad["refuses"][0]["raison"] == "hors des dossiers permis"
     assert not j.on_command({"cmd": "show_media", "items": [str(med / "a.png")], "channel": "inconnu"})["ok"]
 

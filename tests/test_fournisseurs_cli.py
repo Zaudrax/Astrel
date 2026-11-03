@@ -64,6 +64,8 @@ def cli(tmp_path, monkeypatch):
                 "from astrel import config; config.CONFIRM_SOCKET = Path(%r); "
                 "sys.argv = [%r, %r, %r]; runpy.run_path(%r, run_name='__main__')"
                 % (str(ROOT), str(absent), str(HOOK), self.id, mode, str(HOOK)))
+        if os.name == "nt":  # 03/11 : le faux CLI lance la ligne par cmd.exe, qui ne connaît que les « "…" »
+            return subprocess.list2cmdline([sys.executable, "-c", code])
         return f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}"
 
     monkeypatch.setattr(base.FournisseurCli, "commande_hook", hook_isole)
@@ -233,11 +235,17 @@ def _attendre(pred, timeout=10.0):
 
 
 def _vivant(pid: int) -> bool:
-    try:
-        st = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
-    except OSError:
-        return False
-    return st != "Z"
+    from astrel.platform import systeme
+
+    return systeme.pid_vivant(pid)  # 03/11 : /proc sous Linux, psutil ailleurs (avant : toujours « mort » hors Linux)
+
+
+def _lui_ou_descendant(pid: int, ancetre: int) -> bool:
+    """03/11 (CI Windows) : le python.exe d'une venv Windows est un LANCEUR qui relance le vrai interpréteur en
+    enfant ; le pid que le faux CLI écrit est alors celui de cet enfant, pas celui du Popen."""
+    from astrel.platform import proc
+
+    return proc.descends_from(pid, ancetre)  # le pid lui-même compris
 
 
 def test_annulation_et_mcp_vu_comme_claude(cli):
@@ -258,7 +266,7 @@ def test_annulation_et_mcp_vu_comme_claude(cli):
     assert _attendre(cli.pids.exists)
     pids = json.loads(cli.pids.read_text())
     # `core._claude_pid` lit `brain._proc.pid` : le process du tour en cours.
-    assert sess.pid == pids["cli"]
+    assert _lui_ou_descendant(pids["cli"], sess.pid)
     astrel_like = SimpleNamespace(brain=b)
     claude_pid = core.Astrel._claude_pid(astrel_like)
     assert state.from_claude(pids["mcp"], claude_pid, service_cg="") is True  # le « MCP » du CLI
@@ -617,6 +625,17 @@ def test_annulation_tue_le_petit_enfant_qui_ignore_sigint(cli):
     assert evs[-1].kind == "turn_end" and time.time() - t0 < 5
     assert _attendre(lambda: not _vivant(pids["petit_enfant"]), timeout=3)
     b.stop()
+
+
+def test_annulation_sous_windows_tue_l_arbre(monkeypatch):
+    """03/11 (CI Windows) : sans groupe, `terminate` ne tuait que le CLI ; l'ARBRE est tué (taskkill /T /F).
+    Simulé sous Linux : faux `os.name`, faux process."""
+    tues = []
+    monkeypatch.setattr(base, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(base.systeme, "tuer_arbre", lambda pid, *a: tues.append(pid))
+    p = SimpleNamespace(pid=4242, poll=lambda: None, wait=lambda timeout=None: 0, kill=lambda: tues.append("kill"))
+    base.annuler(p)
+    assert tues == [4242]
 
 
 @pytest.mark.parametrize("fid", ["codex", "grokbuild"])

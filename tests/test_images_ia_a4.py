@@ -17,6 +17,7 @@ import pytest
 
 from astrel import attachments, config, core, events, ia_connexion, ia_web, images_ia, memoire, settings
 from astrel.images_ia import Etat, Images
+from astrel.platform import systeme
 from conftest import mode_prive
 
 PNG = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
@@ -123,7 +124,7 @@ def test_auto_suit_l_ordre_des_reglages(lieux):
     img, vus, worker, _ = fabrique(lieux)
     fin = attendre(vus, img.submit("un chat", "auto", [], "general")["job"])
     assert fin["moteur"] == "chatgpt" and fin["compte"] == "chat"
-    assert worker.entrees[0]["profil"].endswith("/chat") and worker.entrees[0]["modele"] == "defaut"
+    assert Path(worker.entrees[0]["profil"]).name == "chat" and worker.entrees[0]["modele"] == "defaut"
 
 
 def test_rythme_et_profil_occupe_compte_suivant_sans_rien_noter(lieux):
@@ -468,7 +469,7 @@ def test_connexion_ouverte_compte_saute_par_les_images(lieux, chrome):
     img, vus, worker, _ = fabrique(lieux)
     assert img.compte_commande("image_compte_connecter", {"alias": "amw"})["ok"]
     fin = attendre(vus, img.submit("un chat", "auto", [], "general")["job"])
-    assert fin["compte"] == "perso" and all(not e["profil"].endswith("/amw") for e in worker.entrees)
+    assert fin["compte"] == "perso" and all(Path(e["profil"]).name != "amw" for e in worker.entrees)
     assert img.status()["connexions"] == ["amw"]
     chrome[0]["proc"].fermer()
 
@@ -489,7 +490,7 @@ def test_connexion_refusee(lieux, chrome):
         assert time.time() < fin
         time.sleep(0.01)
     # Chrome déjà ouvert sur ce profil (SingletonLock d'un pid vivant)
-    (profil / "SingletonLock").symlink_to(f"{os.uname().nodename}-{os.getpid()}")
+    (profil / "SingletonLock").symlink_to(f"{systeme.nom_machine()}-{os.getpid()}")  # 03/11 : os.uname absent sous Windows
     assert "déjà ouvert" in img.compte_commande("image_compte_connecter", {"alias": "amw"})["error"]
     (profil / "SingletonLock").unlink()
     (lieux / "ESTOP").write_text("1")
@@ -498,6 +499,27 @@ def test_connexion_refusee(lieux, chrome):
     ia_connexion.CHROME = str(lieux / "absent")
     assert "introuvable" in img.compte_commande("image_compte_connecter", {"alias": "amw"})["error"]
     assert len(chrome) == 1  # un seul Chrome (factice) lancé de tout le test
+
+
+def test_verrou_du_profil_sous_windows_sans_os_kill(lieux, monkeypatch):
+    """03/11 (CI Windows, WinError 87) : `os.kill(pid, 0)` y envoie CTRL_C_EVENT au lieu de tester le pid.
+    Windows simulé : le pid est lu par psutil (simulé lui aussi : sous Linux, il appelle os.kill), `os.kill`
+    n'est jamais appelé."""
+    import psutil
+
+    def interdit(*a):
+        raise AssertionError("os.kill appelé sous Windows")
+
+    lus: list[int] = []
+    monkeypatch.setattr(systeme, "UNIX", False)
+    monkeypatch.setattr(systeme.os, "kill", interdit)
+    monkeypatch.setattr(psutil, "pid_exists", lambda pid: lus.append(pid) or pid == os.getpid())
+    profil = lieux / "imagegen" / "profils" / "amw"
+    Path(f"{profil}.lock").write_text(str(os.getpid()))
+    assert ia_connexion.verrou_tenu(profil)                     # pid vivant : tenu
+    Path(f"{profil}.lock").write_text("999999999")
+    assert not ia_connexion.verrou_tenu(profil)                 # pid mort : libre
+    assert not ia_connexion._pid_vivant(0) and lus == [os.getpid(), 999999999]
 
 
 def test_connexion_par_le_coeur_refusee_a_claude(lieux, chrome, monkeypatch):

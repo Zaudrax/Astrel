@@ -60,3 +60,8 @@ whatsapp/node_modules/
 imagegen/node_modules/
 
 .eveil-donnees/
+
+# Modèle et données du mot d éveil (venv à part)
+.venv-eveil/
+# Réglages locaux de Claude Code (permissions de cette machine)
+.claude/settings.local.json

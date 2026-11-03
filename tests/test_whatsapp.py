@@ -23,7 +23,7 @@ from astrel.channels import Channels
 from astrel.events import bus
 from astrel.whatsapp import Bridge, WhatsApp, away_phrase, outgoing, prompt_of, refusal, split_text, stop_phrase, \
     to_whatsapp
-from conftest import remplacer_coeur
+from conftest import mode_prive, remplacer_coeur
 
 PN = "33612345678@s.whatsapp.net"
 LID = "123456789012345@lid"
@@ -719,7 +719,7 @@ def test_appairage_confirme_par_utilisateur(tmp_path, monkeypatch, capsys, answe
     out = capsys.readouterr().out
     assert "+33612345678" in out
     if code == 0:
-        assert (auth / "self.json").exists() and (auth.stat().st_mode & 0o777) == 0o700
+        assert (auth / "self.json").exists() and mode_prive(auth, 0o700)
     else:
         assert not auth.exists()  # rien de relié à moitié ne reste sur le disque
 
@@ -848,7 +848,7 @@ def test_fichier_permis_copie_dans_le_dossier_media(fichiers, wa_env):
     assert dest == wa_env / "media" / "out-0a1b2c3d4e5f6071.pdf"
     assert dest.read_bytes() == src.read_bytes() and size == len(src.read_bytes())
     assert (name, mime) == ("TESTS DE DEPART.pdf", "application/pdf")
-    assert dest.stat().st_mode & 0o777 == 0o600 and (wa_env / "media").stat().st_mode & 0o777 == 0o700
+    assert mode_prive(dest) and mode_prive(wa_env / "media", 0o700)
     assert src.exists()  # l'original n'est pas touché
 
 
@@ -882,10 +882,11 @@ def test_fichier_refuse_lien_dossier_vide_trop_gros_relatif(fichiers, wa_env, mo
         wa_mod.stage_file(str(lien), "ab")
     with pytest.raises(ValueError, match="ordinaire|type"):
         wa_mod.stage_file(str(fichiers / "Loisirs"), "ab")
-    fifo = fichiers / "Loisirs" / "tube.txt"
-    os.mkfifo(fifo)  # ne doit pas bloquer à l'ouverture
-    with pytest.raises(ValueError, match="ordinaire"):
-        wa_mod.stage_file(str(fifo), "ab")
+    if hasattr(os, "mkfifo"):  # 03/11 : pas de tube nommé dans le système de fichiers sous Windows
+        fifo = fichiers / "Loisirs" / "tube.txt"
+        os.mkfifo(fifo)  # ne doit pas bloquer à l'ouverture
+        with pytest.raises(ValueError, match="ordinaire"):
+            wa_mod.stage_file(str(fifo), "ab")
     with pytest.raises(ValueError, match="vide"):
         wa_mod.stage_file(str(_pdf(fichiers / "Loisirs" / "vide.pdf", b"")), "ab")
     monkeypatch.setattr(config, "WHATSAPP_FILE_MAX_BYTES", 4)
@@ -1120,8 +1121,9 @@ def test_appairage_hud_qr_puis_numero_confirme(lien, caplog):
     assert lien.link_confirm(True)["ok"]
     assert wait_for(lambda: "done" in _states(lien))
     assert lien.linked and lien.describe()["enabled"] and lien.describe()["linking"] == ""
+    assert wait_for(lambda: not lien.linker.active)  # 03/11 : la fin ne se voit qu'une fois le rejeu effacé
     assert bus.last("whatsapp_link") is None  # effacé à la fin
-    assert (config.WHATSAPP_AUTH_DIR.stat().st_mode & 0o777) == 0o700
+    assert mode_prive(config.WHATSAPP_AUTH_DIR, 0o700)
     _nothing_leaked(caplog)
 
 

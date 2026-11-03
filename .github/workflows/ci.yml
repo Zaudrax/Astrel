@@ -40,6 +40,9 @@ jobs:
           node-version: "22"
       - name: Faux Claude Code dans le PATH
         run: echo "$GITHUB_WORKSPACE/tools/ci/faux-claude" >> "$GITHUB_PATH"
+      # 03/11 : aperçu des PDF du fil (astrel/medias.py : pdfinfo, pdftoppm), contrôlé par hud_check_rendu
+      - name: poppler pour les aperçus PDF
+        run: sudo apt-get update -q && sudo apt-get install -y -q poppler-utils
       - name: Contrôle de la machine (avant installation)
         run: python tools/check_install.py --ci
       - name: Dépendances Python dans .venv, comme install.py (sans les ~1 Go de CUDA, inutiles aux tests)

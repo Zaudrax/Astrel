@@ -114,6 +114,20 @@ def test_serveur_mcp_connecteurs_joignable():
     assert doctor.probe_mcp("astrel.mcp_connectors") > 0
 
 
+def test_serveur_mcp_lu_sans_select_comme_sous_windows(monkeypatch):
+    """03/11 (CI Windows) : `select` n'y prend que des sockets (WinError 10038) ; la sortie du serveur
+    est lue par un fil. Simulé ici : `select` interdit, lecteur de Windows."""
+    monkeypatch.setattr(doctor.systeme, "UNIX", False)
+    monkeypatch.setattr(doctor.select, "select", lambda *a: pytest.fail("select sur un tube"))
+    assert doctor.probe_mcp("astrel.mcp_connectors") > 0
+
+
+def test_empreinte_aux_chemins_en_slash():
+    """03/11 : clés en « / » sur tous les systèmes (CI Windows : « astrel\\guard.py »)."""
+    keys = doctor.fingerprint()
+    assert "hooks/permission_hook_cli.py" in keys and not any("\\" in k for k in keys)
+
+
 def test_serveur_mcp_injoignable_ou_non_declare(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor, "MCP_SERVERS", {"astrel": "astrel.module_qui_n_existe_pas"})
     monkeypatch.setattr(config, "MCP_CONFIG_FILE", tmp_path / "absent.json")
@@ -135,6 +149,8 @@ def test_droits_sans_jamais_le_chemin(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor, "SENSITIVE", [("jeton du HUD", token, False), ("profil", folder, True),
                                               ("absent", tmp_path / "rien", False)])
     assert doctor.check_permissions() == (doctor.OK, "2 fichiers sensibles fermés aux autres")
+    if os.name == "nt":
+        return  # 03/11 : ni bits de mode ni uid sous Windows (droits NTFS du profil) : rien à signaler
     os.chmod(token, 0o644)
     code, lines = doctor.run([("droits", doctor.check_permissions)])
     assert code == 1

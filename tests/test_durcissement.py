@@ -20,6 +20,7 @@ import pytest
 from astrel import config, confirm, core, guard, server, state
 from astrel.events import bus
 from astrel.minichat import MiniChat
+from astrel.platform import proc
 
 from test_lot_hud import make_astrel
 from conftest import mode_prive
@@ -240,7 +241,9 @@ def test_process_d_une_connexion_tcp_retrouve():
                                  stdout=subprocess.PIPE, text=True)
         try:
             child_port = int(child.stdout.readline())
-            assert state.tcp_peer_pid(child_port, port) == child.pid
+            # 03/11 (CI Windows) : le python.exe d'une venv Windows est un lanceur, le vrai interpréteur (qui tient
+            # la connexion) est son enfant ; il descend toujours du process lancé (ce que `from_claude` regarde).
+            assert proc.descends_from(state.tcp_peer_pid(child_port, port), child.pid)
         finally:
             child.kill()
         assert state.tcp_peer_pid(1, port) == 0  # aucune connexion : introuvable

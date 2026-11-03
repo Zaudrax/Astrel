@@ -505,3 +505,28 @@ def test_cd_vers_dossier_existant_quitte_les_plans(cmd):
 ])
 def test_cd_incertain_garde_les_plans_en_jeu(cmd):
     assert _depuis_les_plans(cmd).needs_confirm, cmd
+
+
+# --- 03/11/2026 (portage Windows) : chemin « X:\… » NON cité, lecture Windows simulée sous Linux ---
+
+@pytest.mark.parametrize("cmd", [r"cat C:\Users\moi\Astrel\runtime\hud-token", r"cat C:\x\config\secrets.json",
+                                 r"tar czf /tmp/p.tgz C:\x\runtime\imagegen\profils"])
+def test_chemin_windows_non_cite_juge_aussi_en_slash(monkeypatch, cmd):
+    # Bash seul (Git Bash) lit « C:Usersmoi…hud-token » : aucun secret désigné, rien n'est demandé.
+    assert not asks("Bash", command=cmd)
+    monkeypatch.setattr(guard, "_LECTURE_WINDOWS", True)  # = sous Windows
+    v = guard.assess("Bash", {"command": cmd}, mode="autonome")
+    assert v.needs_confirm and v.guard is True, cmd  # lu aussi « C:/Users/moi/…/hud-token » : la lecture d'un secret
+
+
+def test_lecture_windows_jamais_moins_stricte(monkeypatch):
+    monkeypatch.setattr(guard, "_LECTURE_WINDOWS", True)
+    assert guard._lecture_windows(r"ls 'C:\x' C:\\y\\z") == r"ls 'C:/x' C://y//z"
+    assert guard._lecture_windows("ls /tmp") is None
+    V = guard.Verdict
+    rangs = [guard._rang(v) for v in (V(True, guard=True), V(True, guard="dev", lift=True), V(True, level=guard.CRITICAL),
+                                      V(True, level=guard.SENSITIVE), V(False))]
+    assert rangs == sorted(rangs, reverse=True)
+    # Lecture Bash déjà au garde-fou : gardée telle quelle.
+    v = guard.assess("Bash", {"command": r"rm -rf hooks C:\x"}, mode="autonome", cwd=str(guard.config.ROOT))
+    assert v.needs_confirm and v.guard is True

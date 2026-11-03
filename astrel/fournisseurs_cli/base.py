@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .. import config
-from ..platform import enfants
+from ..platform import enfants, systeme
 
 log = logging.getLogger("astrel.fournisseurs_cli")
 
@@ -397,9 +397,12 @@ def annuler(p: subprocess.Popen | None, delai: float = ANNULATION_DELAI_S) -> No
     ouvert et bloquerait le tour (fiche 2 du journal p27)."""
     if p is None:
         return
-    if os.name == "nt":  # pragma: no cover — pas de groupe sous Windows
+    if os.name == "nt":  # pas de groupe ni de SIGINT de groupe sous Windows
+        # 03/11 (CI Windows) : `terminate` ne tuait que le CLI ; un petit-enfant (ou le vrai interpréteur derrière
+        # le lanceur python.exe d'une venv) gardait stdout et le tour finissait 5 s plus tard. L'ARBRE est tué
+        # (taskkill /T /F), tant que ses liens de parenté tiennent encore.
         if p.poll() is None:
-            p.terminate()
+            systeme.tuer_arbre(p.pid)
             try:
                 p.wait(timeout=delai)
             except subprocess.TimeoutExpired:

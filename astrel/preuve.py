@@ -28,14 +28,16 @@ un fichier qui change pendant la lecture est « instable ». Un secret (garde-fo
 refusé. Rien n'est écrit, rien n'est lancé.
 
 Le rapport ne contient que des CODES et des faits produits ici (taille, début d'empreinte,
-nombre de manquants) : jamais le contenu d'un fichier. Sans `dir_fd` (Windows) : tout contrôle
-de fichier est « bloqué », jamais réussi.
+nombre de manquants) : jamais le contenu d'un fichier. Windows a son ouverture propre
+(`_OuvertureWindows`) ; un autre système sans `dir_fd` : tout contrôle de fichier est « bloqué »,
+jamais réussi.
 
 Ce module ne connaît ni le cœur ni le HUD : `mission.py` lui passe un instantané figé et un
 `doit_arreter` (pause, arrêt, ESTOP), et décide seul de ce que le résultat devient.
 """
 from __future__ import annotations
 
+import ctypes
 import errno
 import hashlib
 import json
@@ -510,6 +512,17 @@ class _Ouverture:
             self.fd = -1
 
 
+class _InfoFichier(ctypes.Structure):
+    """BY_HANDLE_FILE_INFORMATION (52 octets ; DWORD = 32 bits sur tous les systèmes, d'où c_uint32).
+    03/11 (CI Windows) : les dates sont des FILETIME (deux DWORD, alignés sur 4) ; déclarées en c_uint64
+    (alignées sur 8), tout glissait de 4 octets, « liens » lisait l'index du fichier et chaque fichier
+    passait pour un lien dur."""
+    _fields_ = [("attributs", ctypes.c_uint32), ("creation", ctypes.c_uint32 * 2), ("acces", ctypes.c_uint32 * 2),
+                ("ecriture", ctypes.c_uint32 * 2), ("volume", ctypes.c_uint32), ("taille_haut", ctypes.c_uint32),
+                ("taille_bas", ctypes.c_uint32), ("liens", ctypes.c_uint32), ("index_haut", ctypes.c_uint32),
+                ("index_bas", ctypes.c_uint32)]
+
+
 class _OuvertureWindows:
     """Windows (03/11/2026) : même contrat que `_Ouverture`, par l'API Windows.
 
@@ -565,14 +578,7 @@ class _OuvertureWindows:
                                   wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
         k.GetFinalPathNameByHandleW.argtypes = (wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD)
         k.CloseHandle.argtypes = (wintypes.HANDLE,)
-
-        class _Info(ctypes.Structure):
-            _fields_ = [("attributs", wintypes.DWORD), ("creation", ctypes.c_uint64), ("acces", ctypes.c_uint64),
-                        ("ecriture", ctypes.c_uint64), ("volume", wintypes.DWORD), ("taille_haut", wintypes.DWORD),
-                        ("taille_bas", wintypes.DWORD), ("liens", wintypes.DWORD), ("index_haut", wintypes.DWORD),
-                        ("index_bas", wintypes.DWORD)]
-
-        k.GetFileInformationByHandle.argtypes = (wintypes.HANDLE, ctypes.POINTER(_Info))
+        k.GetFileInformationByHandle.argtypes = (wintypes.HANDLE, ctypes.POINTER(_InfoFichier))
         dernier = os.lstat(_systeme("/" + "/".join(parts)))
         est_dossier = stat.S_ISDIR(dernier.st_mode)
         acces = self._READ_ATTRIBUTES if est_dossier else self._GENERIC_READ
@@ -595,7 +601,7 @@ class _OuvertureWindows:
                 reel = reel[4:]
             if _canon(reel).rstrip("/").casefold() != ("/" + "/".join(parts)).casefold():
                 raise _Bloque("instable")  # le chemin a été détourné entre l'examen et l'ouverture
-            info = _Info()
+            info = _InfoFichier()
             if not k.GetFileInformationByHandle(h, ctypes.byref(info)):
                 raise _Bloque("illisible")
             if info.attributs & self._ATTR_REPARSE:

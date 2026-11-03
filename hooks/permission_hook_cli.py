@@ -155,11 +155,12 @@ def dossier(payload: dict) -> tuple[str | None, bool]:
             continue
         if not isinstance(wd, str):
             return None, True
-        p = Path(wd).expanduser()
-        if p.is_absolute():
+        # 03/11 (Windows) : « /tmp », « /c/Users/… » (Git Bash) sont absolus aussi (`guard.absolu`, `guard._msys`).
+        p = Path(guard._msys(wd)).expanduser()
+        if guard.absolu(p):
             return str(p), True
-        if cwd and Path(cwd).is_absolute():
-            return str(Path(cwd) / p), True
+        if cwd and guard.absolu(guard._msys(cwd)):
+            return str(Path(guard._msys(cwd)) / p), True
         return None, True  # relatif à un dossier inconnu
     return cwd, False
 
