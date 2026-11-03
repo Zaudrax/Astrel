@@ -192,3 +192,16 @@ def test_wsl_choisi_sous_wsl(monkeypatch):
     assert plateforme.desktop_backend("linux").__name__ == "astrel.platform.linux"  # système demandé : tel quel
     with pytest.raises(plateforme.Indisponible, match="WSL2"):
         plateforme.desktop_backend().set_hotkeys(True)
+
+
+def test_pread_sans_bouger_la_position(tmp_path, monkeypatch):
+    f = tmp_path / "a.bin"
+    f.write_bytes(b"0123456789")
+    fd = os.open(f, os.O_RDONLY)
+    try:
+        os.read(fd, 2)
+        monkeypatch.delattr(os, "pread", raising=False)  # comme sous Windows
+        assert systeme.pread(fd, 3, 5) == b"567"
+        assert os.read(fd, 2) == b"23"  # position intacte
+    finally:
+        os.close(fd)

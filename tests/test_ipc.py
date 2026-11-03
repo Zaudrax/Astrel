@@ -452,3 +452,18 @@ def test_cgroup_linux():
         pytest.skip("cgroup v2 illisible ici")
     assert cg.startswith("/") and proc.uses_cgroup()
     assert state.cgroup_of(os.getpid()) == cg
+
+
+def test_chemin_de_socket_trop_long_passe_en_tcp(tmp_path, monkeypatch):
+    """03/11 (CI macOS) : au-delà de la limite de sun_path, le canal passe en TCP, serveur ET client."""
+    monkeypatch.delenv("ASTREL_IPC", raising=False)
+    profond = tmp_path / ("d" * 60) / ("e" * 60) / "control.sock"
+    profond.parent.mkdir(parents=True)
+    assert ipc.mode(profond) == "tcp"
+    if hasattr(ipc.socket, "AF_UNIX") and ipc.SYSTEM != "windows":
+        assert ipc.mode(tmp_path / "c.sock") == ("unix" if len(str(tmp_path / "c.sock")) <= ipc._UNIX_MAX else "tcp")
+    lst = ipc.Listener(profond)
+    try:
+        assert lst.mode == "tcp" and "port" in json.loads(profond.read_text())  # rendez-vous TCP (même que Windows)
+    finally:
+        lst.close()

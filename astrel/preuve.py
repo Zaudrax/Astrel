@@ -600,8 +600,6 @@ class _OuvertureWindows:
                 raise _Bloque("illisible")
             if info.attributs & self._ATTR_REPARSE:
                 raise _Bloque("lien")
-            if self.racine_st is not None and info.volume != (self.racine_st.st_dev & 0xFFFFFFFF):
-                raise _Bloque("montage")
             if bool(info.attributs & self._ATTR_DIRECTORY) != est_dossier:
                 raise _Bloque("instable")
             if dossier and not est_dossier:
@@ -614,6 +612,10 @@ class _OuvertureWindows:
                 self.fd = msvcrt.open_osfhandle(h, os.O_RDONLY | getattr(os, "O_BINARY", 0))
                 garder = True  # le descripteur possède maintenant le handle
                 self.st = os.fstat(self.fd)
+            # Même volume que la racine : comparé avec la MÊME source (os.stat/os.fstat des deux côtés) ;
+            # le numéro de GetFileInformationByHandle (32 bits) n'est pas celui d'os.stat (64 bits). CI, 03/11.
+            if self.racine_st is not None and self.st.st_dev != self.racine_st.st_dev:
+                raise _Bloque("montage")
             if len(parts) == len(rparts):
                 if ancre and (self.st.st_dev, self.st.st_ino) != (ancre.get("dev"), ancre.get("ino")):
                     raise _Bloque("racine")

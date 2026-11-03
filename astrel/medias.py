@@ -316,7 +316,7 @@ def publish(raw: Any, budget: list[int] | None = None) -> dict[str, Any]:
             raise ValueError(why)
         if st.st_size <= 0:
             raise ValueError("fichier vide")
-        head = os.pread(fd, 64, 0)
+        head = systeme.pread(fd, 64, 0)
         found = sniff(head)
         if found is None:
             raise ValueError("type non affiché (image, PDF, son ou vidéo seulement)")
@@ -536,7 +536,7 @@ def open_target(mid: Any) -> Path | None:
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode) or st.st_nlink > 1:
             return None
-        found = sniff(os.pread(fd, 64, 0))
+        found = sniff(systeme.pread(fd, 64, 0))
     except OSError:
         return None
     finally:

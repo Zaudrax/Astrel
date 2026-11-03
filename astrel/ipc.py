@@ -59,10 +59,18 @@ _SOL_LOCAL = 0
 _LOCAL_PEERPID = 0x002
 
 
-def mode() -> str:
+# 03/11 (CI macOS : « AF_UNIX path too long ») : le chemin d'une socket locale est limité (sun_path : 104
+# octets sous macOS, 108 sous Linux). Plus long (Astrel installé dans un dossier profond) : mode TCP, le même
+# que sous Windows. Serveur et client le décident sur le MÊME chemin : ils tombent toujours d'accord.
+_UNIX_MAX = 100
+
+
+def mode(path: Path | str | None = None) -> str:
     """« unix » ou « tcp ». Relu à chaque appel (variable ASTREL_IPC)."""
     forced = os.environ.get("ASTREL_IPC", "").strip().lower()
     if forced == "tcp" or not hasattr(socket, "AF_UNIX"):
+        return "tcp"
+    if path is not None and len(os.fsencode(str(path))) > _UNIX_MAX:
         return "tcp"
     if forced == "unix":
         return "unix"
@@ -112,7 +120,7 @@ class Listener:
 
     def __init__(self, path: Path, backlog: int = 8) -> None:
         self.path = Path(path)
-        self.mode = mode()
+        self.mode = mode(self.path)
         self._token = ""
         if self.mode == "unix":
             self.path.unlink(missing_ok=True)
@@ -182,7 +190,7 @@ def listen(path: Path, backlog: int = 8) -> Listener:
 def connect(path: Path, timeout: float) -> socket.socket:
     """Bout client, connecté (et jeton envoyé en mode TCP). OSError si le cœur
     n'écoute pas ou si le fichier de rendez-vous est illisible."""
-    if mode() == "unix":
+    if mode(path) == "unix":
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.settimeout(timeout)
         try:

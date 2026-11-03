@@ -308,6 +308,8 @@ class FournisseurCli:
         """Ligne du hook de garde-fou, telle que le CLI la lance (shell)."""
         # 23/10 (audit P29) : mode isolé comme le hook de Claude ; sans « || exit 2 » (ces CLI ne
         # lancent pas forcément la ligne par un shell).
+        if os.name == "nt":  # 03/11 : sous Windows, l'invite de commandes ne connaît que les « "…" »
+            return subprocess.list2cmdline(config.hook_words(HOOK_CLI, self.id, mode))
         return config.hook_command(HOOK_CLI, self.id, mode, fail_closed=False)
 
     def delai_hook_s(self) -> int:

@@ -128,3 +128,15 @@ def pid_vivant(pid: int) -> bool:
         return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
     except psutil.Error:
         return False
+
+
+def pread(fd: int, n: int, offset: int) -> bytes:
+    """`os.pread` (Unix) ; ailleurs, se placer puis lire (Windows n'a pas pread). 03/11, CI Windows."""
+    if hasattr(os, "pread"):
+        return os.pread(fd, n, offset)
+    position = os.lseek(fd, 0, os.SEEK_CUR)  # comme pread : la position de lecture ne bouge pas
+    try:
+        os.lseek(fd, offset, os.SEEK_SET)
+        return os.read(fd, n)
+    finally:
+        os.lseek(fd, position, os.SEEK_SET)

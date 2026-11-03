@@ -56,9 +56,13 @@ def hook_command(script: Path, *args: str, fail_closed: bool = True) -> str:
     """Ligne du hook du GARDE-FOU (`python_command` en mode isolé, + arguments). `fail_closed` :
     `|| exit 2`, car Claude Code prend un code de sortie autre que 0 et 2 pour une erreur NON
     bloquante : un interpréteur absent (venv effacée : 127) laissait passer l'action."""
-    words = [Path(VENV_PYTHON).as_posix(), *hook_python_args(), Path(script).as_posix(), *args]
-    line = " ".join(shlex.quote(w) for w in words)
+    line = " ".join(shlex.quote(w) for w in hook_words(script, *args))
     return line + " || exit 2" if fail_closed else line
+
+
+def hook_words(script: Path, *args: str) -> list[str]:
+    """Mots de la ligne du hook du garde-fou (interpréteur isolé, script, arguments)."""
+    return [Path(VENV_PYTHON).as_posix(), *hook_python_args(), Path(script).as_posix(), *args]
 
 
 # Profil de l'utilisateur (plan P6, reste de la vague 2 de docs/PARTAGE.md) :

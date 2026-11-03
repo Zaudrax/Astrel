@@ -84,7 +84,7 @@ jobs:
           python -m venv .venv
           if [ -f .venv/bin/python ]; then VPY=.venv/bin/python; else VPY=.venv/Scripts/python.exe; fi
           echo "VPY=$VPY" >> "$GITHUB_ENV"
-          "$VPY" -m pip install -r requirements.txt websockets pytest-timeout==2.4.0
+          "$VPY" -m pip install -r requirements.txt websockets pytest-timeout==2.4.0 pytest-reportlog==0.4.0
       - name: Essai de démarrage (vrai Astrel, faux Claude, sans micro ni haut-parleur)
         shell: bash
         run: '"$VPY" tools/ci/demarrage.py'
@@ -97,4 +97,11 @@ jobs:
         # 03/11 : délai sur l'ÉTAPE, pas sur le job : un job coupé perd tout son journal (macOS restait muet).
         timeout-minutes: 40
         shell: bash
-        run: '"$VPY" -m pytest -q -p no:cacheprovider -o console_output_style=count --durations=25 --timeout=120' 
+        run: '"$VPY" -m pytest -q -p no:cacheprovider -o console_output_style=count --durations=25 --timeout=120 --report-log=rapport-tests.jsonl'
+      - name: Rapport test par test (durées), gardé même si l'étape a été coupée
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapport-tests-${{ matrix.os }}
+          path: rapport-tests.jsonl
+          if-no-files-found: ignore
