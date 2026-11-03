@@ -1601,7 +1601,7 @@ async def check_effort(p: Page) -> None:
     e = await p.js(fiche)
     check(f"fiche d'agent : « {e['now']} » ; « {e['label']} » {e['options']} = « {e['value']} » ; « {e['state']} »",
           e["first"] == "Effort de réflexion" and e["now"].startswith("Cet agent : Moyen") and e["label"] == "Prochains agents « chercheur » :"
-          and e["labelFor"] and e["options"] == ["Par défaut (Moyen)", "Faible", "Moyen", "Élevé", "Très élevé", "Maximal"]
+          and e["labelFor"] and e["options"] == ["Par défaut (Élevé)", "Faible", "Moyen", "Élevé", "Très élevé", "Maximal"]
           and e["value"] == "" and "Haiku" in e["state"] and "Déjà pris" in e["state"] and "en cours garde" in e["help"])
     await p.js("window.__sel = document.querySelector('.modal.agent-detail .ad-effort-select')")
     await p.js("(() => { const s = window.__sel; s.value = 'xhigh'; s.dispatchEvent(new Event('change', { bubbles: true })); })()")
