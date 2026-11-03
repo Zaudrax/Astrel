@@ -40,6 +40,11 @@ le suivant. Vous vous passez le travail par le JOURNAL D'ÉQUIPE.
   envoyer un mail ou un message, supprimer, commit, push, déployer, clé API, garde-fou.
 - Arbitrage technique : le chef de projet (planificateur) tranche et le note dans le plan.
 
+## Travail complet (règle de l'utilisateur du 03/11, définitive)
+Lis `travail-complet.md` (même dossier) AVANT de commencer et applique-le : lecture entière, sources
+primaires ouvertes, aucun avis sur un survol, aucun « mode rapide » sans consigne écrite, rapport
+aussi long que le sujet l'exige. Cela passe avant l'économie de tokens.
+
 ## Couverture
 Si tu conclus sur une population (avis, pages, sources, fichiers, résultats), applique
 `couverture.md` (même dossier) : « examinés N sur M » dans ton rapport.

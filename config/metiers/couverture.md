@@ -5,11 +5,12 @@ site, sources, fichiers, résultats de recherche, lignes d'un journal, tests). B
 s'arrêter à 5 ou 6 éléments quand il y en a 100.
 
 ## Mode, choisi par la consigne
+- « exhaustif » : MODE PAR DÉFAUT, quelle que soit la taille de la population (règle de
+  l'utilisateur du 03/11, {metiers}/travail-complet.md). Toute la population (par script si elle est
+  grande), puis lecture à la main d'un échantillon stratifié pour comprendre le détail.
 - « rapide » : un échantillon, ANNONCÉ comme tel (« échantillon rapide : 20 sur 340 »),
-  conclusions marquées provisoires. Mode par défaut si la consigne ne dit rien et que la
-  population dépasse 200 éléments ; sinon « exhaustif ».
-- « exhaustif » : toute la population (par script si elle est grande), puis lecture à la
-  main d'un échantillon stratifié pour comprendre le détail.
+  conclusions marquées provisoires. SEULEMENT si la consigne le demande en toutes lettres ;
+  jamais choisi de ton propre chef, jamais « par défaut ».
 
 ## Méthode
 1. COMPTE d'abord : combien d'éléments au total (M) ? Une commande ou une requête qui le

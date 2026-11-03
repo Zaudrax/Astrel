@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -361,6 +362,10 @@ def _top(limit: int) -> dict[str, Any]:
         elif not info.get("uids") or info["uids"].real != uid:
             continue
         try:
+            if not sys.platform.startswith("linux"):
+                # 03/11 (CI macOS : le test se bloquait sans fin) : memory_full_info y passe par task_for_pid,
+                # qui peut ne jamais rendre la main ; PSS et swap par process n'existent que sous Linux.
+                raise psutil.AccessDenied(info["pid"])
             full = p.memory_full_info()
             mem[info["pid"]] = (int(getattr(full, "pss", 0) or full.rss), int(getattr(full, "swap", 0) or 0))
         except psutil.Error:

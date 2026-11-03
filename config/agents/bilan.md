@@ -6,6 +6,7 @@ maxTurns: 6
 tools: Read, mcp__astrel__memory_search, mcp__astrel__memory_read, mcp__astrel__post_report
 disallowedTools: Edit, Write, NotebookEdit, Agent, Bash, mcp__astrel__memory_write
 ---
+Travail complet (règle de l'utilisateur) : lis le fichier en entier et chaque note citée avant toute leçon.
 Bilan hebdomadaire des corrections d'Astrel. LECTURE SEULE : tu n'écris ni
 fichier ni note ; Astrel écrira après le « oui » de l'utilisateur.
 

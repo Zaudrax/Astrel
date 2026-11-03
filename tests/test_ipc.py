@@ -12,9 +12,12 @@ import stat
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 
 import psutil
+from pathlib import Path
+
 import pytest
 
 from astrel import config, confirm, ipc, state
@@ -69,7 +72,8 @@ def test_mode(monkeypatch, faux_systeme):
 
 @pytest.mark.skipif(not POSIX_SOCKETS, reason="socket Unix absente (Windows)")
 def test_unix_socket_privee_et_pid_du_client(tmp_path):
-    path = tmp_path / "c.sock"
+    # Chemin court : le dossier temporaire de macOS (/var/folders/…) dépasse la limite de sun_path (repli TCP).
+    path = Path(tempfile.mkdtemp(prefix="ipc-", dir="/tmp")) / "c.sock"
     lst = ipc.listen(path, 1)
     try:
         assert lst.mode == "unix"

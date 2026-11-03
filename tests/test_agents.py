@@ -291,3 +291,29 @@ def test_fiche_absente_signalee(tmp_path, monkeypatch, caplog):
     assert found["x"]["prompt"] == f"lis {agents.METIERS_DIR.as_posix()}/absente.md"
     assert agents.missing_fiches(found["x"]["prompt"]) == ["absente.md"]
     assert "fiche de métier citée absente : absente.md" in caplog.text
+
+
+def test_travail_complet_pour_tous_les_agents():
+    """Demande de l'utilisateur (03/11/2026, définitive) : aucun agent, présent ou futur, ne travaille à
+    moitié. Fiche commune `travail-complet.md`, lue par chaque agent (directement, ou par
+    `equipe.md` pour l'équipe), « exhaustif » par défaut, aucune consigne de survol."""
+    fiche = (agents.METIERS_DIR / "travail-complet.md").read_text(encoding="utf-8")
+    assert "EN ENTIER" in fiche and "mode rapide" in fiche.lower() and "RENVOYÉ" in fiche
+    equipe = (agents.METIERS_DIR / "equipe.md").read_text(encoding="utf-8")
+    assert "travail-complet.md" in equipe
+    chemin = (agents.METIERS_DIR / "travail-complet.md").as_posix()
+    for name, a in agents.load_agents().items():
+        prompt = a["prompt"]
+        assert (chemin in prompt or (agents.METIERS_DIR / "equipe.md").as_posix() in prompt
+                or "Travail complet (règle de l'utilisateur)" in prompt), f"{name} : règle du travail complet absente"
+    # Les consignes qui poussaient au survol ont disparu (cause des « mode rapide » du 03/11).
+    cher = agents.load_agents()["chercheur"]["prompt"]
+    for interdit in ("moins de 250 mots", "jamais un gros", "suffisent", "Arrête-toi dès que tu as la réponse"):
+        assert interdit not in cher, interdit
+    assert "moins de 300 mots" not in agents.load_agents()["auditeur"]["prompt"]
+    couverture = (agents.METIERS_DIR / "couverture.md").read_text(encoding="utf-8")
+    assert "MODE PAR DÉFAUT" in couverture.split("« rapide »")[0].split("« exhaustif »")[1]
+    assert "Mode par défaut si la consigne ne dit rien" not in couverture
+    # Le prompt d'Astrel dit la même chose en français et en anglais.
+    assert "aucun mode rapide" in brain.VOICE_SYSTEM_PROMPT and "no quick mode" in brain.VOICE_SYSTEM_PROMPT_EN
+    assert "moins de 300 mots" not in brain.VOICE_SYSTEM_PROMPT and "under 300 words" not in brain.VOICE_SYSTEM_PROMPT_EN

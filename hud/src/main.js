@@ -2683,7 +2683,12 @@ addEventListener("click", (e) => {
 // un programme ouvert par Claude). Pause et arrêt : toujours. Écrire hors du
 // périmètre pendant la mission est demandé par le garde-fou ; « Stop tout » l'arrête.
 let mission = { status: "" };
-let missionHidden = 0; // started_at d'une mission finie masquée (bouton Masquer)
+// started_at d'une mission finie masquée (bouton Masquer). 03/11 (demande : « elle réapparaît ») : retenu par le
+// navigateur, sinon un rechargement du HUD (nouvelle version, reconnexion) la faisait revenir.
+const MISSION_MASQUEE = "astrel-mission-masquee";
+let missionHidden = (() => {
+  try { return Number(localStorage.getItem(MISSION_MASQUEE)) || 0; } catch { return 0; }
+})();
 // 02/11 (plan P43) : trois fins qui ne se confondent pas : « done » = critère VÉRIFIÉ par Astrel,
 // « accepted_unverified » = accepté par l'utilisateur SANS preuve, « verification_failed » = vérifié et faux.
 const MISSION_STATUS = ["active", "paused", "done", "blocked", "stopped", "budget", "accepted_unverified",
@@ -2866,7 +2871,11 @@ function renderMission() {
 
 on("mission", (ev) => { mission = ev; renderMission(); });
 setInterval(() => { if (mission.status === "active") renderMission(); }, 5000); // temps restant
-$("#mission-hide").onclick = () => { missionHidden = mission.started_at; renderMission(); };
+$("#mission-hide").onclick = () => {
+  missionHidden = mission.started_at;
+  try { localStorage.setItem(MISSION_MASQUEE, String(missionHidden)); } catch { /* navigation privée */ }
+  renderMission();
+};
 
 async function missionAction(action) {
   if (action === "stop" && !(await openModal({

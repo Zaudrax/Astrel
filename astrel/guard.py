@@ -132,6 +132,7 @@ import getpass
 import json
 import os
 import re
+import sys
 import tempfile
 import shlex
 import time
@@ -299,9 +300,11 @@ CRITICAL_MCP_TOOLS = {"update_label", "delete_label"}
 
 # Écriture libre dans les projets ; ailleurs dans le dossier personnel :
 # sensible ; dans les dossiers système ou les secrets : critique.
-# 03/11 (portage) : sous Windows, le dossier temporaire est %TEMP% (profil de l'utilisateur), pas /tmp.
-# Linux : /tmp SEUL (TMPDIR peut viser n'importe où, le prendre élargirait en silence la zone libre).
-TEMP_ROOTS = [Path("/tmp")] + ([Path(tempfile.gettempdir()).resolve()] if os.name == "nt" else [])
+# 03/11 (portage) : le dossier temporaire de l'utilisateur est %TEMP% sous Windows et /var/folders/…/T sous
+# macOS (TMPDIR posé par le système), pas /tmp. Linux : /tmp SEUL (TMPDIR y est libre de viser n'importe où ;
+# le prendre élargirait en silence la zone où Claude écrit sans question).
+TEMP_ROOTS = [Path("/tmp")] + ([Path(tempfile.gettempdir()).resolve()]
+                               if os.name == "nt" or sys.platform == "darwin" else [])
 ALLOWED_WRITE_ROOTS = [config.WORKDIR.resolve(), config.ROOT.resolve(), *TEMP_ROOTS]
 # 15/10, partie B : fichiers du dossier personnel qui lancent du code ou ouvrent un
 # accès (démarrage du shell et de la session, unités systemd, ~/.local/bin dans le

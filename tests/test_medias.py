@@ -189,6 +189,11 @@ def test_purge_sept_jours_et_deux_go(med, monkeypatch):
 
 # ------------------------------------------------------------------ variantes servies
 
+# 03/11 (CI macOS, Linux) : sans poppler, pas d'aperçu de PDF ; ces tests demandent les vrais pdfinfo et pdftoppm.
+poppler = pytest.mark.skipif(not (shutil.which("pdfinfo") and shutil.which("pdftoppm")), reason="poppler absent")
+
+
+@poppler
 def test_miniature_page_de_pdf_et_original(med):
     img = medias.publish(write(med, "grand.png", _png(1600, 900)))
     path, mime = medias.serve(img["id"], "thumb")
@@ -288,6 +293,7 @@ def test_miniature_plafond_de_pixels(med, monkeypatch):
     assert medias.serve(big_png["id"], "thumb") is None
 
 
+@poppler
 def test_echec_poppler_en_cache(med, monkeypatch):
     """Fiche 1 : un PDF piégé (10 s de calcul, 1 Go) ne doit pas relancer poppler à chaque
     requête du HUD : l'échec est retenu."""
@@ -307,6 +313,7 @@ def test_echec_poppler_en_cache(med, monkeypatch):
     assert medias.serve(pdf["id"], "page", "2") is None and len(calls) == 2
 
 
+@poppler
 def test_poppler_en_parallele_borne(med, monkeypatch):
     """Fiche 1 : six pages demandées d'un coup = au plus POPPLER_PARALLEL processus poppler."""
     a = medias.publish(write(med, "a.pdf", _pdf(3)))
@@ -504,6 +511,7 @@ def test_consigne_du_prompt():
 
 # ------------------------------------------------------------------ la route du serveur
 
+@poppler
 def test_route_media_du_hud(med, monkeypatch, tmp_path):
     import asyncio
 

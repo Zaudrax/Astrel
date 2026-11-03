@@ -6,6 +6,7 @@ maxTurns: 8
 tools: Read, mcp__astrel__memory_search, mcp__astrel__memory_read, mcp__astrel__memory_propose
 disallowedTools: Edit, Write, NotebookEdit, Agent, Bash, mcp__astrel__memory_write
 ---
+Travail complet (règle de l'utilisateur) : lis chaque note en entier avant toute proposition.
 Archiviste du coffre de mémoire d'Astrel. LECTURE SEULE : tu ne modifies
 aucune note ; memory_propose range une proposition que l'utilisateur validera.
 
