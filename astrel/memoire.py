@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config
+from .platform import systeme
 
 GO = 2 ** 30
 
@@ -346,14 +347,18 @@ def top(limit: int = 8, force: bool = False) -> dict[str, Any]:
 def _top(limit: int) -> dict[str, Any]:
     import psutil
 
-    uid = os.getuid()
+    uid = systeme.uid()  # 03/11 : None sous Windows : par le nom d'utilisateur
+    moi = psutil.Process().username() if uid is None else ""
     procs: dict[int, dict[str, Any]] = {}
     mem: dict[int, tuple[int, int]] = {}
-    for p in psutil.process_iter(["pid", "ppid", "name", "uids", "cmdline", "memory_info"]):
+    attrs = ["pid", "ppid", "name", "cmdline", "memory_info"] + (["uids"] if uid is not None else ["username"])
+    for p in psutil.process_iter(attrs):
         info = p.info
         procs[info["pid"]] = info
-        uids = info.get("uids")
-        if not uids or uids.real != uid:
+        if uid is None:
+            if info.get("username") != moi:
+                continue
+        elif not info.get("uids") or info["uids"].real != uid:
             continue
         try:
             full = p.memory_full_info()

@@ -1,133 +1,101 @@
-"""Groupe « Système » de la page « Réglages » (17/10, plan P4, lot 8) : démarrage avec la
-session (systemd --user), bulle (autostart), raccourcis GNOME (hotkeys.sh). Ni systemctl ni
-gsettings réels : dossier personnel du test, commandes simulées."""
-import types
+"""Aides du système pour Windows (03/11/2026, portage : Windows natif doit démarrer),
+`astrel/platform/systeme.py`, et faux Claude de la CI qui tient une session minimale."""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
-from astrel import settings as settings_mod
-from astrel.platform import Indisponible, degrade, linux, macos, windows
-from astrel.settings import SettingError, reglages
-from test_reports import ch, astrel, of, published  # noqa: F401  (fixtures)
+from astrel.platform import systeme
 
-FUNCS = ("autostart_state", "set_autostart", "hotkeys_state", "set_hotkeys")
-REAL_SYS_STATE = settings_mod._sys_state  # pris à l'import, avant que conftest le débranche
+ROOT = Path(__file__).resolve().parent.parent
+# Liens symboliques et bits de mode : Unix (créer un lien demande des droits sous Windows).
+unix = pytest.mark.skipif(os.name == "nt", reason="liens et bits de mode Unix")
 
 
-@pytest.fixture
-def machine(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    (home / ".config" / "systemd" / "user").mkdir(parents=True)
-    (home / ".config" / "systemd" / "user" / "astrel.service").write_text("[Unit]\n")
-    monkeypatch.setattr(linux.Path, "home", lambda: home)
-    state = {"enabled": "enabled", "systemd": True, "gnome": True, "keys": "['/x/astrel-wake/']"}
-    ran = []
-    monkeypatch.setattr(linux, "_has_systemd", lambda: state["systemd"])
-    monkeypatch.setattr(linux, "_gnome", lambda: state["gnome"])
-    state["bulle"] = "disabled"
-
-    def is_enabled(cmd, **k):
-        cle = "bulle" if cmd[-1] == "astrel-bubble.service" else "enabled"
-        return types.SimpleNamespace(stdout=state[cle] + "\n", returncode=0)
-
-    monkeypatch.setattr(linux.subprocess, "run", is_enabled)
-
-    def run(cmd, timeout=10.0, check=True):
-        ran.append(cmd)
-        if cmd[:2] == ["gsettings", "get"]:
-            return state["keys"]
-        if "astrel-bubble.service" in cmd:
-            state["bulle"] = "enabled" if "enable" in cmd else "disabled"
-        elif cmd[-1] in ("enable", "disable") or "astrel.service" in cmd:
-            state["enabled"] = "enabled" if "enable" in cmd else "disabled"
-        return ""
-
-    monkeypatch.setattr(linux, "_run", run)
-    # la page lit le VRAI moteur (conftest le débranche) ; ici, Linux simulé
-    monkeypatch.setattr(settings_mod, "_sys_state", REAL_SYS_STATE)
-    monkeypatch.setattr(settings_mod, "_SYS_CACHE", {})
-    from astrel import platform
-
-    monkeypatch.setattr(platform, "desktop_backend", lambda system=None: linux)
-    return home, state, ran
+@unix
+def test_proprietaire_seul_unix(tmp_path):
+    f = tmp_path / "cle"
+    f.write_text("x")
+    f.chmod(0o600)
+    assert systeme.proprietaire_seul(os.lstat(f))
+    f.chmod(0o644)
+    assert not systeme.proprietaire_seul(os.lstat(f))
+    assert not systeme.proprietaire_seul(os.lstat(tmp_path))
 
 
-def item(key):
-    return next(i for g in reglages.describe()["groups"] for i in g["items"] if i["key"] == key)
+@unix
+def test_proprietaire_seul_sans_uid_comme_sous_windows(tmp_path, monkeypatch):
+    monkeypatch.setattr(systeme, "UNIX", False)
+    f = tmp_path / "cle"
+    f.write_text("x")
+    f.chmod(0o644)  # bits de mode sans valeur sous Windows : fichier ordinaire suffit
+    assert systeme.proprietaire_seul(os.lstat(f))
+    assert not systeme.proprietaire_seul(os.lstat(tmp_path))
 
 
-def test_memes_fonctions_partout():
-    for mod in (linux, macos, windows, degrade):
-        for name in FUNCS:
-            assert callable(getattr(mod, name)), (mod.__name__, name)
-    for mod in (macos, windows, degrade):
-        with pytest.raises(Indisponible, match="indisponible"):
-            mod.autostart_state()
-        with pytest.raises(Indisponible, match="indisponible"):
-            mod.set_hotkeys(True)
+@unix
+def test_ouvrir_sans_lien_sans_o_nofollow(tmp_path, monkeypatch):
+    monkeypatch.setattr(systeme, "NOFOLLOW", 0)
+    vrai = tmp_path / "vrai"
+    vrai.write_text("secret")
+    lien = tmp_path / "lien"
+    lien.symlink_to(vrai)
+    with pytest.raises(OSError, match="lien refusé"):
+        systeme.ouvrir_sans_lien(lien, os.O_RDONLY)
+    fd = systeme.ouvrir_sans_lien(vrai, os.O_RDONLY)
+    os.close(fd)
+    neuf = tmp_path / "neuf"
+    os.close(systeme.ouvrir_sans_lien(neuf, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+    assert neuf.exists()
 
 
-def test_demarrage_avec_la_session(machine):
-    home, state, ran = machine
-    it = item("systeme.autostart")
-    assert not it["locked"] and it["value"] is True
-    reglages.set("systeme.autostart", False)
-    assert ["systemctl", "--user", "disable", "astrel.service"] in ran
-    assert item("systeme.autostart")["value"] is False
-    reglages.set("systeme.autostart", True)
-    assert ["systemctl", "--user", "enable", "astrel.service"] in ran
-    assert not any("start" in c or "stop" in c for c in ran)  # ni lancé ni arrêté maintenant
+@unix
+def test_ouvrir_sans_lien_unix(tmp_path):
+    vrai = tmp_path / "vrai"
+    vrai.write_text("x")
+    (tmp_path / "lien").symlink_to(vrai)
+    with pytest.raises(OSError):
+        systeme.ouvrir_sans_lien(tmp_path / "lien", os.O_RDONLY)
 
 
-def test_bulle_au_demarrage(machine):
-    # 29/10 : la bulle démarre par SON service systemd ; l'ancien autostart GNOME (qui ouvrait une
-    # seconde bulle) est désactivé, jamais réécrit
-    home, state, ran = machine
-    ancien = home / ".config" / "autostart" / "astrel-bubble.desktop"
-    ancien.parent.mkdir(parents=True)
-    ancien.write_text("[Desktop Entry]\nExec=x/bubble.sh\nX-GNOME-Autostart-enabled=true\n")
-    assert item("systeme.bubble")["value"] is False
-    reglages.set("systeme.bubble", True)
-    unit = home / ".config" / "systemd" / "user" / "astrel-bubble.service"
-    text = unit.read_text()
-    assert "@ROOT@" not in text and "-m astrel.bubble" in text
-    assert ["systemctl", "--user", "daemon-reload"] in ran and ["systemctl", "--user", "enable", "astrel-bubble.service"] in ran
-    assert "X-GNOME-Autostart-enabled=false" in ancien.read_text() and "=true" not in ancien.read_text()
-    assert item("systeme.bubble")["value"] is True and state["enabled"] == "enabled"  # Astrel lui-même intact
-    reglages.set("systeme.bubble", False)
-    assert ["systemctl", "--user", "disable", "astrel-bubble.service"] in ran and item("systeme.bubble")["value"] is False
+def test_tuer_arbre_sous_windows_par_taskkill(monkeypatch):
+    appels = []
+    monkeypatch.setattr(systeme, "UNIX", False)
+    monkeypatch.setattr(systeme.subprocess, "run", lambda cmd, **k: appels.append(cmd))
+    systeme.tuer_arbre(1234)
+    assert appels == [["taskkill", "/PID", "1234", "/T", "/F"]]
 
 
-def test_wsl2_sans_systemd(machine):
-    _, state, _ = machine
-    state["systemd"] = False
-    it = item("systeme.autostart")
-    assert it["locked"] and "systemd absent" in it["lock_reason"]
-    with pytest.raises(SettingError, match="systemd"):
-        reglages.set("systeme.autostart", True)
+def test_tuer_arbre_process_deja_parti():
+    p = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
+    p.wait()
+    systeme.tuer_arbre(p.pid, systeme.SIGKILL)  # aucune exception
+    assert not systeme.groupe_vivant(p.pid)
 
 
-def test_service_non_installe(machine):
-    home, *_ = machine
-    (home / ".config" / "systemd" / "user" / "astrel.service").unlink()
-    assert "install.py" in item("systeme.autostart")["lock_reason"]
+def test_nom_machine_et_processus():
+    assert systeme.nom_machine()
+    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "--marque-astrel-ci"])
+    try:
+        assert p.pid in systeme.processus_avec("--marque-astrel-ci")
+        assert systeme.pid_vivant(p.pid)
+    finally:
+        p.kill()
+        p.wait()
+    assert not systeme.pid_vivant(p.pid)
 
 
-def test_raccourcis(machine):
-    _, state, ran = machine
-    assert item("systeme.hotkeys")["value"] is True
-    reglages.set("systeme.hotkeys", False)
-    assert ran[-1][-1] == "--remove" and ran[-1][0].endswith("hotkeys.sh")
-    reglages.set("systeme.hotkeys", True)
-    assert ran[-1][0].endswith("hotkeys.sh") and len(ran[-1]) == 1
-    state["gnome"] = False
-    settings_mod._SYS_CACHE.clear()
-    it = item("systeme.hotkeys")
-    assert it["locked"] and "GNOME" in it["lock_reason"]
-
-
-def test_refuse_a_claude(astrel, published, machine):
-    j, _, _ = astrel
-    _, _, ran = machine
-    res = j.on_command({"cmd": "settings_set", "key": "systeme.autostart", "value": False, "_from_claude": True})
-    assert res["ok"] is False and not any("disable" in c for c in ran)
+def test_faux_claude_tient_une_session():
+    faux = ROOT / "tools" / "ci" / "faux-claude" / "claude"
+    entree = json.dumps({"type": "user", "message": {"role": "user", "content": "bonjour"}}) + "\n"
+    r = subprocess.run([sys.executable, str(faux), "-p", "--input-format", "stream-json", "--output-format",
+                        "stream-json"], input=entree, capture_output=True, text=True, timeout=30)
+    evts = [json.loads(ligne) for ligne in r.stdout.splitlines()]
+    assert [e["type"] for e in evts] == ["system", "assistant", "result"]
+    assert evts[0]["subtype"] == "init" and evts[2]["is_error"] is False
+    assert subprocess.run([sys.executable, str(faux), "inconnu"], capture_output=True).returncode == 2

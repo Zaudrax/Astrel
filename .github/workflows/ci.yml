@@ -2,14 +2,16 @@
 #
 # - « linux » (à chaque push et pull request) : contrôle de la machine, tests
 #   Python (et Node du HUD), rendu du HUD en Chrome headless. Doit être VERT.
-# - « portage » (macOS et Windows, à la demande et une fois par semaine) : MESURE
-#   où en est le portage ; un échec n'est pas bloquant (continue-on-error).
+# - « portage » (macOS et Windows, à la demande, une fois par semaine, et à chaque push
+#   sur la branche « portage ») : MESURE où en est le portage ; un échec n'est
+#   bloquant que sur la branche « portage » (03/11 : travail de portage en cours).
 #   Pourquoi pas à chaque push : sur un dépôt PRIVÉ, GitHub décompte une minute
 #   macOS pour 10 et une minute Windows pour 2 sur le quota gratuit
 #   (2 000 min/mois en offre Free). Un passage complet ≈ 10 à 15 min par OS.
 #
-# Aucun vrai Claude ici : tools/ci/faux-claude répond à `--version` et
-# `auth status`, les tests du cerveau utilisent des enregistrements
+# Aucun vrai Claude ici : tools/ci/faux-claude répond à `--version`,
+# `auth status` et tient une session minimale en stream-json (essai de
+# démarrage, tools/ci/demarrage.py) ; les tests du cerveau utilisent des enregistrements
 # (tests/fixtures). Le micro, la bulle et les raccourcis ne se testent que sur
 # une vraie machine.
 name: CI
@@ -49,15 +51,18 @@ jobs:
         run: python -m pytest -q
       - name: Rendu du HUD en Chrome headless
         run: python tools/hud_check_rendu.py
+      - name: Essai de démarrage (vrai Astrel, faux Claude, sans micro ni haut-parleur)
+        if: always()
+        run: python tools/ci/demarrage.py
 
   portage:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.ref_name == 'portage'
     strategy:
       fail-fast: false
       matrix:
         os: [macos-14, windows-2022]
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
+    continue-on-error: ${{ github.ref_name != 'portage' }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
@@ -71,7 +76,10 @@ jobs:
         run: python tools/check_install.py --ci
       - name: "Dépendances complètes (mesure : quelles roues manquent ?)"
         run: python -m pip install -r requirements.txt websockets
+      - name: Essai de démarrage (vrai Astrel, faux Claude, sans micro ni haut-parleur)
+        run: python tools/ci/demarrage.py
       - name: Tests de la couche plateforme, de l'installation et du canal local (plan P6)
+        if: always()
         run: python -m pytest -q -p no:cacheprovider tests/test_platform.py tests/test_install.py tests/test_ipc.py
       - name: Suite complète (mesure)
         if: always()

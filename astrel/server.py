@@ -31,7 +31,6 @@ import json
 import logging
 import os
 import secrets
-import stat
 import threading
 import time
 from pathlib import Path
@@ -40,6 +39,7 @@ from typing import Any, Callable
 from aiohttp import WSMsgType, web
 
 from . import config, state
+from .platform import systeme
 from .events import bus
 
 log = logging.getLogger("astrel.server")
@@ -79,8 +79,8 @@ def _session_key() -> bytes:
     path = session_key_file()
     try:
         st = os.lstat(path)
-        if stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o077:
-            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        if systeme.proprietaire_seul(st):  # 03/11 : Windows n'a ni uid ni O_NOFOLLOW (platform/systeme.py)
+            fd = systeme.ouvrir_sans_lien(path, os.O_RDONLY)
             with os.fdopen(fd, encoding="ascii") as f:
                 key = bytes.fromhex(f.read().strip())
             if len(key) >= 32:
@@ -89,7 +89,7 @@ def _session_key() -> bytes:
         pass
     key = secrets.token_bytes(32)
     path.unlink(missing_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    fd = systeme.ouvrir_sans_lien(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="ascii") as f:
         f.write(key.hex())
     log.info("nouvelle clé de session du HUD : les pages ouvertes devront être rouvertes")

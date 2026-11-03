@@ -64,6 +64,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config
+from .platform import systeme
 from .events import bus
 from .settings import reglages
 
@@ -286,7 +287,7 @@ def _cle(creer: bool) -> bytes | None:
     path = _cle_path()
     try:
         st = os.lstat(path)
-        if stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o077:
+        if systeme.proprietaire_seul(st):  # 03/11 : pas d'uid sous Windows
             fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
             with os.fdopen(fd, "rb") as fh:
                 key = fh.read(4096)

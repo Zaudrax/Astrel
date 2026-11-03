@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import config, state
+from .platform import systeme
 from .platform import proc as procinfo  # « proc » est déjà le nom des sous-process ici
 
 OK, ALERT = "OK", "ALERTE"
@@ -336,6 +337,8 @@ def _mode_problem(path: Path, is_dir: bool) -> str:
         return "lien symbolique"
     if is_dir != stat.S_ISDIR(st.st_mode):
         return "type inattendu"
+    if not systeme.UNIX:
+        return ""  # 03/11 : ni uid ni bits de mode sous Windows (droits NTFS du profil)
     if st.st_uid != os.getuid():
         return "n'appartient pas à l'utilisateur"
     if st.st_mode & 0o077:

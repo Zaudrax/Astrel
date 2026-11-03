@@ -1,15 +1,50 @@
 #!/usr/bin/env python3
-"""FAUX Claude Code pour l'intégration continue (P2, lot 3) : répond seulement à
-ce que demande `tools/check_install.py` (version, état de connexion). Aucun
-appel réseau, aucun modèle. Toute autre commande échoue franchement (code 2)."""
+"""FAUX Claude Code pour l'intégration continue (P2, lot 3) : aucun appel réseau, aucun modèle.
+
+- `--version`, `auth status` : ce que demande `tools/check_install.py` ;
+- 03/11 (portage) : `-p … --input-format stream-json` : une session minimale, au format du flux du
+  vrai CLI (init, puis pour chaque message reçu : une réponse de l'assistant et un résultat), pour
+  qu'Astrel démarre et fasse un vrai tour sur les machines de la CI (`tools/ci/demarrage.py`).
+
+Toute autre commande échoue franchement (code 2)."""
 import json
 import sys
+import uuid
+
+REPONSE = "Bonjour, ici le faux Claude de l'intégration continue."
 
 args = sys.argv[1:]
+
+
+def emettre(evenement: dict) -> None:
+    sys.stdout.write(json.dumps(evenement, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
 if args[:1] == ["--version"]:
     print("0.0.0 (faux Claude Code pour la CI)")
 elif args[:2] == ["auth", "status"]:
     print(json.dumps({"loggedIn": True, "authMethod": "claude.ai", "subscriptionType": "ci"}))
+elif "-p" in args and "stream-json" in args:
+    session = str(uuid.uuid4())
+    emettre({"type": "system", "subtype": "init", "session_id": session, "cwd": ".", "tools": [],
+             "mcp_servers": [], "model": "faux-ci", "permissionMode": "default",
+             "claude_code_version": "0.0.0", "apiKeySource": "none"})
+    for ligne in sys.stdin:
+        if not ligne.strip():
+            continue
+        try:
+            message = json.loads(ligne)
+        except ValueError:
+            continue
+        if message.get("type") != "user":
+            continue
+        emettre({"type": "assistant", "session_id": session, "parent_tool_use_id": None,
+                 "message": {"role": "assistant", "model": "faux-ci", "content": [{"type": "text", "text": REPONSE}],
+                             "usage": {"input_tokens": 1, "output_tokens": 1}}})
+        emettre({"type": "result", "subtype": "success", "is_error": False, "result": REPONSE,
+                 "session_id": session, "num_turns": 1, "duration_ms": 1, "total_cost_usd": 0,
+                 "usage": {"input_tokens": 1, "output_tokens": 1}})
 else:
     print(f"faux claude : commande non simulée {args!r}", file=sys.stderr)
     sys.exit(2)

@@ -50,6 +50,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 from . import config
+from .platform import systeme
 
 OUT_DIR = config.RUNTIME / "veille-secu"
 # Rapports hors de runtime/ : WhatsApp refuse d'envoyer un fichier du dossier privé d'Astrel (19/10).
@@ -1172,10 +1173,7 @@ def html_to_pdf(html_text: str, pdf_path: Path) -> str | None:
         try:
             code = proc.wait(timeout=CHROME_TIMEOUT_S)
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except OSError:
-                pass
+            systeme.tuer_arbre(proc.pid, systeme.SIGKILL)  # 03/11 : groupe (Unix) ou arbre (Windows)
             proc.wait()
             return f"Chrome n'a pas fini en {CHROME_TIMEOUT_S} s"
         try:

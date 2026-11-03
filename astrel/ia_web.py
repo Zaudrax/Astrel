@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import config
+from .platform import systeme
 from .platform import enfants
 
 log = logging.getLogger("astrel.ia_web")
@@ -333,7 +334,7 @@ def piece(brut: Any) -> tuple[str, str]:
     if st.st_size > PIECE_MAX_OCTETS:
         return "", "image trop lourde (5 Mo au plus)"
     try:
-        fd = os.open(reel, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = systeme.ouvrir_sans_lien(reel, os.O_RDONLY | systeme.NONBLOCK)
     except OSError:
         return "", "fichier illisible"
     with os.fdopen(fd, "rb") as f:
@@ -987,39 +988,28 @@ def executer_worker(argv: list[str], entree: dict, ligne: Callable[[dict], None]
 
 
 def _signal_groupe(proc: subprocess.Popen, sig: int) -> None:
-    try:
-        os.killpg(proc.pid, sig)
-    except (OSError, ProcessLookupError):
+    if systeme.UNIX:
         try:
-            proc.send_signal(sig)
-        except OSError:
+            os.killpg(proc.pid, sig)
+            return
+        except (OSError, ProcessLookupError):
             pass
+    else:
+        systeme.tuer_arbre(proc.pid, sig)  # 03/11 : Windows, pas de groupe : l'arbre (taskkill /T /F)
+    try:
+        proc.send_signal(sig)
+    except OSError:
+        pass
 
 
 def chrome_du_profil(profil: Path | str) -> list[int]:
     """PID des processus de l'utilisateur lancés avec `--user-data-dir=<profil>` : le Chrome de Playwright vit
     dans SON groupe de processus (détaché), hors de celui du worker."""
-    cible = f"--user-data-dir={Path(profil)}".encode()
-    uid, out = os.getuid(), []
-    for d in Path("/proc").iterdir():
-        if not d.name.isdigit() or int(d.name) == os.getpid():
-            continue
-        try:
-            if d.stat().st_uid != uid:
-                continue
-            args = (d / "cmdline").read_bytes().split(b"\0")
-        except OSError:
-            continue
-        if cible in args:
-            out.append(int(d.name))
-    return out
+    return systeme.processus_avec(f"--user-data-dir={Path(profil)}")  # 03/11 : /proc ou psutil
 
 
 def vivant(pid: int) -> bool:
-    try:
-        return Path(f"/proc/{pid}/stat").read_text().split(")")[-1].split()[0] != "Z"
-    except (OSError, IndexError):
-        return False
+    return systeme.pid_vivant(pid)
 
 
 def arreter(proc: subprocess.Popen, profil: Path | str | None = None, nom: str = "worker") -> list[int]:
@@ -1031,7 +1021,7 @@ def arreter(proc: subprocess.Popen, profil: Path | str | None = None, nom: str =
         proc.wait(timeout=ARRET_GRACE_S)
     except subprocess.TimeoutExpired:
         log.warning("%s %d sourd à SIGTERM : SIGKILL", nom, proc.pid)
-        _signal_groupe(proc, signal.SIGKILL)
+        _signal_groupe(proc, systeme.SIGKILL)
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
@@ -1039,7 +1029,7 @@ def arreter(proc: subprocess.Popen, profil: Path | str | None = None, nom: str =
     if profil is None:
         return []
     restants = chrome_du_profil(profil)
-    for sig in (signal.SIGTERM, signal.SIGKILL):
+    for sig in (signal.SIGTERM, systeme.SIGKILL):
         for pid in restants:
             try:
                 os.kill(pid, sig)

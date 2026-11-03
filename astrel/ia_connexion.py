@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import config, ia_web
+from .platform import systeme
 
 log = logging.getLogger("astrel.ia_connexion")
 
@@ -123,7 +124,7 @@ def chrome_ouvert(p: Path) -> bool:
     except OSError:
         return False
     hote, _, pid = cible.rpartition("-")
-    if hote and hote != os.uname().nodename:
+    if hote and hote != systeme.nom_machine():
         return True  # profil ouvert depuis une autre machine : on n'y touche pas
     return pid.isdigit() and _pid_vivant(int(pid))
 
