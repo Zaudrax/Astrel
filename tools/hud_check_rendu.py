@@ -209,7 +209,7 @@ async def run(url):
             const m = [...document.querySelectorAll('.msg.astrel')].find(x => x.textContent.includes('Bilan de la journée'));
             m.querySelector('.copy-btn').click();
             await new Promise(r => setTimeout(r, 100));
-            return got && got.startsWith('## Bilan de la journée') && got.includes('1. Les tests');
+            return got && got.startsWith('## Bilan de la journée') && got.includes('1. La facture');
         })()""")
         check("« Copier » copie le texte brut (marques markdown comprises)", raw_ok)
 
@@ -243,10 +243,10 @@ async def run(url):
               tb["zebra"][0] != tb["zebra"][1] and tb["wrapScroll"] == "auto")
         check(f"schéma ASCII : espaces gardés ({tb['ws']}), bouton Copier par bloc ({tb['copies']}/{tb['blocks']}) → « {tb['label']} »",
               tb["ws"] == "pre" and tb["blocks"] == 2 and tb["copies"] == 2 and tb["label"] == "Copié"
-              and " micro ──> VAD ──> Whisper ──> Claude\n                                 │" in tb["ascii"])
+              and " maison ──> gare ──> train ──> Bordeaux\n                                 │" in tb["ascii"])
         check("Copier d'un bloc : le code brut exact", tb["got"] == tb["ascii"])
         check(f"tableau : seul le lien https est cliquable ({tb['links']})",
-              tb["links"] == ["https://docs.expo.dev/build/introduction/"])
+              tb["links"] == ["https://fr.wikipedia.org/wiki/Bordeaux"])
         await p.js("""(() => { const m = [...document.querySelectorAll('.msg.astrel')].find(x => x.textContent.includes('Comparatif'));
             m.scrollIntoView({ block: 'start' }); })()""")
         await p.shot("1b-fil-tableau-schema.png")
@@ -404,8 +404,9 @@ async def run(url):
         f = await p.js("""(() => ({ fields: document.querySelectorAll('.modal .modal-field').length,
             numbers: [...document.querySelectorAll('.modal input[type=number]')].map(i => i.value),
             areas: document.querySelectorAll('.modal textarea').length, focus: document.activeElement?.name }))()""")
-        check(f"8 champs, budget borné par défaut {f['numbers']}, 2 zones multilignes, focus sur l'objectif",
-              f["fields"] == 8 and f["numbers"] == ["20", "60", "3000"] and f["areas"] == 2 and f["focus"] == "objective")
+        # 02/11 (plan P43) : + « Preuve exigée » (zone multiligne), le critère en clair devient facultatif.
+        check(f"9 champs, budget borné par défaut {f['numbers']}, 3 zones multilignes, focus sur l'objectif",
+              f["fields"] == 9 and f["numbers"] == ["20", "60", "3000"] and f["areas"] == 3 and f["focus"] == "objective")
         await p.key("Enter", vk=13, text="\r")
         check("sans objectif : message, rien d'envoyé",
               await p.js("!!document.querySelector('.modal') && !document.querySelector('.modal-error').classList.contains('hidden')")
@@ -469,6 +470,7 @@ async def run(url):
         await check_effort(p)  # 23/10 (plan P28)
         await check_memoire(p)  # 21/10 (plan P20)
         await check_courrier(p)  # 26/10 (plan P33 lot 3)
+        await check_mission_preuve(p)  # 02/11 (plan P43)
         await check_todo(p)  # 26/10 (plan P38 lot 2)
         await check_couleurs_semantiques(p)  # 21/10 (relecture P17)
         await check_reglages(p)
@@ -628,7 +630,7 @@ async def check_lots_15_10(p: Page) -> None:
               r["blocage"] == "Blocage" and r["resultat"] == "Résultat" and r["plainBadge"] == 0)
         check(f"badges : icônes vectorielles {r['icons']}", r["icons"] == ["alert", "no-entry", "check"])
         check(f"fichiers du compte rendu listés en texte : {r['files']}",
-              r["files"] == ["/home/user/Projets/Boutique/docs/PAYWALL.md", "/tmp/astrel-demo/plan-paywall.txt"]
+              r["files"] == ["/home/user/Documents/Déménagement/devis-comparés.pdf", "/tmp/astrel-demo/devis-demenageurs.txt"]
               and r["noFiles"] == 0)
     copied = await p.js("""(async () => {
         let got = null;
@@ -636,7 +638,7 @@ async def check_lots_15_10(p: Page) -> None:
         document.querySelector('.msg.report-decision .report-file').click();
         await new Promise(r => setTimeout(r, 100));
         return got; })()""")
-    check(f"clic sur un fichier : chemin copié ({copied})", copied == "/home/user/Projets/Boutique/docs/PAYWALL.md")
+    check(f"clic sur un fichier : chemin copié ({copied})", copied == "/home/user/Documents/Déménagement/devis-comparés.pdf")
 
     # ---------------------------------------------------------- question à choix (idée 9)
     # Le canal de la question posée au démarrage (rejouée à l'ouverture de la page).
@@ -660,8 +662,8 @@ async def check_lots_15_10(p: Page) -> None:
                  status: c.querySelector('.choice-status').getAttribute('role'), focusIn: c.contains(document.activeElement),
                  mark: document.querySelector('.channel-tab.on .decision-mark') !== null }; })()""")
     check(f"carte : question, 3 réponses + « Autre » en dernier, la recommandée en premier ({card['labels']})",
-          card["q"].startswith("Le build Android") and len(card["labels"]) == 4
-          and card["labels"][0] == "Relancer avec la clé de secours" and card["rec"] == [True, False, False, False]
+          card["q"].startswith("Le train de 8 h 12") and len(card["labels"]) == 4
+          and card["labels"][0] == "Prendre celui de 9 h 40" and card["rec"] == [True, False, False, False]
           and card["other"] and card["labels"][3] == "Autre…")
     check(f"P21 : badges a) b) c) d) ({card['keys']})", card["keys"] == ["a)", "b)", "c)", "d)"])
     check(f"P21 : ARIA radiogroup nommé par la question, radios non cochées {card['radios']}, un arrêt de tabulation "
@@ -677,10 +679,10 @@ async def check_lots_15_10(p: Page) -> None:
     await p.until("window.__sent.some(m => m.cmd === 'choice_answer')", 3)
     first = (await sent("choice_answer"))[-1:] or [{}]
     check(f"clic : choice_answer envoyé avec l'id de la question ({first[0]})",
-          first[0].get("value") == "Relancer avec la clé de secours" and isinstance(first[0].get("choice_id"), str) and len(first[0]["choice_id"]) >= 6)
+          first[0].get("value") == "Prendre celui de 9 h 40" and isinstance(first[0].get("choice_id"), str) and len(first[0]["choice_id"]) >= 6)
     check("carte passée en « Répondu : … »", await p.until(
         "[...document.querySelectorAll('.msg.choice.answered .choice-status')]"
-        ".some(s => s.textContent === 'Répondu : Relancer avec la clé de secours')", 3))
+        ".some(s => s.textContent === 'Répondu : Prendre celui de 9 h 40')", 3))
 
     # La séquence de la démo (réponses, confirmation finale) doit être passée : sinon
     # un message peut arriver sous la carte et le raccourci ne vaut plus.
@@ -699,7 +701,7 @@ async def check_lots_15_10(p: Page) -> None:
     last = (await sent("choice_answer"))[-1]
     ask = await p.js("document.querySelector('#ask').value")
     check(f"touche 2, barre vide : 2e réponse envoyée ({last.get('value')}), rien tapé dans la barre ({ask!r})",
-          last.get("value") == "Bourse" and ask == "")
+          last.get("value") == "Potager" and ask == "")
 
     await demo("demo_choice")
     await p.until("[...document.querySelectorAll('.msg.choice.active .choice-question')].some(q => q.textContent.startsWith('On publie'))", 4)
@@ -771,7 +773,7 @@ async def check_lots_15_10(p: Page) -> None:
     await p.key("b", code="KeyB", vk=66, text="b")
     await p.until(f"window.__sent.filter(m => m.cmd === 'choice_answer').length > {n}", 3)
     last = (await sent("choice_answer"))[-1]
-    check(f"P21 : lettre « b » dans la carte : 2e réponse envoyée ({last.get('value')})", last.get("value") == "Bourse")
+    check(f"P21 : lettre « b » dans la carte : 2e réponse envoyée ({last.get('value')})", last.get("value") == "Potager")
     await p.until("!document.querySelector('.msg.choice.active')", 3)
 
     # P21 (testeur, fiche 3) : un libellé de 110 caractères SANS espace (URL, chemin) faisait
@@ -941,7 +943,7 @@ async def check_memoire(p: Page) -> None:
           and await p.js("window.__sent.filter(m => m.cmd === 'memory_top').length") == n0 + 1)
     check("classement : 7 applications, libellés traduits ou tels quels, en texte seulement", await p.js(
         "(() => { const b = document.querySelector('.modal.memory-top'); const rows = [...b.querySelectorAll('.mem-row')];"
-        " return rows.length === 7 && rows[0].querySelector('.mem-name').textContent === 'VS Code'"
+        " return rows.length === 7 && rows[0].querySelector('.mem-name').textContent === 'LibreOffice'"
         " && rows[0].textContent.includes('3,2 Go') && rows[0].textContent.includes('+0,4 Go de swap')"
         " && rows[6].querySelector('.mem-name').textContent === '<img src=x onerror=alert(1)>' && !b.querySelector('img'); })()"))
     check("aucun bouton pour fermer un processus (seulement la croix de la fenêtre)", await p.js(
@@ -990,7 +992,7 @@ async def check_courrier(p: Page) -> None:
     check("courrier : une ligne par mission, compteurs en mots", await p.until(
         f"!{box}.classList.contains('hidden') && !{title}.classList.contains('hidden') "
         f"&& {box}.querySelectorAll('.courrier-row').length === 2 "
-        f"&& {box}.querySelector('.courrier-row span').textContent === 'p33' "
+        f"&& {box}.querySelector('.courrier-row span').textContent === 'p2' "
         f"&& {box}.querySelector('.courrier-row span').getBoundingClientRect().width >= 18 "
         f"&& {box}.querySelector('.courrier-row').getBoundingClientRect().height < 40 "
         f"&& {box}.querySelector('.courrier-row .time').textContent === '4 messages · 2 non lus · 1 question ouverte' "
@@ -1001,9 +1003,9 @@ async def check_courrier(p: Page) -> None:
           and await p.js(
               "(() => { const b = document.querySelector('.modal.courrier-panel'); const li = [...b.querySelectorAll('.courrier-msg')];"
               " return li.length === 3 && li[0].querySelector('.courrier-text').textContent === '<img src=x onerror=alert(1)>'"
-              " && !b.querySelector('.courrier-list img') && li[0].querySelector('.courrier-head').textContent.startsWith('n° 4 · message de codeur à testeur')"
+              " && !b.querySelector('.courrier-list img') && li[0].querySelector('.courrier-head').textContent.startsWith('n° 4 · message de chercheur à planificateur')"
               " && li[2].querySelector('.courrier-head').textContent.includes('réponse au n° 1')"
-              " && b.querySelector('.ad-note').textContent === 'testeur : 2 non lu(s)'"
+              " && b.querySelector('.ad-note').textContent === 'planificateur : 2 non lu(s)'"
               " && [...b.querySelectorAll('button')].every(x => x.classList.contains('modal-x')); })()"))
     await p.shot("p33-courrier-volet.png")
     await p.key("Escape", vk=27)
@@ -1022,6 +1024,62 @@ async def check_courrier(p: Page) -> None:
     await p.js("delete document.documentElement.dataset.affichage, true")
     await demo("demo_courrier", off=True)
     check("courrier vide : volet de nouveau caché", await p.until(f"{box}.classList.contains('hidden')", 3))
+
+
+async def check_mission_preuve(p: Page) -> None:
+    """02/11 (plan P43) : preuve de fin de mission. Trois fins impossibles à confondre (vérifiée,
+    acceptée sans preuve, vérification échouée), attente d'une décision (boutons, bandeau, origine
+    du critère), rapport de contrôles rendu EN TEXTE (déclaration hostile non interprétée)."""
+    async def demo(etat):
+        await p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': 'demo_mission', 'etat': etat}))})")
+
+    box = "document.querySelector('#mission')"
+    fin = f"({box}.querySelector('.mission-fin') || {{}})"
+    await demo("verifiee")
+    check("mission vérifiée : fin verte « VÉRIFIÉE », preuve et contrôles en texte", await p.until(
+        f"{box}.classList.contains('done') && {fin}.classList?.contains('ok') "
+        f"&& {fin}.textContent.includes('VÉRIFIÉE') && {box}.querySelectorAll('.mission-preuve-list li.etat-ok').length === 4 "
+        f"&& {box}.querySelector('.mission-preuve-head').textContent.startsWith('Vérifiée') "
+        f"&& {box}.querySelectorAll('.mission-critere li').length === 4 "
+        f"&& {box}.querySelector('.mission-critere li').textContent === 'docs/RAPPORT.md existe'", 4))
+    check("déclaration hostile rendue en texte, aucune image", await p.js(
+        f"!{box}.querySelector('img') && [...{box}.querySelectorAll('.mission-last')].some("
+        "e => e.textContent.includes('<img src=x onerror=alert(1)>'))"))
+    await p.shot("p43-mission-verifiee.png")
+    await demo("accepted")
+    check("acceptée sans preuve : fin ambre en pointillés, jamais « vérifiée »", await p.until(
+        f"{box}.classList.contains('accepted_unverified') && {fin}.classList?.contains('accepted') "
+        f"&& {fin}.textContent.includes('SANS preuve') && !{box}.textContent.includes('VÉRIFIÉE') "
+        f"&& !{box}.querySelector('.mission-preuve') && getComputedStyle({box}.querySelector('.mission-fin')).borderStyle === 'dashed'", 4))
+    await p.shot("p43-mission-acceptee.png")
+    await demo("failed")
+    check("vérification échouée : fin rouge, contrôles en échec marqués", await p.until(
+        f"{box}.classList.contains('verification_failed') && {fin}.classList?.contains('failed') "
+        f"&& {box}.querySelectorAll('.mission-preuve-list li.etat-echec').length === 2 "
+        f"&& {box}.querySelector('.mission-preuve-head').textContent.startsWith('Critère non rempli')", 4))
+    await p.shot("p43-mission-echouee.png")
+    await demo("decide")
+    check("en attente de décision : bandeau, origine d'Astrel non approuvée, quatre décisions", await p.until(
+        f"{box}.classList.contains('decide') && !document.querySelector('#mission-banner').hidden "
+        "&& document.querySelector('#mission-banner').classList.contains('decide') "
+        "&& document.querySelector('#mission-banner-head').textContent.includes('DÉCIDER') "
+        f"&& {box}.querySelector('.mission-origine.astrel') "
+        f"&& ['Revérifier', 'Remettre au travail', 'Accepter sans preuve', 'Approuver le critère'].every("
+        f"x => [...{box}.querySelectorAll('.mission-actions button')].some(b => b.textContent.includes(x))) "
+        f"&& {box}.querySelectorAll('.mission-preuve-list li.etat-bloque').length === 1 && !{fin}.classList", 4))
+    await p.shot("p43-mission-decision.png")
+    # Accepter sans preuve passe par une boîte qui le dit, et n'envoie rien si on annule.
+    n0 = await p.js("window.__sent.filter(m => m.cmd === 'mission').length")
+    await p.js(f"[...{box}.querySelectorAll('.mission-actions button')].find(b => b.textContent.includes('Accepter')).click()")
+    check("accepter : boîte « jamais vérifiée » avant d'agir", await p.until(
+        "!!document.querySelector('.modal') && document.querySelector('.modal').textContent.includes('jamais « vérifiée »')", 3))
+    await p.key("Escape", vk=27)
+    await asyncio.sleep(0.2)
+    check("annulée : aucune commande envoyée", await p.js("window.__sent.filter(m => m.cmd === 'mission').length") == n0)
+    await p.js(f"document.querySelector('#mission-banner').hidden = true; {box}.replaceChildren(), true")
+    await demo("verifiee")
+    await p.until(f"{box}.classList.contains('done')", 3)
+    await p.js("document.querySelector('#mission-hide').click(), true")
 
 
 async def check_todo(p: Page) -> None:
@@ -1105,7 +1163,7 @@ async def check_todo(p: Page) -> None:
     await p.js(f"{card('T2')}.click()")
     await p.until(f"!!{modal}.querySelector('.todo-detail .todo-hist-row')", 4)
     check("todo : détail (titre, état, pas de note, historique « créée dans À lancer »)", await p.js(
-        f"{modal}.querySelector('.todo-detail-title').textContent === 'Relire la page Plans du HUD'"
+        f"{modal}.querySelector('.todo-detail-title').textContent === 'Relire le plan du déménagement'"
         f" && {modal}.querySelector('.todo-state').textContent === 'À lancer'"
         f" && {modal}.querySelector('.todo-section .todo-empty').textContent === 'Pas de note.'"
         f" && {modal}.querySelector('.todo-hist-row .todo-hist-what').textContent === 'créée dans « À lancer » · par toi'"))
@@ -1152,23 +1210,23 @@ async def check_todo(p: Page) -> None:
         f" && !{modal}.querySelector('.todo-projet')", 3))
     await p.js(f"{modal}.querySelector('.todo-add').click()")
     ok = await p.until(f"!!{small}?.querySelector('input[name=titre]') && !{small}.querySelector('input[name=projet]')", 3)
-    await p.js(f"(() => {{ const i = {small}.querySelector('input[name=titre]'); i.value = 'Écrire le guide du bracelet'; }})()")
+    await p.js(f"(() => {{ const i = {small}.querySelector('input[name=titre]'); i.value = 'Écrire la liste des invités'; }})()")
     await p.js(f"{small}.querySelector('.modal-ok').click()")
     ok = ok and await p.until(f"[...{modal}.querySelectorAll('.todo-col.c-planifier .todo-card-title')]"
-                              ".some(x => x.textContent === 'Écrire le guide du bracelet')", 4)
+                              ".some(x => x.textContent === 'Écrire la liste des invités')", 4)
     add = await p.js("window.__sent.filter(m => m.cmd === 'todo_add').at(-1) || {}")
     check(f"todo : Ajouter dans le projet filtré ({add.get('projet')}), arrive dans À planifier", ok and add.get("projet") == p1)
     await p.js(f"{modal}.querySelector('.todo-add').click()")
     await p.until(f"!!{small}?.querySelector('input[name=titre]')", 3)
-    await p.js(f"(() => {{ const i = {small}.querySelector('input[name=titre]'); i.value = 'Ecrire le guide du bracelet'; }})()")
+    await p.js(f"(() => {{ const i = {small}.querySelector('input[name=titre]'); i.value = 'Ecrire la liste des invites'; }})()")
     await p.js(f"{small}.querySelector('.modal-ok').click()")
     ok = await p.until(f"{small}?.querySelector('.modal-ok')?.textContent === 'Ajouter quand même'", 3)
     dup = await p.js(f"{small}?.querySelector('.modal-text')?.textContent || ''")
-    check(f"todo : doublon proche proposé ({dup[:60]})", ok and "« Écrire le guide du bracelet »" in dup)
+    check(f"todo : doublon proche proposé ({dup[:60]})", ok and "« Écrire la liste des invités »" in dup)
     await p.key("Escape", vk=27)
     await p.until(f"!{small}", 2)
     check("todo : doublon annulé, rien d'ajouté", await p.js(
-        f"[...{modal}.querySelectorAll('.todo-card-title')].filter(x => /crire le guide/.test(x.textContent)).length === 1"
+        f"[...{modal}.querySelectorAll('.todo-card-title')].filter(x => /crire la liste des invit/.test(x.textContent)).length === 1"
         " && window.__sent.filter(m => m.cmd === 'todo_add' && m.force).length === 0"))
 
     # fiche 2 du lot 2 : un Ajouter refusé par le cœur (projet inconnu, Général) garde la boîte ouverte,
@@ -1426,8 +1484,8 @@ async def check_detail_agent(p: Page) -> None:
           and not await p.js("!!document.querySelector('.modal.agent-detail')"))
     await p.js("document.querySelector('.modal.danger .modal-cancel').click()")
     await asyncio.sleep(0.2)
-    await p.js(f"{row_of('Compiler')}.querySelector('.task-open').focus()")
-    ring = await p.js(f"getComputedStyle({row_of('Compiler')}).outlineStyle")
+    await p.js(f"{row_of('Copier les photos')}.querySelector('.task-open').focus()")
+    ring = await p.js(f"getComputedStyle({row_of('Copier les photos')}).outlineStyle")
     await p.key("Enter", vk=13, text="\r")
     check(f"Entrée sur une ligne : détail ouvert (contour de focus de la ligne : {ring})",
           await p.until(detail_open, 4) and ring == "solid")
@@ -1439,7 +1497,7 @@ async def check_detail_agent(p: Page) -> None:
     await close()
 
     # ---------------------------------------------------------- tâches finies
-    check("clic sur une tâche finie en échec : détail ouvert", await open_row("Corriger le paywall"))
+    check("clic sur une tâche finie en échec : détail ouvert", await open_row("Comparer les billets"))
     f = await p.js("""(() => { const m = document.querySelector('.modal.agent-detail');
         return { state: m.querySelector('.ad-state').textContent, fail: m.querySelector('.ad-state').classList.contains('fail'),
           titles: [...m.querySelectorAll('.ad-title')].map(h => h.textContent),
@@ -1448,17 +1506,17 @@ async def check_detail_agent(p: Page) -> None:
     check(f"échec : état « {f['state']} », pas d'« étape en cours », action sans réponse « {f['acts'][0][1] if f['acts'] else ''} »",
           f["state"] == "Échec" and f["fail"] and "Étape en cours" not in f["titles"]
           and f["acts"] and f["acts"][0][0] == "none" and f["acts"][0][1].startswith("sans résultat"))
-    check("passation ambiguë (deux codeurs en même temps) : rien de joint, c'est dit",
+    check("passation ambiguë (deux agents du même métier en même temps) : rien de joint, c'est dit",
           any("autre agent du même métier" in n for n in f["notes"]) and "Résumé final" in f["titles"])
     await asyncio.sleep(0.4)  # fin du fondu d'ouverture
     await p.shot("p18-detail-echec-auto.png")
-    check("clic sur la tâche finie avec passation", await open_row("Lot A du plan P18"))
+    check("clic sur la tâche finie avec passation", await open_row("Liste des cartons"))
     g = await p.js("""(() => { const m = document.querySelector('.modal.agent-detail');
         return { head: m.querySelector('.ad-passation .ad-sub')?.textContent,
           dt: [...m.querySelectorAll('.ad-fields dt')].map(x => x.textContent),
           state: m.querySelector('.ad-state').textContent }; })()""")
     check(f"passation : « {g['head']} », champs {g['dt']}",
-          g["head"] == "Fiche 1 · p18 · vers testeur" and g["dt"] == ["Fait", "À tester", "Risques", "Preuves"]
+          g["head"] == "Fiche 1 · p1 · vers chercheur" and g["dt"] == ["Fait", "À tester", "Risques", "Preuves"]
           and g["state"] == "Terminé")
     errors_before = await p.js("document.querySelectorAll('#toasts .toast.error').length")
     await demo("demo_expire", task_id="d5")
@@ -1559,7 +1617,7 @@ async def check_effort(p: Page) -> None:
     await demo("agent_effort", agent="chercheur", effort="")  # état de la démo rétabli
     await p.key("Escape", vk=27)
     await p.until("!document.querySelector('.modal.agent-detail')", 2)
-    await p.js(f"{row_of('Compiler')}.click()")
+    await p.js(f"{row_of('Copier les photos')}.click()")
     await p.until("!!document.querySelector('.modal.agent-detail .ad-meta')", 4)
     none = await p.js("!document.querySelector('.modal.agent-detail .ad-effort')")
     check("fiche d'une commande de fond : pas de bloc d'effort", none)
@@ -1679,15 +1737,15 @@ async def check_reglages(p: Page) -> None:
     await p.js("__open('connecteurs')")
     labels = await p.js("[...__row('connectors').querySelectorAll('.setting-flag')].map(l => l.textContent)")
     n_set = len(await sent("settings_set"))
-    await p.js("__flag('gmail').click(); __flag('vercel').click()")
+    await p.js("__flag('gmail').click(); __flag('google_calendar').click()")
     await p.until(f"window.__sent.filter(m => m.cmd === 'settings_set').length >= {n_set + 2}", 3)
     last = (await sent("settings_set"))[-1]
     v = last.get("value") or {}
-    shown = await p.until("!__flag('gmail').checked && __flag('vercel').checked", 3)
+    shown = await p.until("!__flag('gmail').checked && __flag('google_calendar').checked", 3)
     check(f"connecteurs : 7 cases ({labels[:3]}…), deux clics rapides → objet complet "
-          f"(gmail={v.get('gmail')}, vercel={v.get('vercel')}, {len(v)} noms)",
+          f"(gmail={v.get('gmail')}, google_calendar={v.get('google_calendar')}, {len(v)} noms)",
           len(labels) == 7 and "Gmail" in labels and last.get("key") == "connectors" and len(v) == 7
-          and v.get("gmail") is False and v.get("vercel") is True and shown)
+          and v.get("gmail") is False and v.get("google_calendar") is True and shown)
     await click("__flag('canva')")
     await p.until("__flag('canva').checked", 3)
     await asyncio.sleep(0.3)
@@ -1797,9 +1855,9 @@ async def check_reglages(p: Page) -> None:
     await p.js("document.querySelector('#settings-chip').click()")
     await p.until("document.querySelectorAll('.modal.wide .settings-group').length === 15", 3)
     again = await p.js("""(() => ({ open: [...document.querySelectorAll('.modal.wide details')].filter(d => d.open).map(d => d.dataset.group),
-        vercel: __flag('vercel').checked }))()""")
+        agenda: __flag('google_calendar').checked }))()""")
     check(f"Échap ferme les réglages ; rouverts : groupes dépliés gardés {again['open']}, valeurs du cœur",
-          closed and again["open"] == ["seuils"] and again["vercel"])
+          closed and again["open"] == ["seuils"] and again["agenda"])
     await p.js("document.querySelector('.modal.wide .modal-x').click()")
     check("la croix ferme les réglages", await p.until("!document.querySelector('.modal-back')", 2))
 
@@ -2230,7 +2288,7 @@ def lot_b_tasks(now: float) -> dict:
     base = {"kind": "agent", "background": True, "channel": "general"}
     return {"type": "tasks", "ts": now,
             "items": [{**base, "id": "b1", "desc": "Agent du lot B", "started": now - 50, "elapsed_s": 50,
-                       "step": "Read astrel/core.py", "tool_uses": 4, "requests": 3, "tokens": 5000}],
+                       "step": "Read meeting-notes.md", "tool_uses": 4, "requests": 3, "tokens": 5000}],
             "done": [{**base, "id": "b2", "desc": "Fini récent", "started": now - 90, "ended": now - 30,
                       "elapsed_s": 60, "status": "completed", "tool_uses": 7, "requests": 2, "tokens": 900},
                      {**base, "id": "b3", "desc": "Fini ancien", "started": now - 500, "ended": now - 400,
@@ -2350,7 +2408,7 @@ async def check_avance_lot_b(p: Page) -> None:
     check(f"P23 lot B Avancé « En cours » : {[(x['title'], x['step'], x['cost']) for x in k['current']]}, historique "
           f"« {k['head']} » {[x['title'] for x in k['history']]}",
           [x["title"] for x in k["current"]] == ["Agent du lot B", "Fini récent"]
-          and k["current"][0]["step"] == "Read astrel/core.py · 4 actions" and k["current"][0]["cost"] == "3 requêtes · 5 k tokens"
+          and k["current"][0]["step"] == "Read meeting-notes.md · 4 actions" and k["current"][0]["cost"] == "3 requêtes · 5 k tokens"
           and k["current"][1]["step"] == "Terminé · 7 actions"
           and [x["title"] for x in k["history"]] == ["Commande finie", "Fini ancien"]
           and k["head"] == "Historique (2)" and not k["open"])
@@ -2602,7 +2660,7 @@ async def check_reglages_connecteurs_icones(p: Page) -> None:
       return { flags, status };
     })()""")
     by = {f["name"]: f for f in r["flags"]}
-    known = ["vercel", "figma", "claude_docs", "gmail", "google_drive", "dropbox"]
+    known = ["google_calendar", "figma", "claude_docs", "gmail", "google_drive", "dropbox"]
     check(f"Connecteurs : une icône (masque) par service connu ({[n for n in known if 'url(' in by.get(n, {}).get('mask', '')]})",
           all("url(" in by[n]["mask"] and not by[n]["letter"] for n in known))
     check(f"Connecteurs : Canva sans icône locale → pastille à lettre ({by['canva']['text']!r}, {by['canva']['mask']!r})",
@@ -2994,13 +3052,13 @@ async def check_plans(p: Page) -> None:
           d["sections"] == ["Étapes", "Fichiers", "Risques", "Lots", "Vérification"]
           and d["points"] == [f"p{i}" for i in range(1, 10)] and d["buttons"] == 9)
     check(f"remarque gardée sous son point p2, « non envoyée » ({(d['p2'] or '')[:60]}…)",
-          d["p2"] and "Garde le même style" in d["p2"] and "non envoyée" in d["p2"])
+          d["p2"] and "prévenir la mutuelle" in d["p2"] and "non envoyée" in d["p2"])
     check("points en markdown sûr : code en ligne rendu, piège <img onerror> affiché en texte, aucune balise active",
           d["code"] == 1 and "<img src=x onerror=alert(1)>" in d["trap"] and d["bad"] == 0)
     check(f"fil du plan : réponse d'Astrel en markdown, émoji retiré ({(d['astrel'] or '')[-50:]!r})",
           d["astrel"] and "un seul lot" in d["astrel"] and d["strong"] == 1 and "✅" not in d["astrel"])
     check(f"demande rappelée, boutons « {d['validate']} » et « {d['revise']} » actifs",
-          d["request"] and d["request"].startswith("Fais-moi la page Plans") and d["validate"] == "Valider la version 1"
+          d["request"] and d["request"].startswith("Aide-moi à organiser le déménagement") and d["validate"] == "Valider la version 1"
           and not d["vdis"] and d["revise"] == "Demander une révision (1)" and not d["rdis"])
     found = await p.js(EMOJI_DOM_JS)
     check(f"page Plans : aucun émoji dans le DOM ({found[:5]})", found == [])
@@ -3104,15 +3162,15 @@ async def check_plans(p: Page) -> None:
     await p.js("__pl('.plan-reject').click()")
     await p.until("!!document.querySelector('.modal.danger textarea')", 2)
     await p.js("document.querySelector('.modal.danger textarea').focus()")
-    await p.send("Input.insertText", text="Pas de bracelet pour l'instant")
+    await p.send("Input.insertText", text="Pas de fête pour l'instant")
     await p.js("document.querySelector('.modal.danger .modal-ok').click()")
     await p.until("window.__sent.some(m => m.cmd === 'plan_reject')", 3)
     last = (await sent("plan_reject"))[-1]
     check(f"Rejeter : boîte rouge avec motif, plan_reject envoyé ({last.get('plan_id')}, {last.get('reason')!r})",
-          last.get("plan_id") == "P4" and last.get("reason") == "Pas de bracelet pour l'instant")
+          last.get("plan_id") == "P4" and last.get("reason") == "Pas de fête pour l'instant")
     check("rejeté : filtre « Rejetés », motif affiché", await p.until(
         "__pl('.plans-filter.on')?.dataset.filter === 'rejected'"
-        " && __pl('.plan-note')?.textContent === \"Rejeté : Pas de bracelet pour l'instant\"", 3))
+        " && __pl('.plan-note')?.textContent === \"Rejeté : Pas de fête pour l'instant\"", 3))
 
     # ---------------------------------------------------------- mode Auto : validé dès le dépôt
     await p.js("__pl('.plans-mode-opt.m-auto').click()")
@@ -3145,8 +3203,8 @@ async def check_plans(p: Page) -> None:
     await demo("demo_plans_offline", on=False)
     await p.js("__pl('.plans-retry').click()")
     check("Réessayer : P3 chargé, motif du rejet, titre sans émoji", await p.until(
-        "__pl('.plan-note')?.textContent === 'Rejeté : Trop gros pour cette semaine : on garde le graphe actuel.'"
-        " && __pl('.plan-title')?.textContent === 'Refonte complète du graphe 3D'", 4))
+        "__pl('.plan-note')?.textContent === 'Rejeté : Trop gros pour ce mois-ci : on garde la cuisine actuelle.'"
+        " && __pl('.plan-title')?.textContent === 'Refaire toute la cuisine'", 4))
 
     await p.key("Escape", vk=27)
     check("Échap ferme la page Plans", await p.until("!document.querySelector('.modal.plans')", 2))
@@ -3221,20 +3279,21 @@ async def check_icones(p: Page) -> None:
 
     # ---------------------------------------------------------- texte du serveur : émojis retirés à l'affichage
     srv = await p.js("""(async () => {
-        const m = [...document.querySelectorAll('.msg.astrel')].find(x => x.textContent.includes('469 tests'));
+        const m = [...document.querySelectorAll('.msg.astrel')].find(x => x.textContent.includes('Trois mails ce matin'));
         if (!m) return null;
         let got = null;
         navigator.clipboard.writeText = async (t) => { got = t; };
         m.querySelector('.copy-btn').click();
         await new Promise(r => setTimeout(r, 100));
-        const act = [...document.querySelectorAll('#activity-list .act')].map(a => a.textContent).find(t => t.includes('preuves formelles'));
+        const act = [...document.querySelectorAll('#activity-list .act')].map(a => a.textContent).find(t => t.includes('assurances habitation'));
         return { shown: m.querySelector('.md').textContent, raw: got, act };
     })()""")
     check(f"réponse affichée sans émoji, copie brute intacte ({srv and srv['shown']!r})",
-          srv and srv["shown"] == "Les 469 tests de Boutique passent. À Lille, dix-neuf degrés et un ciel dégagé ce soir."
+          srv and srv["shown"] == ("Trois mails ce matin, dont la facture d'électricité à régler avant vendredi. "
+                                   "À Nantes, dix-sept degrés et un ciel dégagé ce soir.")
           and "✅" in (srv["raw"] or ""))
     check(f"notice du serveur sans émoji dans l'activité ({srv and srv['act']!r})",
-          srv and srv["act"] and "Terminé : Recherche sur les preuves formelles" in srv["act"] and not EMOJI_SRC.search(srv["act"]))
+          srv and srv["act"] and "Terminé : Comparatif des assurances habitation" in srv["act"] and not EMOJI_SRC.search(srv["act"]))
 
 
 FIL_JS = """(() => { const t = document.querySelector('#transcript'), tb = t.getBoundingClientRect();
@@ -4225,7 +4284,7 @@ async def check_videos_ia(p: Page) -> None:
     advanced = await p.until(f"({step}) !== {json.dumps(first)}", 3)  # rafraîchi chaque seconde
     later = await p.js(step)
     check(f"vidéo IA : carte en cours « {info['credit']} », « {first} » puis « {later} », bouton « {info['cancel']} »",
-          ok and info["head"] == "Vidéo IA" and info["credit"] == "Veo 3.1 Lite · 8 s · 10 crédits · compte amw"
+          ok and info["head"] == "Vidéo IA" and info["credit"] == "Veo 3.1 Lite · 8 s · 10 crédits · compte principal"
           and info["cancel"] == "Annuler" and info["role"] == "status" and info["aria"] == "Vidéo générée par une IA"
           and advanced and later.startswith("Google Flow génère la vidéo… · 0:0"))
     ok = await p.until(f"{last}.classList.contains('image-fini') && !!{last}.nextElementSibling?.querySelector('.media-video')", 10)
@@ -4260,7 +4319,7 @@ async def check_videos_panneau(p: Page) -> None:
     await p.until("!document.querySelector('#image-panel').classList.contains('hidden')", 3)
     await p.js("[...document.querySelectorAll('.ip-kind button')].find(b => b.textContent === 'Vidéo').click()")
     ok = await p.until("document.querySelector('.ip-video-choice').options.length > 0 "
-                       "&& /Crédits : amw \\d+\\/50/.test(document.querySelector('.ip-note').textContent)", 4)
+                       "&& /Crédits : principal \\d+\\/50/.test(document.querySelector('.ip-note').textContent)", 4)
     info = await p.js("""(() => { const pn = document.querySelector('#image-panel'), s = pn.querySelector('.ip-video-choice'),
             d = pn.querySelector('.ip-video-length');
         return { title: pn.querySelector('.ip-title').textContent, value: s.value, length: d.value,
@@ -4300,7 +4359,7 @@ async def check_videos_panneau(p: Page) -> None:
           f"format: {g and g.get('format')!r}}}, carte « {credit} », prompt vidé",
           ok and g.get("prompt") == "une vague qui se brise au ralenti" and g.get("image") == "" and "engine" not in g
           and g.get("image_fin") == "" and g.get("format") == "16:9"
-          and "model" not in g and credit == "Omni 1.1 Flash (720p) · 4 s · 7 crédits · compte amw"
+          and "model" not in g and credit == "Omni 1.1 Flash (720p) · 4 s · 7 crédits · compte principal"
           and await p.js("document.querySelector('.ip-prompt').value === ''"))
     await check_videos_format_fin(p, last)
     # Réglages › Images IA (roue du panneau) : crédits vidéo par compte
@@ -4308,7 +4367,7 @@ async def check_videos_panneau(p: Page) -> None:
     ok = await p.until("/crédits restants/.test(document.querySelector('.setting[data-key=\"videos.comptes\"]')?.textContent || '')", 4)
     lines = await p.js("[...document.querySelectorAll('.setting[data-key=\"videos.comptes\"] .info-line')].map(l => l.textContent)")
     check(f"P41 B4 Réglages : crédits vidéo par compte ({lines[:2]})",
-          ok and any(l.startswith("amw · Google Flow") and "/50 crédits restants" in l and "renouvelés" in l for l in lines))
+          ok and any(l.startswith("principal · Google Flow") and "/50 crédits restants" in l and "renouvelés" in l for l in lines))
     await p.key("Escape", vk=27)
     await p.until("!document.querySelector('.modal')", 3)
     # remis comme avant : réglage par défaut, onglet Image, panneau fermé
@@ -4415,7 +4474,7 @@ async def check_videos_format_fin(p: Page, last: str) -> None:
 async def check_images_ia(p: Page) -> None:
     """21/10 (plan P14, demande de l'utilisateur) : carte d'une image IA dans le fil. Animation de
     chargement et étape tant que l'image n'est pas finie, puis l'image (visionneuse au clic) et
-    « Généré avec Gemini · compte amw » ; échec : raison, texte de l'IA, « Réessayer » ; grille
+    « Généré avec Gemini · compte principal » ; échec : raison, texte de l'IA, « Réessayer » ; grille
     des variantes ; animation coupée par prefers-reduced-motion. Vrai module `images_ia` de la
     démo, faux worker (aucun navigateur, aucun site)."""
     await p.send("Emulation.setDeviceMetricsOverride", width=1280, height=800, deviceScaleFactor=1, mobile=False)
@@ -4452,7 +4511,7 @@ async def check_images_ia(p: Page) -> None:
                  hidden: c.classList.contains('hidden') }}; }})()""")
     check(f"image IA : carte de chargement animée ({info['anim']}), étape « {info['step']} », rôle {info['role']}",
           ok and info["anim"] == "image-sweep" and info["role"] == "status" and not info["hidden"]
-          and info["prompt"].startswith("un caméléon") and info["head"] == "Image IA")
+          and info["prompt"].startswith("un phare") and info["head"] == "Image IA")
     await p.until(f"{last}.querySelector('.image-step')?.textContent === 'Gemini génère l\\'image…'", 5)
     await card_shot("21-image-chargement.png", ".msg.image-job.image-en_cours")
     ok = await p.until(f"{last}.classList.contains('image-fini') && {last}.querySelector('.image-view img')?.naturalWidth > 0", 12)
@@ -4462,7 +4521,7 @@ async def check_images_ia(p: Page) -> None:
                  title: c.querySelector('.image-credit').title }}; }})()""")
     check(f"image IA : image affichée ({info['w']:.0f} px), animation retirée, « {info['credit']} »",
           ok and not info["shimmer"] and info["src"] and info["w"] > 200
-          and info["credit"] == "Généré avec Gemini · compte amw" and info["title"].startswith("Enregistrée dans Images-IA : "))
+          and info["credit"] == "Généré avec Gemini · compte principal" and info["title"].startswith("Enregistrée dans Images-IA : "))
     await card_shot("22-image-finie.png", ".msg.image-job.image-fini")
     await p.js(f"{last}.querySelector('.image-view').click()")
     opened = await p.until("!!document.querySelector('.modal.viewer img.viewer-img')", 3)
@@ -4571,7 +4630,7 @@ async def check_images_panneau(p: Page) -> None:
     shown = await p.js(f"!{last}.classList.contains('hidden')")  # canal ouvert du HUD, comme une phrase tapée
     check(f"P40 A5 auto : image_generate {{engine: {g and g.get('engine')}, files: {g and g.get('files')}}}, carte « {credit} », prompt vidé",
           g and g.get("engine") == "auto" and g.get("prompt") == "un phare breton sous la pluie" and g.get("files") == []
-          and "model" not in g and isinstance(g.get("channel"), str) and g["channel"] and shown and done and credit == "Généré avec Gemini · compte amw"
+          and "model" not in g and isinstance(g.get("channel"), str) and g["channel"] and shown and done and credit == "Généré avec Gemini · compte principal"
           and await p.js("document.querySelector('.ip-prompt').value === ''"))
     # prompt vide : rien ne part
     n_gen = await count("image_generate")
@@ -4598,7 +4657,7 @@ async def check_images_panneau(p: Page) -> None:
           await p.js("document.querySelector('.ip-mode button.on').textContent") == "Manuel"
           and await p.js("window.__sent.filter(m => m.cmd === 'settings_set' && m.key === 'images_mode').length") == n_mode)
     await shot("2-panneau-manuel.png")
-    await p.js("""(() => { const a = document.querySelector('.ip-prompt'); a.value = 'un logo de caméléon';
+    await p.js("""(() => { const a = document.querySelector('.ip-prompt'); a.value = 'une carte de vœux';
         document.querySelector('.ip-send').click(); })()""")
     ok = await p.until(f"{last}.classList.contains('image-echec') && !!{last}.querySelector('.image-other')", 8)
     g = await last_sent("image_generate")
@@ -4705,13 +4764,13 @@ async def check_images_panneau(p: Page) -> None:
           acc["group"] == "image" and dict(acc["icons"]) == {"images_mode": "zap", "images_ordre": "layers", "images_manuel": "target",
                                                                "images.comptes": "user", "images.plafonds": "gauge",
                                                                "video_choix": "play", "videos.comptes": "play"})  # P41 B4
-    check(f"P40 A5 comptes dans l'ordre du repli ({list(rows)}) : amw compté ({rows.get('amw', {}).get('lines')}), boutique épuisé, perso pas connecté, Bing sans compte",
-          ok and list(rows) == ["amw", "boutique", "perso", "Bing Image Creator"]
-          and len(rows["amw"]["lines"]) == 1 and re.fullmatch(r"GeminiDisponible · ([4-9]|1\d)/20 aujourd'hui", rows["amw"]["lines"][0])
-          and rows["boutique"]["lines"][0].startswith("GeminiÉpuisé, de nouveau essayé vers ")
+    check(f"P40 A5 comptes dans l'ordre du repli ({list(rows)}) : principal compté ({rows.get('principal', {}).get('lines')}), famille épuisé, perso pas connecté, Bing sans compte",
+          ok and list(rows) == ["principal", "famille", "perso", "Bing Image Creator"]
+          and len(rows["principal"]["lines"]) == 1 and re.fullmatch(r"GeminiDisponible · ([4-9]|1\d)/20 aujourd'hui", rows["principal"]["lines"][0])
+          and rows["famille"]["lines"][0].startswith("GeminiÉpuisé, de nouveau essayé vers ")
           and rows["perso"]["lines"] == ["ChatGPTPas connecté · 0/3 sur 24 h"]
           and rows["Bing Image Creator"]["buttons"] == []
-          and rows["perso"]["buttons"][0] == "Connecter" and rows["amw"]["buttons"][0] == "Reconnecter")
+          and rows["perso"]["buttons"][0] == "Connecter" and rows["principal"]["buttons"][0] == "Reconnecter")
     check(f"P40 A5 plafonds ({acc['caps']})",
           acc["caps"] == ["Gemini20 par compte et par jour (remise à zéro à minuit) · pièces jointes acceptées",
                           "ChatGPT3 par compte sur 24 h (depuis la première image) · pièces jointes acceptées",
@@ -4724,14 +4783,14 @@ async def check_images_panneau(p: Page) -> None:
                        " && /Fenêtre de connexion ouverte/.test(document.querySelector('.img-account[data-alias=perso]').textContent)"
                        " && document.querySelector('[data-fkey=\"images|perso|connecter\"]').disabled", 4)
     check("P40 A5 « Connecter » : image_compte_connecter, message de la fenêtre, bouton grisé tant qu'elle est ouverte", ok)
-    # monter boutique : ordre [boutique, amw, perso], puis le redescendre
-    await p.js("document.querySelector('[data-fkey=\"images|boutique|monter\"]').click()")
+    # monter famille : ordre [famille, principal, perso], puis le redescendre
+    await p.js("document.querySelector('[data-fkey=\"images|famille|monter\"]').click()")
     await p.until("window.__sent.some(m => m.cmd === 'image_compte_ordre')", 3)
     o = await last_sent("image_compte_ordre")
-    ok = await p.until("[...document.querySelectorAll('.img-account[data-alias]')].map(l => l.dataset.alias).join() === 'boutique,amw,perso'", 3)
-    check(f"P40 A5 monter boutique : image_compte_ordre {o.get('ordre')}, liste redessinée", ok and o.get("ordre") == ["boutique", "amw", "perso"])
-    await p.js("document.querySelector('[data-fkey=\"images|boutique|descendre\"]').click()")
-    await p.until("[...document.querySelectorAll('.img-account[data-alias]')].map(l => l.dataset.alias).join() === 'amw,boutique,perso'", 3)
+    ok = await p.until("[...document.querySelectorAll('.img-account[data-alias]')].map(l => l.dataset.alias).join() === 'famille,principal,perso'", 3)
+    check(f"P40 A5 monter famille : image_compte_ordre {o.get('ordre')}, liste redessinée", ok and o.get("ordre") == ["famille", "principal", "perso"])
+    await p.js("document.querySelector('[data-fkey=\"images|famille|descendre\"]').click()")
+    await p.until("[...document.querySelectorAll('.img-account[data-alias]')].map(l => l.dataset.alias).join() === 'principal,famille,perso'", 3)
     # ajouter (nom refusé, puis accepté), retirer (boîte rouge)
     await p.js("document.querySelector('[data-fkey=\"images|ajouter|google\"]').click()")
     await p.until("!!document.querySelector('.modal:not(.wide) input')", 2)
@@ -4846,7 +4905,7 @@ async def check_medias(p: Page) -> None:
           f"/api/media/<id> seulement ({info['srcs']}), paresseuses ({info['lazy']}), « {info['at']} » (◀ grisé), "
           f"audio {info['audio']}, aucune <video> avant le clic (bouton « {info['play']} »), cachée {info['hidden']}, "
           f"déborde {info['wide']}",
-          ok and info["title"] == "Maquettes et devis pour Studio" and info["srcs"] and info["lazy"] and info["at"] == "1/3"
+          ok and info["title"] == "Affiches et devis pour la fête des voisins" and info["srcs"] and info["lazy"] and info["at"] == "1/3"
           and info["prev"] and info["audio"] == ["none", True, True] and not info["video"] and info["play"] == "Lire la vidéo"
           and not info["hidden"] and not info["wide"])
     check(f"P26 Avancé : taille « {info['size']} » et chemin d'origine visibles ({info['path'][:30]}…)",
@@ -4915,7 +4974,7 @@ async def check_medias(p: Page) -> None:
     # question à choix illustrée
     await demo("demo_media", kind="choice")
     q = "[...document.querySelectorAll('.msg.choice')].at(-1)"
-    ok = await p.until(f"{q}?.querySelector('.choice-question').textContent === 'Quel logo pour Studio ?'"
+    ok = await p.until(f"{q}?.querySelector('.choice-question').textContent === 'Quelle affiche pour la fête des voisins ?'"
                        f" && {q}.querySelectorAll('.choice-gallery .media-thumb img').length === 3", 6)
     letters = await p.js(f"[...{q}.querySelectorAll('.choice-gallery .media-letter')].map(e => e.textContent)")
     pos = await p.js(f"[...{q}.children].map(c => c.classList.contains('choice-gallery') ? 'choice-gallery' : c.className.split(' ')[0])")

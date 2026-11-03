@@ -20,6 +20,9 @@ compte détecté par `demo_wa_scan`, confirmé, délié) et guide de démarrage 
 `astrel.guide` sur docs/GUIDE-DEMARRAGE.md, progression dans le dossier jetable).
 26/10 (plan P38 lot 2) : vue « Tâches » (vrai module `astrel.todo`, todo.json et journal dans le
 dossier jetable, statut des plans lu dans `DemoPlans`) ; l'agent d1 cite le plan P2 (`refs`).
+02/11 (consigne de l'utilisateur) : données d'un assistant personnel (mails, agenda, recherches, rappels,
+documents, déménagement), noms fictifs ; ni code, ni build, ni commit, ni agent qui code. Canaux de la
+démo à elle (`CANAUX_DEMO`), jamais ceux de la machine.
 
 Sert à régler l'interface et à la tester sans rien consommer sur l'abonnement.
 """
@@ -52,18 +55,16 @@ from astrel.sensors import sensors  # noqa: E402
 from astrel.server import HudServer, login_url  # noqa: E402
 from astrel import todo as todo_mod  # noqa: E402  (26/10, plan P38 lot 2)
 
-# Canaux de la démo (dépôt public) : des projets d'exemple.
-# Noms de canaux : jamais traduits (ni dans l'inventaire des textes d'écran).
+# Canaux de la démo (02/11) : des sujets d'exemple, fictifs. Noms de canaux : jamais traduits.
 CANAUX_DEMO = {"default": "general", "channels": [
     dict(id=cid, label=nom, color=couleur, **kw) for cid, nom, couleur, kw in (
         ("general", "Général", "#3ad6ff", {}),
-        ("astrel", "Astrel", "#7ea8ff", {"keywords": ["relève", "bulle", "HUD", "garde-fou"],
-                                         "workdir": "/home/user/Projets/Astrel"}),
-        ("studio", "Studio", "#34e3a4", {"keywords": ["bracelet"]}),
-        ("compta", "Compta", "#9d7bff", {}),
-        ("boutique", "Boutique", "#ff9d4d", {}),
-        ("trading", "Trading", "#ffd54a", {"keywords": ["backtest"]}),
-        ("loisirs", "Loisirs", "#c3f36b", {}),
+        ("maison", "Maison", "#7ea8ff", {"keywords": ["courses", "ménage", "déménagement", "cartons"]}),
+        ("voyages", "Voyages", "#34e3a4", {"keywords": ["train", "billet", "gîte", "vacances"]}),
+        ("famille", "Famille", "#9d7bff", {"keywords": ["anniversaire", "Léa"]}),
+        ("papiers", "Papiers", "#ff9d4d", {"keywords": ["mails", "factures", "banque", "assurance"]}),
+        ("sport", "Sport", "#ffd54a", {"keywords": ["piscine", "course à pied"]}),
+        ("lecture", "Lecture", "#c3f36b", {"keywords": ["livre", "bibliothèque"]}),
     )]}
 
 INIT = {
@@ -72,8 +73,8 @@ INIT = {
               "TodoWrite", "mcp__astrel__screen_capture", "mcp__astrel__set_volume", "mcp__astrel__notify",
               "mcp__astrel__memory_search", "mcp__astrel__memory_write", "mcp__playwright__browser_navigate",
               "mcp__playwright__browser_snapshot", "mcp__playwright__browser_click"],
-    "skills": ["deep-research", "dataviz", "code-review", "simplify", "debug", "anthropic-skills:pdf",
-               "anthropic-skills:docx", "anthropic-skills:xlsx", "anthropic-skills:pptx", "anthropic-skills:skill-creator"],
+    "skills": ["deep-research", "dataviz", "anthropic-skills:pdf", "anthropic-skills:docx", "anthropic-skills:xlsx",
+               "anthropic-skills:pptx"],
     "agents": ["Explore", "Plan", "general-purpose"],
     "mcp_servers": [{"name": "astrel", "status": "connected"}, {"name": "playwright", "status": "connected"}],
     "session_id": "demo",
@@ -97,13 +98,13 @@ def sequence() -> None:
     for i in range(40):
         bus.publish("level", source="mic", value=round(0.3 + 0.4 * abs(math.sin(i / 3)), 3))
         time.sleep(0.05)
-    question = "Est-ce que les tests de Boutique passent ? Et regarde la météo à Lille."
+    question = "Qu'est-ce que j'ai dans mes mails ce matin ? Et regarde la météo à Nantes."
     channel, _ = channels.route(question)
     mid = uuid.uuid4().hex[:12]
     bus.publish("transcript", who="user", text=question, source="voix", channel=channel, mid=mid)
     bus.publish("state", state="thinking", text=question, muted=False, detail="")
     time.sleep(1.2)
-    for tool, desc in (("Bash", "npm test dans Boutique"), ("WebSearch", "météo Lille"),
+    for tool, desc in (("mcp__claude_ai_Gmail__search_threads", "mails de ce matin"), ("WebSearch", "météo Nantes"),
                        ("mcp__astrel__screen_capture", "écran principal")):
         tid = f"t{time.time()}"
         node = graph.record_use(tool)
@@ -113,18 +114,19 @@ def sequence() -> None:
         bus.publish("tool_result", tool=tool, id=tid, ok=True, text="ok")
     graph.publish()
     # Émojis comme Claude en met parfois : affichés SANS par le HUD, gardés dans le texte brut (copie, lecture).
-    reply = "Les 469 tests de Boutique passent ✅. À Lille, dix-neuf degrés et un ciel dégagé ce soir 🌤️."
+    reply = ("Trois mails ce matin, dont la facture d'électricité à régler avant vendredi ✅. "
+             "À Nantes, dix-sept degrés et un ciel dégagé ce soir 🌤️.")
     for word in reply.split(" "):
         bus.publish("reply_delta", text=word + " ", channel=channel, reply_to=mid)
         time.sleep(0.05)
     speak(reply, 4.5)
     bus.publish("reply", text=reply, usage={}, channel=channel, reply_to=mid, mid=uuid.uuid4().hex[:12])
-    # Un agent de fond lancé depuis Compta finit pendant ce temps : son compte
-    # rendu va dans le canal Compta (pastille de non-lus si un autre est ouvert),
+    # Un agent de fond lancé depuis un autre canal finit pendant ce temps : son compte
+    # rendu va dans ce canal (pastille de non-lus si un autre est ouvert),
     # en silence, avec un bouton « Lire » (mode « à la demande »).
     other = next((c.id for c in channels.items() if c.id not in (channel, channels.default)), channels.default)
-    bus.publish("notice", level="info", channel=other, text="✅ Terminé : Recherche sur les preuves formelles")
-    report = "La recherche est finie : trois pistes sérieuses, je te les détaille quand tu veux."
+    bus.publish("notice", level="info", channel=other, text="✅ Terminé : Comparatif des assurances habitation")
+    report = "La recherche est finie : trois offres sérieuses, je te les détaille quand tu veux."
     rid = uuid.uuid4().hex[:12]
     pending = reports.on_demand
     reports.add(rid, report, other, pending)
@@ -136,10 +138,11 @@ def sequence() -> None:
         {"name": "five_hour", "pct": 18, "utilization": 0.18, "resetsAt": time.time() + 7200},
         {"name": "seven_day", "pct": 7, "utilization": 0.07, "resetsAt": time.time() + 400000}])
     time.sleep(1)
-    bus.publish("confirm", id="demo1", pending=True, tool="Bash", desc="un commit git",
-                cmd='git -C /home/user/Projets/Boutique commit -m "Corrige le paywall"',
-                question="Attention, un commit git. Je continue ?")
-    bus.publish("state", state="asking", text="", muted=False, detail="un commit git")
+    bus.publish("confirm", id="demo1", pending=True, tool="mcp__claude_ai_Gmail__send_message",
+                desc="l'envoi d'un e-mail",
+                cmd="À : agence@immo-exemple.fr · Objet : Préavis de départ du logement",
+                question="Attention, l'envoi d'un e-mail. Je continue ?")
+    bus.publish("state", state="asking", text="", muted=False, detail="l'envoi d'un e-mail")
 
 
 # Réponse de démonstration du rendu markdown du fil (15/10), avec des pièges :
@@ -147,48 +150,47 @@ def sequence() -> None:
 MARKDOWN_DEMO = """## Bilan de la journée
 Trois points **importants**, puis le détail :
 
-1. Les tests de *Boutique* passent (`npm test`, 469 verts).
-2. Le build Android est en file :
-   - soumis à 16 h 08 ;
-   - à surveiller sur [Expo](https://expo.dev/accounts).
-3. Reste à relire `astrel/core.py`.
+1. La facture d'*électricité* est réglée (`prélèvement du 15`, 82 €).
+2. Le colis de la librairie est en route :
+   - expédié à 16 h 08 ;
+   - à suivre sur [La Poste](https://www.laposte.fr/outils/suivre-vos-envois).
+3. Reste à relire `bail-appartement.pdf`.
 
-### Commande utile
-```bash
-.venv/bin/python -m pytest -q
+### Liste de courses
+```
+pain, œufs, tomates, café
 ```
 
 > Pièges (doivent rester du texte) : <script>alert(1)</script>, <img src=x onerror=alert(2)>,
 > [clique ici](javascript:alert(3)) et ![pisteur](https://pisteur.example/p.gif)
 
 ---
-Plus d'infos : https://docs.anthropic.com/fr/home."""
+Météo détaillée : https://meteofrance.com."""
 
 
 # 19/10 (demande : « tableau, schéma et autre ? ») : tableau aligné, schéma ASCII dans un
 # bloc ``` (espaces gardés), liste, code ; « démo tableau » dans la barre.
-TABLE_DEMO = """### Comparatif des builds
-| Plateforme | Build | État | Durée |
-|:-----------|:-----:|------|------:|
-| Android | n°9 | **en file** chez Expo | 14 min |
-| iOS | n°4 | validé par Apple | 22 min |
-| Web | — | `npm run build` vert | 1 min |
+TABLE_DEMO = """### Comparatif des trajets
+| Trajet | Train | État | Durée |
+|:-------|:-----:|------|------:|
+| Nantes → Bordeaux | n°8 | **complet** à 8 h 12 | 4 h 05 |
+| Nantes → Bordeaux | n°9 | places libres | 4 h 20 |
+| Nantes → Paris | — | `billet échangeable` | 2 h 10 |
 
-Schéma du trajet d'une phrase :
+Schéma du trajet du samedi :
 ```
- micro ──> VAD ──> Whisper ──> Claude
+ maison ──> gare ──> train ──> Bordeaux
                                  │
- haut-parleur <── Edge Rémy <────┘
+ hôtel <──── tram <──────────────┘
 ```
 
 À faire ensuite :
-- relancer le build **Android** ;
-- lire [la doc Expo](https://docs.expo.dev/build/introduction/) ;
+- réserver le train **n°9** ;
+- lire [la page de la ville](https://fr.wikipedia.org/wiki/Bordeaux) ;
 - vérifier http://non-cliquable.example (http reste du texte).
 
-```python
-def total(lignes):
-    return sum(l.duree for l in lignes)  # en minutes
+```
+Budget : 2 billets × 39 € = 78 €
 ```"""
 
 
@@ -206,10 +208,10 @@ def stream_markdown(channel: str, reply_to: str, text: str = MARKDOWN_DEMO) -> N
 # épinglage dans le rejeu, et une nouvelle question dans un canal ANNULE celle qui y
 # attendait encore (`choice_answered` avec `cancelled: true`).
 DEMO_CHOICES = [
-    ("Le build Android a échoué sur la signature. Je fais quoi ?",
-     ["Relancer avec la clé de secours", "Attendre ton retour", "Abandonner ce build"]),
-    ("Quel nom pour le nouveau canal ?", ["Trading", "Bourse"]),
-    ("On publie la mise à jour ce soir ?", ["Oui, à 20 h", "Demain matin", "Pas cette semaine", "Je regarde d'abord"]),
+    ("Le train de 8 h 12 est complet. Je fais quoi ?",
+     ["Prendre celui de 9 h 40", "Attendre ton retour", "Laisser tomber ce trajet"]),
+    ("Quel nom pour le nouveau canal ?", ["Jardin", "Potager"]),
+    ("On réserve le restaurant pour samedi ?", ["Oui, à 20 h", "Dimanche midi", "Pas cette semaine", "Je regarde d'abord"]),
 ]
 choice_count = {"n": 0}
 
@@ -225,8 +227,8 @@ def publish_choice(channel: str) -> str:
 # aucun site. `demo_image` {mode} : ok (une image), variantes (grille de 4, forme de Bing),
 # refus (échec avec le texte de l'IA), lent (reste en chargement jusqu'à l'arrêt de la démo).
 DEMO_IMAGE_PROMPTS = {
-    "ok": "un caméléon vert et orange sur une branche, style aquarelle",
-    "variantes": "quatre variantes d'un logo de caméléon minimaliste",
+    "ok": "un phare breton au lever du soleil, style aquarelle",
+    "variantes": "quatre variantes d'une carte d'anniversaire minimaliste",
     "refus": "une photo réaliste d'une personne célèbre",
     "lent": "une ville futuriste au coucher du soleil, vue du ciel",
 }
@@ -243,8 +245,8 @@ def make_demo_images(root: Path):
     config.IMAGES_DEBUG_DIR = root / "imagegen" / "debug"
     config.IMAGES_LOG = root / "images.log"
     config.IMAGES_SORTIE = root / "Images-IA"
-    config.IMAGES_COMPTES = (("amw", "gemini"),)
-    (config.IMAGES_PROFILS / "amw").mkdir(parents=True, exist_ok=True)
+    config.IMAGES_COMPTES = (("principal", "gemini"),)
+    (config.IMAGES_PROFILS / "principal").mkdir(parents=True, exist_ok=True)
     config.IMAGES_SORTIE.mkdir(parents=True, exist_ok=True)
     modes: list[str] = []
     stop = threading.Event()
@@ -284,16 +286,16 @@ def make_demo_images(root: Path):
     demo = images_ia.Images(runner=runner)
 
     # 28/10 (plan P40 lot A5) : comptes de la démo pour le panneau « Images » et Réglages › Images
-    # (dossier jetable) : amw (Google, connecté, 3 images), boutique (Google, épuisé, reprise dans 3 h),
+    # (dossier jetable) : principal (Google, connecté, 3 images), famille (Google, épuisé, reprise dans 3 h),
     # perso (OpenAI, jamais connecté). La connexion n'ouvre AUCUN Chrome ici : fenêtre simulée.
     from astrel import ia_connexion, ia_web
 
-    ia_web.ecrire_comptes([{"alias": "amw", "fournisseur": "google"}, {"alias": "boutique", "fournisseur": "google"},
+    ia_web.ecrire_comptes([{"alias": "principal", "fournisseur": "google"}, {"alias": "famille", "fournisseur": "google"},
                            {"alias": "perso", "fournisseur": "openai"}])
-    (config.IMAGES_PROFILS / "boutique").mkdir(parents=True, exist_ok=True)
+    (config.IMAGES_PROFILS / "famille").mkdir(parents=True, exist_ok=True)
     for _ in range(3):
-        demo.etat.compter("amw", "gemini")
-    demo.etat.epuise("boutique", "You've reached your limit for today.", "+3h", False, moteur="gemini")
+        demo.etat.compter("principal", "gemini")
+    demo.etat.epuise("famille", "You've reached your limit for today.", "+3h", False, moteur="gemini")
     ouvertes: set[str] = set()
 
     def ouvrir(alias: str, **_kw) -> dict:
@@ -349,7 +351,7 @@ def make_demo_media(root: Path):
     src = root / "medias-src"
     src.mkdir(exist_ok=True)
 
-    def logo(name: str, color: tuple, w: int = 960, h: int = 640) -> Path:
+    def affiche(name: str, color: tuple, w: int = 960, h: int = 640) -> Path:
         im = Image.new("RGB", (w, h), (12, 18, 32))
         d = ImageDraw.Draw(im)
         d.ellipse([w // 2 - 200, h // 2 - 200, w // 2 + 200, h // 2 + 200], fill=color)
@@ -357,8 +359,8 @@ def make_demo_media(root: Path):
         im.save(src / name, "PNG")
         return src / name
 
-    files = {k: logo(f"logo-{k}.png", c) for k, c in
-             (("bleu", (40, 120, 230)), ("orange", (240, 140, 30)), ("vert", (40, 180, 110)))}
+    files = {k: affiche(f"affiche-{k}.png", c) for k, c in
+             (("bleue", (40, 120, 230)), ("orange", (240, 140, 30)), ("verte", (40, 180, 110)))}
     pages = []
     for i, c in enumerate(((235, 235, 240), (225, 235, 250), (250, 240, 225))):
         im = Image.new("RGB", (620, 877), c)
@@ -369,7 +371,7 @@ def make_demo_media(root: Path):
         pages.append(im)
     buf = io.BytesIO()
     pages[0].save(buf, "PDF", save_all=True, append_images=pages[1:])
-    (src / "devis-studio.pdf").write_bytes(buf.getvalue())
+    (src / "devis-traiteur.pdf").write_bytes(buf.getvalue())
     with wave.open(str(src / "note-vocale.wav"), "wb") as w:  # 2 s de La 440 Hz, doux
         w.setnchannels(1)
         w.setsampwidth(2)
@@ -386,28 +388,29 @@ def make_demo_media(root: Path):
 
     def publish(kind: str, channel: str) -> dict:
         if kind == "show":
-            ok, refused = medias.publish_many([str(files["bleu"]), str(files["orange"]), str(src / "devis-studio.pdf"),
+            ok, refused = medias.publish_many([str(files["bleue"]), str(files["orange"]), str(src / "devis-traiteur.pdf"),
                                                str(src / "note-vocale.wav"), str(video)])
             mid = uuid.uuid4().hex[:12]
-            bus.publish("media", mid=mid, channel=channel, title="Maquettes et devis pour Studio", items=ok)
+            bus.publish("media", mid=mid, channel=channel, title="Affiches et devis pour la fête des voisins", items=ok)
             return {"ok": True, "mid": mid, **medias.summary(ok, refused)}
         if kind == "report":
-            paths = [str(files["vert"]), str(src / "devis-studio.pdf")]
+            paths = [str(files["verte"]), str(src / "devis-traiteur.pdf")]
             ok, refused = medias.publish_many(paths)
             mid = uuid.uuid4().hex[:12]
-            said = "Le devis est prêt, avec le logo retenu."  # écrit par « Claude » : jamais traduit
+            said = "Le devis est prêt, avec l'affiche retenue."  # écrit par « Claude » : jamais traduit
             reports.add(mid, said, channel, False, kind="resultat", files=paths)
             bus.publish("report", text=said, channel=channel, mid=mid, report=True, pending_read=False,
                         report_kind="resultat", report_files=paths, report_media=ok)
             return {"ok": True, "mid": mid}
         if kind == "choice":
-            pics = [medias.publish(files[k]) for k in ("bleu", "orange", "vert")]
-            return choices.ask("Quel logo pour Studio ?", ["Bleu", "Orange", "Vert"], channel, images=pics)
+            pics = [medias.publish(files[k]) for k in ("bleue", "orange", "verte")]
+            return choices.ask("Quelle affiche pour la fête des voisins ?", ["Bleue", "Orange", "Verte"], channel,
+                               images=pics)
         if kind == "big":
             old = medias.LIMITS["image"]
             medias.LIMITS["image"] = 1024
             try:
-                ok, _ = medias.publish_many([str(files["bleu"])])
+                ok, _ = medias.publish_many([str(files["bleue"])])
             finally:
                 medias.LIMITS["image"] = old
             bus.publish("media", mid=uuid.uuid4().hex[:12], channel=channel, title="", items=ok)
@@ -468,7 +471,7 @@ def make_demo_videos(root: Path, settings):
 
     def submit(mode: str, channel: str) -> dict:
         modes.append(mode if mode in ("ok", "lent") else "ok")
-        return demo.submit("un caméléon qui change de couleur sur une branche, plan rapproché", channel=channel)
+        return demo.submit("des vagues qui se brisent au pied d'un phare, plan rapproché", channel=channel)
 
     return demo, submit
 
@@ -509,42 +512,46 @@ def demo_details(now: float) -> dict[str, dict]:
 
     return {
         "d1": base("d1", "agent", "chercheur", "Trier les mails de la semaine", now - 142, effort="medium", tokens=1_234_000,
-                   requests=12, tool_uses=7, step="Lire le fil « Facture Hostinger »",
-                   consigne="Trie les mails de la semaine par projet.\nSignale les factures.\n" + DEMO_TRAP,
+                   requests=12, tool_uses=7, step="Lire le fil « Facture d'électricité »",
+                   consigne="Trie les mails de la semaine par sujet.\nSignale les factures.\n" + DEMO_TRAP,
                    todos=[todo("Lister les mails de la semaine", "completed"),
-                          todo("Ranger par projet", "in_progress"),
+                          todo("Ranger par sujet", "in_progress"),
                           todo("Signaler les factures " + DEMO_TRAP, "pending")],
-                   doing=[doing("mcp__claude_ai_Gmail__get_thread", "Facture Hostinger")],
+                   doing=[doing("mcp__claude_ai_Gmail__get_thread", "Facture d'électricité")],
                    actions=[act("mcp__claude_ai_Gmail__search_threads", "newer_than:7d", True, 120),
                             act("Read", "/tmp/regles-tri.md", False, 90),
-                            act("mcp__claude_ai_Gmail__get_thread", "Facture Hostinger", None, 4)],
+                            act("mcp__claude_ai_Gmail__get_thread", "Facture d'électricité", None, 4)],
                    errors=1, last_errors=["File does not exist: /tmp/regles-tri.md " + DEMO_TRAP]),
-        "d2": base("d2", "local_bash", "commande", "Compiler l'appli Studio", now - 18,
-                   consigne="cd /home/user/Projets/Studio/App && npx eas build --platform android"),
-        "d3": base("d3", "agent", "relecteur", "Relire tout le dépôt Compta", now - 2400, effort="high", tokens=101_000_000,
-                   requests=162, tool_uses=162, step="Lire astrel/core.py", consigne="Relis tout le dépôt Compta.",
-                   actions=[act("Read", f"/home/user/Projets/Compta/src/module_{n}.py", True, 30 - n) for n in range(12)],
+        "d2": base("d2", "local_bash", "commande", "Copier les photos sur le disque externe", now - 18,
+                   consigne="rsync -a ~/Images/Vacances/ /media/disque-externe/Photos/"),
+        "d3": base("d3", "agent", "auditeur", "Relire tous les contrats d'assurance", now - 2400, effort="high",
+                   tokens=101_000_000, requests=162, tool_uses=162, step="Lire le contrat n° 7",
+                   consigne="Relis tous les contrats d'assurance et repère les doublons.",
+                   actions=[act("Read", f"~/Documents/Assurances/contrat-{n}.pdf", True, 30 - n) for n in range(12)],
                    truncated=True),
-        "d4": base("d4", "agent", "codeur", "Corriger le paywall Boutique", now - 900, live=False, state="failed", effort="high",
-                   ended=now - 300, elapsed_s=600.0, tokens=480_000, requests=31, tool_uses=24,
-                   consigne="Corrige le paywall (plan P20).",
-                   todos=[todo("Lire le plan P20", "completed"),
-                          todo("Corriger le serveur", "in_progress"),
-                          todo("Tests", "pending")],
-                   actions=[act("Edit", "/home/user/Projets/Boutique/server/paywall.ts", True, 420),
-                            act("Bash", "npm test", False, 360), act("Bash", "npm run build", None, 310)],
-                   errors=2, last_errors=["Exit code 1 : 3 failed", "Exit code 1 : 1 failed"],
-                   files=["/home/user/Projets/Boutique/server/paywall.ts"], summary="Arrêté sur deux tests rouges.",
+        "d4": base("d4", "agent", "chercheur", "Comparer les billets de train", now - 900, live=False, state="failed",
+                   effort="medium", ended=now - 300, elapsed_s=600.0, tokens=480_000, requests=31, tool_uses=24,
+                   consigne="Compare les billets Nantes-Bordeaux pour samedi (plan P2).",
+                   todos=[todo("Lire le plan P2", "completed"),
+                          todo("Chercher les horaires", "in_progress"),
+                          todo("Comparer les prix", "pending")],
+                   actions=[act("WebFetch", "https://www.example-trains.fr/horaires", True, 420),
+                            act("WebSearch", "train Nantes Bordeaux samedi", False, 360),
+                            act("WebFetch", "https://www.example-trains.fr/tarifs", None, 310)],
+                   errors=2, last_errors=["Site indisponible (503)", "Délai dépassé : 30 s sans réponse"],
+                   files=["~/Documents/Voyages/horaires-samedi.md"], summary="Arrêté : le site des horaires ne répond plus.",
                    passation_ambiguous=True),
-        "d5": base("d5", "agent", "codeur", "Lot A du plan P18", now - 700, live=False, ended=now - 120, effort="high",
-                   elapsed_s=580.0, tokens=900_000, requests=48, tool_uses=61, consigne="Réalise le lot A du plan P18.",
-                   actions=[act("Write", "/home/user/Projets/Astrel/astrel/detail_agent.py", True, 400),
-                            act("Bash", "pytest -q tests/test_detail_agent.py", True, 200)],
-                   files=["/home/user/Projets/Astrel/astrel/detail_agent.py"],
-                   summary="Lot A fait : 12 tests verts.",
-                   passation={"mission": "p18", "n": 1, "a": "testeur", "at": now - 130, "fait": "Lot A seul.",
-                              "a_tester": "tests/test_detail_agent.py", "risques": "Passation d'un autre codeur.",
-                              "preuves": "pytest -q : 12 passed"}),
+        "d5": base("d5", "agent", "planificateur", "Liste des cartons du déménagement", now - 700, live=False,
+                   ended=now - 120, effort="high", elapsed_s=580.0, tokens=900_000, requests=48, tool_uses=61,
+                   consigne="Prépare la liste des cartons, pièce par pièce (plan P1).",
+                   actions=[act("Read", "~/Documents/Déménagement/inventaire.pdf", True, 400),
+                            act("Write", "~/Documents/Déménagement/liste-cartons.md", True, 200)],
+                   files=["~/Documents/Déménagement/liste-cartons.md"],
+                   summary="Liste faite : 42 cartons, pièce par pièce.",
+                   passation={"mission": "p1", "n": 1, "a": "chercheur", "at": now - 130, "fait": "Liste des cartons.",
+                              "a_tester": "Dates à vérifier avec le déménageur.",
+                              "risques": "Devis du déménageur pas encore signé.",
+                              "preuves": "liste-cartons.md : 42 lignes"}),
     }
 
 
@@ -577,12 +584,12 @@ DEMO_MEMORY = {
 }
 DEMO_HOSTILE_LABEL = "<img src=x onerror=alert(1)>"  # hors inventaire i18n : ce n'est pas un texte d'écran
 DEMO_MEMORY_TOP = [
-    {"label": "VS Code", "n": 15, "go": 3.2, "swap_go": 0.4},
+    {"label": "LibreOffice", "n": 15, "go": 3.2, "swap_go": 0.4},
     {"label": "Navigateur Chrome", "n": 22, "go": 2.6, "swap_go": 0.9},
-    {"label": "Chrome de test (headless)", "n": 10, "go": 1.1, "swap_go": 0.0},
+    {"label": "Lecteur de musique", "n": 10, "go": 1.1, "swap_go": 0.0},
     {"label": "Astrel", "n": 12, "go": 0.9, "swap_go": 0.6},
     {"label": "HUD d'Astrel", "n": 9, "go": 0.5, "swap_go": 0.2},
-    {"label": "Tests (pytest)", "n": 1, "go": 0.4, "swap_go": 0.0},
+    {"label": "Visionneuse de photos", "n": 1, "go": 0.4, "swap_go": 0.0},
     # libellé hostile : affiché en texte seulement (jamais interprété)
     {"label": DEMO_HOSTILE_LABEL, "n": 1, "go": 0.1, "swap_go": 0.0},
 ]
@@ -590,17 +597,53 @@ DEMO_MEMORY_TOP = [
 
 # 26/10 (plan P33 lot 3) : forme de `courrier.etat` (évènement `courrier`) ; un extrait hostile,
 # affiché en texte seulement.
+def _demo_mission(etat: str) -> dict:
+    """02/11 (plan P43) : mission dans un état précis (vérifiée, acceptée sans preuve, vérification
+    échouée, en attente de décision), avec une déclaration HOSTILE affichée en texte."""
+    now = time.time()
+    racine = "/home/user/Projets/Demo"
+    critere = {"version": 1, "figer": [f"{racine}/tests/test_calcul.py"], "controles": [
+        {"type": "fichier_existe", "chemin": f"{racine}/docs/RAPPORT.md", "genre": "fichier"},
+        {"type": "fichier_contient", "chemin": f"{racine}/README.md", "texte": "Tous les tests passent"},
+        {"type": "git_head", "depot": racine, "branche": "main", "avance": True}]}
+    ok = {"verifiee": True, "accepted": False, "failed": False, "decide": False}.get(etat, False)
+    controles = [
+        {"n": 1, "type": "fichier_existe", "cible": f"{racine}/docs/RAPPORT.md", "etat": "ok", "code": "existe",
+         "infos": {"taille": 1204}},
+        {"n": 2, "type": "fichier_contient", "cible": f"{racine}/README.md", "etat": "ok" if ok else "echec",
+         "code": "texte_trouve" if ok else "texte_manquant", "infos": {}},
+        {"n": 3, "type": "git_head", "cible": racine, "etat": "ok" if ok else "bloque" if etat == "decide" else "echec",
+         "code": "head" if ok else "lien" if etat == "decide" else "pas_de_commit",
+         "infos": {"head": "a1b2c3d4e5f6", "branche": "main"}},
+        {"type": "figer", "cible": f"{racine}/tests/test_calcul.py", "etat": "ok", "code": "fige", "infos": {"sha": "9f8e7d6c5b4a"}}]
+    statut = {"verifiee": "verifiee", "failed": "echec", "decide": "bloquee"}.get(etat)
+    preuve = None if etat == "accepted" else {"verification_id": "m-demo:7", "at": now - 30, "statut": statut,
+                                               "verifie": ok, "controles": controles}
+    status = {"verifiee": "done", "accepted": "accepted_unverified", "failed": "verification_failed"}.get(etat, "active")
+    return {"status": status, "phase": "verification_blocked" if etat == "decide" else "travail",
+            "objective": "Écrire le rapport de tests de Démo", "done_when": "le rapport existe et les tests passent",
+            "critere": None if etat == "accepted" else critere, "origine": "claude" if etat == "decide" else "utilisateur",
+            "approuve": False, "lancee_par": "astrel" if etat == "decide" else "utilisateur",
+            "declaration": {"texte": "<img src=x onerror=alert(1)> tout est fait", "tour": 4, "at": now - 40},
+            "preuve": preuve, "scope": [racine], "forbidden_paths": [], "turns": 4, "max_turns": 20,
+            "started_at": now - 600, "ended_at": 0.0 if status == "active" else now - 20, "max_minutes": 60,
+            "tokens": 420_000, "max_tokens": 3_000_000, "in_turn": False,
+            "reason": {"accepted": "acceptée par l'utilisateur, sans preuve automatique",
+                       "decide": "vérification bloquée : à toi de décider"}.get(etat, "")}
+
+
 DEMO_COURRIER = [
-    {"mission": "p33", "total": 4, "questions": 1, "dernier_at": time.time() - 60,
-     "non_lus": [{"a": "testeur", "n": 2}],
+    {"mission": "p2", "total": 4, "questions": 1, "dernier_at": time.time() - 60,
+     "non_lus": [{"a": "planificateur", "n": 2}],
      "derniers": [
-         {"n": 4, "de": "codeur", "a": "testeur", "kind": "info", "re": 0, "extrait": DEMO_HOSTILE_LABEL,
+         {"n": 4, "de": "chercheur", "a": "planificateur", "kind": "info", "re": 0, "extrait": DEMO_HOSTILE_LABEL,
           "at": time.time() - 60},
-         {"n": 3, "de": "codeur", "a": "testeur", "kind": "question", "re": 0,
+         {"n": 3, "de": "chercheur", "a": "planificateur", "kind": "question", "re": 0,
           "extrait": "q?", "at": time.time() - 120},
-         {"n": 2, "de": "testeur", "a": "codeur", "kind": "reponse", "re": 1, "extrait": "ok", "at": time.time() - 600}]},
-    {"mission": "p32", "total": 1, "questions": 0, "dernier_at": time.time() - 86400 * 2, "non_lus": [],
-     "derniers": [{"n": 1, "de": "relecteur", "a": "codeur", "kind": "info", "re": 0, "extrait": "x",
+         {"n": 2, "de": "planificateur", "a": "chercheur", "kind": "reponse", "re": 1, "extrait": "ok",
+          "at": time.time() - 600}]},
+    {"mission": "p1", "total": 1, "questions": 0, "dernier_at": time.time() - 86400 * 2, "non_lus": [],
+     "derniers": [{"n": 1, "de": "auditeur", "a": "chercheur", "kind": "info", "re": 0, "extrait": "x",
                    "at": time.time() - 86400 * 2}]},
 ]
 
@@ -657,12 +700,13 @@ class DemoSettings:
             return {"key": key, "label": label, "help": help_, "kind": kind, "value": value, "default": value,
                     "applies": applies, "pending": False, "locked": False, "lock_reason": "", **extra}
 
-        connectors = {"vercel": False, "figma": False, "canva": False, "claude_docs": False,
+        connectors = {"google_calendar": False, "figma": False, "canva": False, "claude_docs": False,
                       "gmail": True, "google_drive": True, "dropbox": True}
-        conn_labels = {"vercel": "Vercel", "figma": "Figma", "canva": "Canva", "claude_docs": "Claude Docs",
-                       "gmail": "Gmail", "google_drive": "Google Drive", "dropbox": "Dropbox"}
-        skills = {"deep-research": "on", "dataviz": "name-only", "code-review": "on", "simplify": "name-only",
-                  "anthropic-skills:pdf": "on", "anthropic-skills:pptx": "off", "founder-plan": "off"}
+        conn_labels = {"google_calendar": "Google Calendar", "figma": "Figma", "canva": "Canva",
+                       "claude_docs": "Claude Docs", "gmail": "Gmail", "google_drive": "Google Drive", "dropbox": "Dropbox"}
+        skills = {"deep-research": "on", "dataviz": "name-only", "anthropic-skills:docx": "on",
+                  "anthropic-skills:xlsx": "name-only", "anthropic-skills:pdf": "on", "anthropic-skills:pptx": "off",
+                  "founder-plan": "off"}
         quota = it("quota_alert_pct", "Alerte de quota", "Prévenir quand une fenêtre du quota dépasse ce pourcentage.",
                    "int", 80, min=10, max=100, step=5, unit="%")
         quota.update(locked=True, lock_reason="Imposé par la variable ASTREL_QUOTA_ALERT_PCT.")
@@ -1084,24 +1128,24 @@ class DemoSettings:
 # (`astrel.plans.Plans`) : mêmes évènements `plans`/`plan`, mêmes refus (version périmée,
 # révision sans remarque…). Fichiers dans le dossier jetable de la démo, jamais runtime/plans.
 DEMO_PLAN_BODY = """## Étapes
-1. Ajouter le bouton « Plans » et sa pastille dans le groupe Outils.
-2. Écrire `hud/src/plans.js` : liste filtrable, plan par points, fil du plan.
-3. Brancher les commandes `plan_*` avec `plan_id` (jamais `id`).
+1. Demander trois devis de déménageurs et comparer les prix.
+2. Prévenir la banque et l'assurance avec la lettre `changement-adresse.pdf`.
+3. Réserver le monte-meubles pour le samedi 21, de 8 h à midi.
 
 ## Fichiers
-- `hud/index.html`, `hud/styles.css`
-- `hud/src/plans.js`, `hud/src/main.js`
+- `devis-demenageurs.pdf`, `inventaire.pdf`
+- `bail-nouvel-appartement.pdf`, `etat-des-lieux.pdf`
 
 ## Risques
-- Un nouveau rendu pendant la saisie ferait perdre le brouillon :
-  garder défilement, focus et texte en cours.
+- Un déménageur peut ne pas répondre avant la fin du mois :
+  garder une location de camion en réserve.
 - Textes du serveur affichés sans HTML : <img src=x onerror=alert(1)> reste du texte.
 
 ## Lots
-- Lot unique : HUD seul, le dorsal est fini.
+- Lot unique : tout se fait dans la même semaine.
 
 ## Vérification
-- **npm run build**, puis `tools/hud_check_rendu.py` en Chrome headless."""
+- **Liste des cartons** relue, puis `état des lieux` signé."""
 
 DEMO_PLAN_REVISED = DEMO_PLAN_BODY.replace(
     "\n\n## Lots", "\n- Une version révisée renumérote les points : les remarques d'avant vont au fil général.\n\n## Lots")
@@ -1116,7 +1160,8 @@ def demo_audit(cmd: dict) -> dict:
     for i in range(75):
         kind = kinds[i % len(kinds)]
         items.append({"ts": now - 60 * i, "kind": kind, "who": "claude" if kind != "plan" else "utilisateur",
-                      "what": f"entrée {i} : " + ("Bash : <img src=x onerror=alert(1)> | git push" if i == 0 else kind),
+                      "what": f"entrée {i} : " + ("Gmail : <img src=x onerror=alert(1)> | envoi d'un e-mail" if i == 0
+                                                  else kind),
                       "auth": {"confirmation": "voix (oui pour 30 min)", "refus": "réservé à l'utilisateur"}.get(kind, ""),
                       **({"ok": kind != "refus"} if kind in ("confirmation", "refus", "total") else {})})
     want = cmd.get("kinds")
@@ -1143,22 +1188,23 @@ def make_demo_plans(settings: DemoSettings):
             return str(item["value"]) if item else "manual"
 
         def seed(self) -> None:
-            p1 = self.submit("Page Plans du HUD", DEMO_PLAN_BODY, "Fais-moi la page Plans du HUD, avec un commentaire par point.",
-                             channel=channels.default)["id"]
-            self.comment(p1, "p2", "Garde le même style que la page Réglages.")
+            p1 = self.submit("Organiser le déménagement", DEMO_PLAN_BODY,
+                             "Aide-moi à organiser le déménagement, étape par étape.", channel=channels.default)["id"]
+            self.comment(p1, "p2", "Pense aussi à prévenir la mutuelle.")
             # émojis comme Claude en met parfois : retirés à l'affichage par le HUD
-            self.reply(p1, "J'ai découpé en **un seul lot** : le dorsal est déjà prêt, rien à attendre ✅.")
-            p2 = self.submit("Sauvegardes chiffrées du coffre", "## Étapes\n1. Chiffrer avec age.\n2. Copier sur le disque externe.\n\n"
-                             "## Vérification\n- Relire une sauvegarde au hasard.", channel=channels.default)["id"]
+            self.reply(p1, "J'ai tout mis dans **un seul lot** : la même semaine suffit ✅.")
+            p2 = self.submit("Sauvegarde des photos de famille", "## Étapes\n1. Copier les photos sur le disque externe.\n"
+                             "2. Garder une copie en ligne.\n\n## Vérification\n- Ouvrir une photo au hasard.",
+                             channel=channels.default)["id"]
             self.validate(p2, 1, by="auto")
-            p3 = self.submit("Refonte complète du graphe 3D 🚀","## Étapes\n1. Remplacer 3d-force-graph.\n2. Tout redessiner.\n\n"
-                             "## Risques\n- Trois jours de travail au moins.", channel=channels.default)["id"]
-            self.reject(p3, "Trop gros pour cette semaine : on garde le graphe actuel.")
+            p3 = self.submit("Refaire toute la cuisine 🚀", "## Étapes\n1. Changer tous les meubles.\n2. Repeindre les murs.\n\n"
+                             "## Risques\n- Trois semaines de travaux au moins.", channel=channels.default)["id"]
+            self.reject(p3, "Trop gros pour ce mois-ci : on garde la cuisine actuelle.")
 
         def new_plan(self) -> dict:
-            r = self.submit("Notifications du bracelet Studio", "## Étapes\n1. Vibrer à chaque rappel.\n2. Couper la nuit.\n\n"
-                            "## Fichiers\n- `app/notifications.ts`\n\n## Vérification\n- Essai sur le bracelet.",
-                            "Le bracelet doit vibrer pour les rappels.", channel=channels.default)
+            r = self.submit("Anniversaire de Léa", "## Étapes\n1. Réserver la salle.\n2. Envoyer les invitations.\n\n"
+                            "## Fichiers\n- `liste-invites.md`\n\n## Vérification\n- Confirmer le nombre d'invités.",
+                            "Organise l'anniversaire de Léa, samedi en quinze.", channel=channels.default)
             if r.get("ok") and self._mode() == "auto":
                 self.validate(r["id"], r["version"], by="auto")
             return r
@@ -1182,7 +1228,7 @@ def make_demo_plans(settings: DemoSettings):
                 r = self.revise(pid)
                 if r.get("ok"):
                     threading.Timer(0.8, self.reply, (pid, "(démo) Je reprends le plan avec tes remarques.")).start()
-                    threading.Timer(2.0, self.submit, ("Page Plans du HUD", DEMO_PLAN_REVISED),
+                    threading.Timer(2.0, self.submit, ("Organiser le déménagement", DEMO_PLAN_REVISED),
                                     {"plan_id": pid}).start()
             elif name == "plan_validate":
                 r = self.validate(pid, cmd.get("version"), by="utilisateur")
@@ -1203,14 +1249,15 @@ def seed_demo_todo(scratch: Path, demo_plans) -> None:
     todo_mod.TODO_FILE = scratch / "todo.json"
     todo_mod.JOURNAL_FILE = scratch / "todo-journal.jsonl"
     # Lot 3 (27/10) : note générée et fiches de passation dans le dossier jetable, jamais le vrai
-    # coffre ni runtime/equipe. Une fiche de relecteur sans réserve sur la mission « p2 » : T1
+    # coffre ni runtime/equipe. Une fiche de relecteur sans réserve sur la mission « p2 » (le cœur ne lit
+    # « prêt à clore » que dans la fiche d'un relecteur ; jamais affichée en entier) : T1
     # (plan P2, en cours) porte le badge « prêt à clore ».
     todo_mod.NOTE_FILE = scratch / "vault" / "TODO-PAR-PROJET.md"
     todo_mod.EQUIPE_DIR = scratch / "equipe"
     (scratch / "equipe" / "p2").mkdir(parents=True, exist_ok=True)
     (scratch / "equipe" / "p2" / "fiches.jsonl").write_text(json.dumps(
         {"n": 3, "de": "relecteur", "a": "astrel", "fait": "Relecture : rien de bloquant, zéro remarque.",
-         "preuves": "pytest", "at": time.time()}, ensure_ascii=False) + "\n", encoding="utf-8")
+         "preuves": "photos ouvertes au hasard", "at": time.time()}, ensure_ascii=False) + "\n", encoding="utf-8")
     todo_mod.Todo._plan_statuts = staticmethod(lambda: {i["id"]: i["status"] for i in demo_plans.describe()["items"]})
     todo_mod.todo.reset()
     canaux = [(c.id, c.label) for c in channels.items()]
@@ -1219,26 +1266,26 @@ def seed_demo_todo(scratch: Path, demo_plans) -> None:
         return
     p0, p1, p2 = (projets + projets * 2)[:3]
     add = lambda projet, titre, **kw: todo_mod.todo.add(projet, titre, canaux=canaux, force=True, **kw).get("id")
-    add(p0, "Sauvegardes chiffrées du coffre", etat="cours", plan="P2", par="claude",
-        note="Chiffrer avec age, copier sur le disque externe.\nRelire une sauvegarde au hasard.")
-    add(p0, "Relire la page Plans du HUD", etat="lancer", plan="P1", attend="utilisateur")
-    add(p0, "Joindre la todo à l'amorce de la relève", note="Lot 3 du plan.")
-    add(p0, "Mot d'éveil Astrel", etat="fini", par="claude")
-    gone = add(p0, "Refaire tout le graphe 3D")
-    todo_mod.todo.move(gone, "abandonne", "Trop gros pour cette semaine : on garde le graphe actuel.")
-    t6 = add(p1, "Démo avec les écouteurs", note="Montrer le réveil par la voix, puis un rappel.")
+    add(p0, "Sauvegarde des photos de famille", etat="cours", plan="P2", par="claude",
+        note="Copier les photos sur le disque externe.\nOuvrir une photo au hasard.")
+    add(p0, "Relire le plan du déménagement", etat="lancer", plan="P1", attend="utilisateur")
+    add(p0, "Résilier l'abonnement de la box", note="Avant le 30 du mois.")
+    add(p0, "Renouveler le passeport", etat="fini", par="claude")
+    gone = add(p0, "Refaire toute la cuisine")
+    todo_mod.todo.move(gone, "abandonne", "Trop gros pour ce mois-ci : on garde la cuisine actuelle.")
+    t6 = add(p1, "Réserver le gîte des vacances", note="Trois nuits, près de la mer.")
     todo_mod.todo.move(t6, "lancer", par="claude")
-    add(p1, "Build Android n°9", etat="cours", attend="utilisateur")
+    add(p1, "Valider les billets de train", etat="cours", attend="utilisateur")
     add(p2, "<img src=x onerror=alert(1)>")
-    add(p2, "Un titre très long pour voir comment la carte se comporte quand l'utilisateur dicte une phrase entière sans "
-            "s'arrêter du tout")
+    add(p2, "Un titre très long pour voir comment la carte se comporte quand on dicte une phrase entière sans "
+            "s'arrêter du tout, d'un bout à l'autre")
     todo_mod.todo.publish(canaux)
 
 
 # Page « Tout ce qu'Astrel sait faire » (plan P22) : skills et connecteurs claude.ai FIXES (les
 # contrôles du HUD ne dépendent pas des dossiers de la machine).
-DEMO_SKILLS = {"tdd": "on", "code-review": "on", "founder-cfo": "name-only", "docs": "off"}
-DEMO_CLAUDEAI = {"claude.ai Gmail": True, "claude.ai Google Drive": True, "claude.ai Vercel": False}
+DEMO_SKILLS = {"deep-research": "on", "anthropic-skills:pdf": "on", "founder-cfo": "name-only", "docs": "off"}
+DEMO_CLAUDEAI = {"claude.ai Gmail": True, "claude.ai Google Drive": True, "claude.ai Google Calendar": False}
 
 
 class DemoCalibrage:
@@ -1258,7 +1305,7 @@ class DemoCalibrage:
         if name == "calibrage_start":
             self.gen += 1
             threading.Thread(target=self._run, args=(self.gen,), daemon=True).start()
-            return {"ok": True, "micro": "Generic Mono", "canaux": 2}
+            return {"ok": True, "micro": "Micro USB", "canaux": 2}
         if name == "calibrage_cancel":
             self.gen += 1
             if self.etat in ("bruit", "parole", "analyse", "resultat"):
@@ -1274,7 +1321,7 @@ class DemoCalibrage:
 
     def _pub(self, etat: str, **data) -> None:
         self.etat = etat
-        bus.publish("calibrage", etat=etat, micro="Generic Mono", **data)
+        bus.publish("calibrage", etat=etat, micro="Micro USB", **data)
 
     def _run(self, gen: int) -> None:
         for etat, etape, duree in (("bruit", 1, 1.0), ("parole", 2, 2.0)):
@@ -1419,7 +1466,8 @@ def main() -> int:
             bus.publish("whatsapp_link", state="qr", n=99, qr="2@DEMO-PERIME", ts=time.time() - 61)
             return {"ok": True}
         elif cmd.get("cmd") == "confirm":
-            bus.publish("confirm", id=cmd.get("confirm_id") or cmd.get("id"), pending=False, allow=bool(cmd.get("allow")), by="écran", desc="un commit git")
+            bus.publish("confirm", id=cmd.get("confirm_id") or cmd.get("id"), pending=False, allow=bool(cmd.get("allow")),
+                        by="écran", desc="l'envoi d'un e-mail")
             bus.publish("state", state="sleeping", text="", muted=False, detail="")
             answered.set()
         elif cmd.get("cmd") == "pause":
@@ -1515,9 +1563,9 @@ def main() -> int:
                         reply_to=mid, mid=uuid.uuid4().hex[:12])
             return {"ok": True}
         elif cmd.get("cmd") == "demo_confirm":  # tests du HUD : une question qui arrive pendant la frappe
-            bus.publish("confirm", id="demo2", pending=True, tool="Bash", desc="une publication git (push)",
-                        cmd="git push origin main", question="Attention, une publication git (push). Je continue ?",
-                        grantable=True)
+            bus.publish("confirm", id="demo2", pending=True, tool="Bash", desc="une tâche planifiée",
+                        cmd="rappel chaque lundi à 8 h : « Sortir les poubelles »",
+                        question="Attention, une tâche planifiée. Je continue ?", grantable=True)
             return {"ok": True}
         elif cmd.get("cmd") == "demo_choice":  # tests du HUD : une question à choix qui arrive en direct
             return {"ok": True, "id": publish_choice(str(cmd.get("channel") or channels.default))}
@@ -1684,10 +1732,16 @@ def main() -> int:
                 r = mission.resume()
             elif action == "stop":
                 r = mission.stop()
+            elif action in ("accepter", "reverifier", "reprendre_travail", "approuver"):  # 02/11 (P43)
+                r = {"accepter": mission.accept, "reverifier": mission.reverify,
+                     "reprendre_travail": mission.back_to_work, "approuver": mission.approve}[action]()
             else:
                 r = {"ok": True}
             bus.publish("mission", **mission.describe())
             return r
+        elif cmd.get("cmd") == "demo_mission":  # 02/11 (plan P43) : un état donné, pour la mise en page
+            bus.publish("mission", **_demo_mission(str(cmd.get("etat") or "")))
+            return {"ok": True}
         elif cmd.get("cmd") == "sensor":
             return sensors.set(cmd.get("name", ""), bool(cmd.get("on")))
         elif cmd.get("cmd") == "voices":
@@ -1732,7 +1786,7 @@ def main() -> int:
     reports.publish()
     bus.publish("autonomy", mode="autonome")
     bus.publish("usage", mode="conversation", followup=8.0)
-    bus.publish("grants", items=[{"key": "bash:une publication git (push)", "until": time.time() + 1500}])
+    bus.publish("grants", items=[{"key": "bash:une tâche planifiée", "until": time.time() + 1500}])
     bus.publish("state", state="booting", text="", muted=False, detail="")
     graph.set_init(INIT)
     graph.set_voice("piper:fr_FR-upmc-medium")
@@ -1745,20 +1799,20 @@ def main() -> int:
     # 15/10 : coût par agent (contrat des lots, idée 10) ; d3 dépasse le seuil (alerte, sans voix).
     demo_tasks[:] = [
         {"id": "d1", "kind": "agent", "desc": "Trier les mails de la semaine", "background": True,
-         "started": now - 142, "step": "Lire le fil « Facture Hostinger »", "tool_uses": 7, "channel": "general",
+         "started": now - 142, "step": "Lire le fil « Facture d'électricité »", "tool_uses": 7, "channel": "general",
          "tokens": 1_234_000, "requests": 12, "elapsed_s": 142.0, "alert": False,
          "refs": ["p2"]},  # plan P38 lot 2 : sa consigne cite P2 (core._todo_refs) → badge « agent en cours »
-        {"id": "d2", "kind": "local_bash", "desc": "Compiler l'appli Studio", "background": True,
-         "started": now - 18, "step": "", "tool_uses": 0, "channel": "studio"},
-        {"id": "d3", "kind": "agent", "desc": "Relire tout le dépôt Compta", "background": True,
-         "started": now - 2400, "step": "Lire astrel/core.py", "tool_uses": 162, "channel": "general",
+        {"id": "d2", "kind": "local_bash", "desc": "Copier les photos sur le disque externe", "background": True,
+         "started": now - 18, "step": "", "tool_uses": 0, "channel": "maison"},
+        {"id": "d3", "kind": "agent", "desc": "Relire tous les contrats d'assurance", "background": True,
+         "started": now - 2400, "step": "Lire le contrat n° 7", "tool_uses": 162, "channel": "general",
          "tokens": 101_000_000, "requests": 162, "elapsed_s": 2400.0, "alert": True},
     ]
     details.update(demo_details(now))
     publish_demo_tasks(demo_tasks)
     # L'alerte du cœur (`_task_alerts`) : une `notice` sans voix qui porte `task_id` et `task_alert`.
     bus.publish("notice", level="warning", channel="general", task_id="d3", task_alert=True,
-                text="Agent qui s'emballe ? « Relire tout le dépôt Compta » : 101 millions de tokens, 162 requêtes, "
+                text="Agent qui s'emballe ? « Relire tous les contrats d'assurance » : 101 millions de tokens, 162 requêtes, "
                      "40 min. Rien n'est arrêté : bouton Stop du panneau « en cours » si besoin.")
     publish_demo_quota()
     if os.environ.get("ASTREL_DEMO_SANS_MEMOIRE") != "1":  # captures « avant » de hud_check_theme --compare
@@ -1767,17 +1821,17 @@ def main() -> int:
     # de la page (rejeu de l'historique, comme après une reconnexion).
     other =next((c.id for c in channels.items() if c.id != channels.default), channels.default)
     rid = uuid.uuid4().hex[:12]
-    decision = "Deux façons de corriger le paywall : je touche au serveur, ou seulement à l'appli. Dis-moi laquelle."
+    decision = "Deux déménageurs possibles : le moins cher le 21, ou le plus rapide le 14. Dis-moi lequel."
     reports.add(rid, decision, other, True)
     bus.publish("reply", text=decision, usage={}, channel=other, reply_to="", mid=rid, report=True, pending_read=True,
                 report_kind="decision",
-                report_files=["/home/user/Projets/Boutique/docs/PAYWALL.md", "/tmp/astrel-demo/plan-paywall.txt"])
-    bus.publish("reply", text="Le build iOS est bloqué : Apple demande un nouveau certificat.", usage={},
+                report_files=["/home/user/Documents/Déménagement/devis-comparés.pdf", "/tmp/astrel-demo/devis-demenageurs.txt"])
+    bus.publish("reply", text="La réservation du gîte est bloquée : le site demande une pièce d'identité.", usage={},
                 channel=channels.default, reply_to="", mid=uuid.uuid4().hex[:12], report=True, pending_read=False,
                 report_kind="blocage", report_files=[])
-    bus.publish("reply", text="Les sauvegardes chiffrées sont faites et relues.", usage={}, channel=channels.default,
-                reply_to="", mid=uuid.uuid4().hex[:12], report=True, pending_read=False, report_kind="resultat",
-                report_files=["/data/Sauvegardes/2026-10-15.tar.age"])
+    bus.publish("reply", text="Les photos sont copiées sur le disque externe et vérifiées.", usage={},
+                channel=channels.default, reply_to="", mid=uuid.uuid4().hex[:12], report=True, pending_read=False,
+                report_kind="resultat", report_files=["/media/disque-externe/Photos/2026-10-15"])
     publish_choice(channels.default)
     time.sleep(1.5)
     bus.publish("state", state="sleeping", text="", muted=False, detail="")

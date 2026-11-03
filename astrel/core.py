@@ -2833,6 +2833,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             if not self.speaker.busy:
                 self.status.set(state.WORKING, detail=ev.tool, unless=_BACKGROUND_YIELDS_TO)
         elif ev.kind == "tool_start":
+            self._mission_observe(ev)  # lot C : commande observée, repère d'écriture
             scope = str(ev.data.get("agent") or boucles.MAIN)
             if ev.tool in ("Agent", "Task") and scope == boucles.MAIN:
                 self._agent_desc[ev.tool_id] = ev.text
@@ -2845,6 +2846,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             if not self.speaker.busy:
                 self.status.set(state.WORKING, detail=f"{ev.tool} · {ev.text}", unless=_BACKGROUND_YIELDS_TO)
         elif ev.kind == "tool_result":
+            self._mission_observe(ev)
             scope = str(ev.data.get("agent") or boucles.MAIN)
             entry = self._agent_log.get(scope)
             if entry is not None:

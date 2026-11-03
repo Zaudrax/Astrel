@@ -281,11 +281,14 @@ def _surnom(name: str, langue: str = "fr") -> str:
 def personalize(text: str, langue: str = "fr") -> str:
     """Remplit l'invite système avec le profil (`config/profile.json`, plan P6) :
     prénom, système, dossier du code ; nom affiché (`{assistant}`, plan P36, « Astrel ») et ses
-    variantes (`{surnom}`). Une ligne « - {nom} … » prend sa majuscule (« l'utilisateur » par défaut)."""
+    variantes (`{surnom}`). Une ligne « - {nom} … » prend sa majuscule (« l'utilisateur » par défaut, « the user » en anglais)."""
     from .i18n import assistant_name
 
     name = assistant_name()
-    text = (text.replace("{nom}", config.USER_NAME).replace("{systeme}", config.SYSTEM_DESC)
+    nom = config.USER_NAME
+    if langue == "en" and nom == config.USER_NAME_DEFAULT:  # 02/11 : aucun prénom configuré, invite anglaise
+        nom = config.USER_NAME_DEFAULT_EN
+    text = (text.replace("{nom}", nom).replace("{systeme}", config.SYSTEM_DESC)
             .replace("{code}", config.ROOT.as_posix()).replace("{assistant}", name)
             .replace("{surnom}", _surnom(name, langue)))
     return re.sub(r"^- (\w)", lambda m: "- " + m.group(1).upper(), text, flags=re.M)
@@ -621,6 +624,13 @@ def write_settings(eff: "fournisseurs.Effectif | None" = None) -> Path:
         settings["apiKeyHelper"] = helper
     config.SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     return config.SETTINGS_FILE
+
+
+def _en_fond(ev: dict[str, Any]) -> bool:
+    """Lot C (03/11, mesuré sur le CLI 2.1.285) : une commande Bash partie en tâche de fond rend
+    tout de suite `is_error` faux avec `tool_use_result.backgroundTaskId` : ce n'est pas un succès."""
+    tur = ev.get("tool_use_result")
+    return isinstance(tur, dict) and bool(tur.get("backgroundTaskId"))
 
 
 def describe_tool(name: str, tool_input: dict[str, Any]) -> str:
@@ -1481,7 +1491,8 @@ class Brain:
                             err = " ".join(str(content or "").split())[:300]
                         yield BrainEvent(
                             "tool_result", tool=tools.get(tid, ""), tool_id=tid, text=err,
-                            data={"is_error": bool(block.get("is_error")), "agent": ev["parent_tool_use_id"]},
+                            data={"is_error": bool(block.get("is_error")), "agent": ev["parent_tool_use_id"],
+                                  "fond": _en_fond(ev)},
                         )
             return
 
@@ -1564,7 +1575,7 @@ class Brain:
                     yield BrainEvent(
                         "tool_result", tool=tools.get(tid, ""), tool_id=tid,
                         text=" ".join(str(content or "").split())[:300],
-                        data={"is_error": bool(block.get("is_error"))},
+                        data={"is_error": bool(block.get("is_error")), "fond": _en_fond(ev)},
                     )
             return
 

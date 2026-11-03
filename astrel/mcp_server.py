@@ -459,19 +459,26 @@ def generate_image(prompt: str, engine: str = "auto", files: list[str] = [],  # 
 @server.tool()
 def mission_start(objectif: str, fini_quand: str, perimetre: list[str] | str = [],  # noqa: B006
                   interdits: str = "", dossiers_interdits: list[str] = [], max_tours: int = 0,  # noqa: B006
-                  max_minutes: int = 0) -> dict:
+                  max_minutes: int = 0, verification: dict | None = None) -> dict:
     """Lance TOI-MÊME une MISSION pour un objectif long que l'utilisateur vient de te confier : tu enchaînes
     les tours seul, par étapes, jusqu'au critère de fin. Seulement pendant un échange avec lui.
-    `fini_quand` : critère VÉRIFIABLE (commande qui réussit, fichier qui existe). `perimetre` :
-    dossiers absolus où écrire, dans ses projets (défaut : le dossier du canal). `interdits` : ce
-    qu'il ne faut pas faire ; `dossiers_interdits` : chemins jamais écrits. Budget plafonné. Chaque
-    tour finit par « MISSION : CONTINUE | FINIE | BLOQUÉE ». L'utilisateur met en pause ou arrête."""
+    `fini_quand` : le critère en une phrase. `verification` (OBLIGATOIRE) : le critère TYPÉ qu'Astrel
+    vérifie lui-même après ton « FINIE », sans commande : {"controles": [...], "figer": [chemins]}, avec
+    des contrôles {"type": "fichier_existe", "chemin", "genre": "fichier"|"dossier", "taille_min"?},
+    {"type": "fichier_contient", "chemin", "texte", "absent"?}, {"type": "empreinte", "chemin",
+    "sha256"}, {"type": "dossier_contient", "chemin", "attendus": [noms]}, {"type": "git_head", "depot",
+    "branche"?, "avance"?}, chemins absolus DANS le périmètre. `perimetre` : dossiers absolus où écrire,
+    dans ses projets (défaut : le dossier du canal). `interdits` : ce qu'il ne faut pas faire ;
+    `dossiers_interdits` : chemins jamais écrits. Budget plafonné. Chaque tour finit par « MISSION :
+    CONTINUE | FINIE | BLOQUÉE ». L'utilisateur met en pause ou arrête."""
     if isinstance(perimetre, str):
         perimetre = [perimetre] if perimetre else []
+    if not isinstance(verification, (dict, str)) or not verification:
+        raise ValueError("`verification` obligatoire : le critère typé que le cœur vérifie (voir la description)")
     cmd = {"cmd": "mission_auto", "objective": str(objectif)[:600], "done_when": str(fini_quand)[:600],
            "scope": [str(p)[:300] for p in perimetre[:10]], "forbidden": str(interdits)[:1000],
            "forbidden_paths": [str(p)[:300] for p in (dossiers_interdits or [])[:10]],
-           "max_turns": max_tours, "max_minutes": max_minutes}
+           "max_turns": max_tours, "max_minutes": max_minutes, "verification": verification}
     reply = _core(cmd, ensure_ascii=False)
     if not reply.get("ok"):
         raise ValueError(str(reply.get("error") or "mission refusée par le cœur d'Astrel"))

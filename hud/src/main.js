@@ -6,6 +6,7 @@ import { PremiumOrb } from "./orb_premium.js";
 import { GROUP, STATE, premiumGlass, premiumStateColors } from "./theme.js";
 import { affichageNow, applyAffichage, applyTheme, onAffichage, onTheme } from "./apparence.js";
 import { renderMarkdown } from "./markdown.js";
+import { missionPathsOutside } from "./mission-chemins.js";
 import { badge, deplacer, entrees, indexChiffre, indexLettre, toucheAutre } from "./choix.js";
 import { openModal, openPanel } from "./modal.js";
 import { openImage } from "./viewer.js";
@@ -2683,9 +2684,19 @@ addEventListener("click", (e) => {
 // périmètre pendant la mission est demandé par le garde-fou ; « Stop tout » l'arrête.
 let mission = { status: "" };
 let missionHidden = 0; // started_at d'une mission finie masquée (bouton Masquer)
-const MISSION_STATUS = ["active", "paused", "done", "blocked", "stopped", "budget"];
+// 02/11 (plan P43) : trois fins qui ne se confondent pas : « done » = critère VÉRIFIÉ par Astrel,
+// « accepted_unverified » = accepté par l'utilisateur SANS preuve, « verification_failed » = vérifié et faux.
+const MISSION_STATUS = ["active", "paused", "done", "blocked", "stopped", "budget", "accepted_unverified",
+  "verification_failed"];
 const missionStatus = (s) => (MISSION_STATUS.includes(s) ? t(`mission.status_${s}`) : s);
 const missionRunning = () => ["active", "paused"].includes(mission.status);
+const missionPhase = (m) => (m.status === "active" || m.status === "paused" ? m.phase || "travail" : "");
+const MISSION_FIN = {
+  done: ["ok", "check", "mission.fin_done"],
+  accepted_unverified: ["accepted", "eye", "mission.fin_accepted"],
+  verification_failed: ["failed", "x", "mission.fin_failed"],
+};
+const PREUVE_ICON = { ok: "check", echec: "x", bloque: "alert" };
 
 function missionLeft(m) {
   const end = missionRunning() ? Date.now() / 1000 : (m.ended_at || Date.now() / 1000);
@@ -2711,10 +2722,60 @@ function budgetRow(label, used, max, unit) {
   return row;
 }
 
+// Chemin court pour l'affichage : relatif au dossier du périmètre qui le contient.
+function missionPath(m, p) {
+  const root = (m.scope || []).filter((r) => p === r || p.startsWith(`${r}/`)).sort((a, b) => b.length - a.length)[0];
+  return root ? (p === root ? root.split("/").pop() : p.slice(root.length + 1)) : p;
+}
+
+// Un contrôle du critère, en clair (rendu ici, dans la langue de l'interface).
+function missionControl(m, c) {
+  const chemin = missionPath(m, c.chemin || c.depot || c.dossier || "");
+  if (c.type === "fichier_existe") {
+    if (c.genre === "dossier") return t("mission.c_dossier", { chemin });
+    return t(c.taille_min ? "mission.c_taille" : "mission.c_existe", { chemin, n: c.taille_min || 0 });
+  }
+  if (c.type === "fichier_contient") return t(c.absent ? "mission.c_sans" : "mission.c_contient", { chemin, texte: c.texte });
+  if (c.type === "empreinte") return t("mission.c_sha", { chemin, sha: (c.sha256 || "").slice(0, 12) });
+  if (c.type === "dossier_contient") return t("mission.c_contenu", { chemin, list: (c.attendus || []).join(", ") });
+  if (c.type === "git_head") {
+    const parts = [];
+    if (c.branche) parts.push(t("mission.c_branche", { chemin, branche: c.branche }));
+    if (c.avance) parts.push(t("mission.c_commit", { chemin }));
+    return parts.join(" · ") || t("mission.c_depot", { chemin });
+  }
+  if (c.type === "commande_observee") return t("mission.c_commande", { chemin, commande: c.commande });
+  return c.type || "?";
+}
+
+// Le rapport de preuve : codes produits par le cœur (jamais le contenu d'un fichier), tout en textContent.
+function missionProof(m) {
+  const p = m.preuve;
+  const box = el("div", `mission-preuve ${p.statut || ""}`);
+  const when = p.at ? new Date(p.at * 1000).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) : "";
+  const head = el("div", "mission-preuve-head");
+  setLabel(head, PREUVE_ICON[{ verifiee: "ok", echec: "echec" }[p.statut] || "bloque"],
+    t(`mission.preuve_${p.statut || "bloquee"}`, { time: when }), "lead");
+  box.append(head);
+  const ul = el("ul", "mission-preuve-list");
+  for (const c of p.controles || []) {
+    const li = el("li", `etat-${c.etat}`);
+    const infos = { ...(c.infos || {}) };
+    if (Array.isArray(infos.noms)) infos.noms = infos.noms.join(", ");
+    const cible = c.cible ? missionPath(m, c.cible) : "";
+    setLabel(li, PREUVE_ICON[c.etat] || "alert", `${cible ? `${cible} : ` : ""}${t(`mission.code_${c.code}`, infos)}`, "lead");
+    ul.append(li);
+  }
+  box.append(ul);
+  return box;
+}
+
 function renderMission() {
   const m = mission;
   const running = missionRunning();
   const paused = m.status === "paused";
+  const phase = missionPhase(m);
+  const decide = m.status === "active" && phase === "verification_blocked";
   const left = missionLeft(m);
   // 28/10 (T10, décision de l'utilisateur) : plus de bouton « Mission » dans la barre ; le bandeau (pause,
   // arrêt) et le panneau droit restent.
@@ -2722,7 +2783,10 @@ function renderMission() {
   $("#mission-banner").hidden = !running;
   document.body.classList.toggle("mission-on", running);
   $("#mission-banner").classList.toggle("paused", paused);
-  setLabel($("#mission-banner-head"), paused ? "pause" : "target", t(paused ? "mission.banner_paused" : "mission.banner_running"), "lead");
+  $("#mission-banner").classList.toggle("decide", decide);
+  const bannerKey = paused ? "mission.banner_paused" : decide ? "mission.banner_decide"
+    : phase === "verification" ? "mission.banner_verifying" : "mission.banner_running";
+  setLabel($("#mission-banner-head"), paused ? "pause" : decide ? "alert" : "target", t(bannerKey), "lead");
   // T25 (29/10) : une mission lancée par Astrel lui-même le dit dans le bandeau.
   const by = m.lancee_par === "astrel" ? ` · ${t("mission.by_assistant", { name: assistantName() })}` : "";
   $("#mission-banner-info").textContent = running
@@ -2737,15 +2801,41 @@ function renderMission() {
   const box = $("#mission");
   box.replaceChildren();
   if (!show) return;
-  box.className = `mission ${m.status}`;
+  box.className = `mission ${m.status}${decide ? " decide" : ""}`;
   const head = el("div", "row");
-  head.append(el("b", "", m.objective || "—"), el("span", `pill ${m.status}`, missionStatus(m.status)));
-  box.append(head, el("div", "small muted", t("mission.done_when", { text: m.done_when || "—" })));
-  const step = m.status === "active"
-    ? t(m.in_turn ? "mission.turn_running" : "mission.turn_next", { n: m.in_turn ? m.turns : (m.turns || 0) + 1 })
-    : t("mission.turns_in", { n: m.turns || 0, minutes: left.elapsed });
+  const pill = decide ? t("mission.phase_blocked") : m.status === "active" && phase === "verification"
+    ? t("mission.phase_verification") : missionStatus(m.status);
+  head.append(el("b", "", m.objective || "—"), el("span", `pill ${m.status}${decide ? " decide" : ""}`, pill));
+  box.append(head);
+  const fin = MISSION_FIN[m.status];
+  if (fin) {
+    const line = el("div", `mission-fin ${fin[0]}`);
+    // revue P43 : « vérifiée » selon un critère d'Astrel jamais approuvé le dit dans la fin elle-même.
+    const astrel = m.status === "done" && m.origine === "claude" && !m.approuve;
+    setLabel(line, fin[1], t(astrel ? "mission.fin_done_astrel" : fin[2]), "lead");
+    box.append(line);
+  }
+  box.append(el("div", "small muted", t("mission.done_when", { text: m.done_when || "—" })));
+  if (m.critere?.controles?.length) {
+    const ul = el("ul", "mission-critere");
+    for (const c of m.critere.controles) ul.append(el("li", "", missionControl(m, c)));
+    for (const f of m.critere.figer || []) ul.append(el("li", "", t("mission.c_figer", { chemin: missionPath(m, f) })));
+    box.append(el("div", "small", t("mission.criterion_typed")), ul);
+    const origin = m.origine !== "claude" ? t("mission.origin_you")
+      : t(m.approuve ? "mission.origin_assistant_ok" : "mission.origin_assistant");
+    box.append(el("div", `small muted mission-origine ${m.origine === "claude" && !m.approuve ? "astrel" : ""}`, origin));
+  } else {
+    box.append(el("div", "small mission-origine astrel", t("mission.criterion_free")));
+  }
+  const step = m.status !== "active" ? t("mission.turns_in", { n: m.turns || 0, minutes: left.elapsed })
+    : phase === "verification" ? t("mission.step_verifying")
+      : decide ? t("mission.step_decide")
+        : t(m.in_turn ? "mission.turn_running" : "mission.turn_next", { n: m.in_turn ? m.turns : (m.turns || 0) + 1 });
   box.append(el("div", "step", step));
-  if (m.last) box.append(el("div", "small muted mission-last", t("mission.last", { text: tx(m.last) })));
+  if (m.declaration?.texte) box.append(el("div", "small muted mission-last",
+    t("mission.declared", { text: m.declaration.texte })));
+  if (m.preuve) box.append(missionProof(m));
+  if (m.last && !m.preuve) box.append(el("div", "small muted mission-last", t("mission.last", { text: tx(m.last) })));
   if (m.reason) box.append(el("div", "small mission-reason", tx(m.reason)));
   box.append(budgetRow(t("mission.turns"), m.turns || 0, m.max_turns || 0, t("mission.turns_unit")),
     budgetRow(t("mission.minutes"), Math.min(m.max_minutes || 0, left.elapsed), Math.round(m.max_minutes || 0), "min"),
@@ -2759,6 +2849,14 @@ function renderMission() {
     b.onclick = fn;
     actions.append(b);
   };
+  if (decide) {
+    if (m.critere) btn("refresh", t("mission.reverify"), "ok", () => missionAction("reverifier"));
+    btn("play", t("mission.back_to_work"), "", () => missionAction("reprendre_travail"));
+    btn("eye", t("mission.accept"), "", () => missionAction("accepter"));
+  }
+  if (running && m.critere && m.origine === "claude" && !m.approuve) {
+    btn("shield", t("mission.approve"), "", () => missionAction("approuver"));
+  }
   if (m.status === "active") btn("pause", t("mission.pause"), "", () => missionAction("pause"));
   if (paused) btn("play", t("mission.resume"), "ok", () => missionAction("resume"));
   if (running) btn("stop", t("mission.stop"), "danger", () => missionAction("stop"));
@@ -2776,18 +2874,27 @@ async function missionAction(action) {
     text: t("mission.stop_text", { objective: mission.objective }),
     ok: t("mission.stop_ok"), danger: true,
   }))) return;
+  // P43 : accepter sans preuve se dit clairement avant de le faire (ce n'est jamais « vérifiée »).
+  if (action === "accepter" && !(await openModal({
+    title: t("mission.accept_title"),
+    text: t("mission.accept_text", { objective: mission.objective }),
+    ok: t("mission.accept_ok"),
+  }))) return;
   const r = await command("mission", { action });
   if (!r.ok) toast(r.error || t("common.refused"), "error");
 }
 
 async function startMission() {
   const c = channelOf(activeChannel);
-  const v = await openModal({
+  let warned = "";
+  await openModal({
     title: t("mission.start_title"),
     text: t("mission.start_text"),
     fields: [
       { name: "objective", label: t("mission.f_objective"), required: true, placeholder: t("mission.f_objective_ph") },
-      { name: "done_when", label: t("mission.f_done_when"), required: true,
+      { name: "verification_lignes", label: t("mission.f_verification"), multiline: true, rows: 3,
+        placeholder: t("mission.f_verification_ph"), hint: t("mission.f_verification_hint") },
+      { name: "done_when", label: t("mission.f_done_when"),
         placeholder: t("mission.f_done_when_ph"), hint: t("mission.f_done_when_hint") },
       { name: "scope", label: t("mission.f_scope"), required: true, multiline: true,
         value: c?.workdir || "", placeholder: "~/Projets/…", hint: t("mission.f_scope_hint") },
@@ -2801,15 +2908,24 @@ async function startMission() {
     ],
     note: t("mission.start_note"),
     ok: t("mission.start_ok"),
+    // P43 : envoyée depuis la boîte, qui reste ouverte avec l'erreur du cœur (critère mal écrit…).
+    check: async (v) => {
+      if (!v.verification_lignes && !v.done_when) return t("mission.f_need_criterion");
+      const outside = missionPathsOutside(v.objective, v.scope, c?.workdir);
+      const key = JSON.stringify([v.objective, v.scope]);
+      if (outside.length && warned !== key) {
+        warned = key;  // second clic sur Lancer : lancé tel quel
+        return t("mission.f_outside", { list: outside.slice(0, 3).join(", ") });
+      }
+      const spec = {
+        objective: v.objective, done_when: v.done_when, verification_lignes: v.verification_lignes, scope: v.scope,
+        forbidden_paths: v.forbidden_paths, forbidden: v.forbidden, channel: activeChannel,
+        max_turns: +v.max_turns, max_minutes: +v.max_minutes, max_tokens: Math.round(+v.max_ktokens * 1000),
+      };
+      const r = await command("mission", { action: "start", spec });
+      return r.ok ? "" : tx(r.error || t("mission.not_started"));
+    },
   });
-  if (!v) return;
-  const spec = {
-    objective: v.objective, done_when: v.done_when, scope: v.scope, forbidden_paths: v.forbidden_paths,
-    forbidden: v.forbidden, channel: activeChannel,
-    max_turns: +v.max_turns, max_minutes: +v.max_minutes, max_tokens: Math.round(+v.max_ktokens * 1000),
-  };
-  const r = await command("mission", { action: "start", spec });
-  if (!r.ok) toast(r.error || t("mission.not_started"), "error");
 }
 // 28/10 (hud-boutons-t10) : plus de bouton « Mission » dans la barre ; Réglages › Garde-fou › « Lancer une
 // mission » ouvre la même fenêtre (même commande `mission start`, refusée à Claude par le cœur).

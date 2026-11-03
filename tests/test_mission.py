@@ -542,6 +542,7 @@ def test_reponse_a_la_voix_ne_coupe_rien(monkeypatch):
 # ---------------------------------------------------------------- T25 : mission lancée par Astrel (29/10)
 
 AUTO = {"cmd": "mission_auto", "objective": "migrer le site", "done_when": "npm test rend 0", "channel": "projet",
+        "verification": {"controles": [{"type": "fichier_existe", "chemin": str(PROJ / "FAIT.md"), "genre": "fichier"}]},
         "_from_claude": True, "_via": "socket"}
 
 
@@ -595,6 +596,12 @@ def test_outil_mcp_mission_start(monkeypatch):
 
     sent = []
     monkeypatch.setattr(mcp_server, "_core", lambda cmd, ensure_ascii=True: sent.append(cmd) or {"ok": True})
-    mcp_server.mission_start("migrer", "npm test rend 0", f"{chemins_machine.PROJETS}/Site", max_tours=5)
+    critere = {"controles": [{"type": "fichier_existe", "chemin": f"{chemins_machine.PROJETS}/Site/dist", "genre": "dossier"}]}
+    mcp_server.mission_start("migrer", "npm test rend 0", f"{chemins_machine.PROJETS}/Site", max_tours=5, verification=critere)
     assert sent[-1]["cmd"] == "mission_auto" and sent[-1]["scope"] == [f"{chemins_machine.PROJETS}/Site"]
-    assert sent[-1]["max_turns"] == 5
+    assert sent[-1]["max_turns"] == 5 and sent[-1]["verification"] == critere
+    # P43 : sans critère typé, l'outil refuse avant même de joindre le cœur
+    n = len(sent)
+    with pytest.raises(Exception, match="verification"):
+        mcp_server.mission_start("migrer", "npm test rend 0", f"{chemins_machine.PROJETS}/Site")
+    assert len(sent) == n

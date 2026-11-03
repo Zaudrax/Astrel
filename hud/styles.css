@@ -938,6 +938,29 @@ body.total-on #head > #lift-frame { inset: 4px; }  /* les deux cadres restent vi
 .mission .pill.paused { color: var(--amber); border-color: var(--amber); }
 .mission .pill.done { color: var(--green); border-color: var(--green); }
 .mission .pill:is(.blocked, .budget, .stopped) { color: var(--red); border-color: rgba(var(--rgb-danger), 0.6); }
+/* 02/11 (plan P43) : preuve de fin. Trois fins qui ne se confondent pas (icône, texte ET couleur) :
+   vérifiée (vert), acceptée sans preuve (ambre, pointillés), vérification échouée (rouge). */
+.mission .pill.verification_failed { color: var(--red); border-color: rgba(var(--rgb-danger), 0.6); }
+.mission .pill.accepted_unverified { color: var(--amber); border: 1px dashed var(--amber); }
+.mission .pill.decide { color: var(--amber); border-color: var(--amber); }
+.mission:is(.accepted_unverified, .verification_failed) { opacity: 0.9; border-color: var(--panel-border); background: none; }
+.mission.decide { border-color: rgba(var(--rgb-warn), 0.6); background: rgba(var(--rgb-warn), 0.06); }
+.mission-fin { font-weight: 600; padding: 4px 8px; border-radius: 8px; border: 1px solid; overflow-wrap: anywhere; }
+.mission-fin.ok { color: var(--green); border-color: var(--green); }
+.mission-fin.accepted { color: var(--amber); border-style: dashed; border-color: var(--amber); }
+.mission-fin.failed { color: var(--red); border-color: rgba(var(--rgb-danger), 0.6); }
+.mission-critere, .mission-preuve-list { margin: 0; padding-left: 16px; display: grid; gap: 2px; overflow-wrap: anywhere; }
+.mission-origine.astrel { color: var(--amber); }
+.mission-preuve { display: grid; gap: 4px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--panel-border); }
+.mission-preuve-head { font-weight: 600; }
+.mission-preuve.verifiee .mission-preuve-head { color: var(--green); }
+.mission-preuve.echec .mission-preuve-head { color: var(--red); }
+.mission-preuve:is(.bloquee, .interrompue) .mission-preuve-head { color: var(--amber); }
+.mission-preuve-list { list-style: none; padding-left: 0; font-size: 11px; }
+.mission-preuve-list .etat-ok { color: var(--green); }
+.mission-preuve-list .etat-echec { color: var(--red); }
+.mission-preuve-list .etat-bloque { color: var(--amber); }
+#mission-banner.decide { background: rgba(90, 60, 10, 0.92); border-color: var(--amber); box-shadow: 0 0 18px rgba(var(--rgb-warn), 0.35); }
 .mission .step { color: var(--ink); }
 .mission-last, .mission-reason { overflow-wrap: anywhere; }
 .mission-reason { color: var(--amber); }

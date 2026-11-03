@@ -56,11 +56,11 @@ CONTENT = ", ".join((
 ))
 # Textes de la démo qui jouent le rôle de la conversation ou de Claude (français voulu).
 DEMO_CONTENT = (
-    "npm test dans Boutique", "météo Lille", "écran principal", "ami@exemple.fr <b>pas du html</b>",
-    "Recherche sur les preuves formelles", "Quel nom pour le nouveau canal ?",
+    "mails de ce matin", "météo Nantes", "écran principal", "ami@exemple.fr <b>pas du html</b>",
+    "Comparatif des assurances habitation", "Quel nom pour le nouveau canal ?",
     # tâches de la démo (descriptions écrites par Claude) : titre, infobulle et nom accessible des lignes
-    "Trier les mails de la semaine", "Compiler l'appli Studio", "Relire tout le dépôt Compta",
-    "Corriger le paywall Boutique", "Lot A du plan P18",
+    "Trier les mails de la semaine", "Copier les photos sur le disque externe", "Relire tous les contrats d'assurance",
+    "Comparer les billets de train", "Liste des cartons du déménagement",
     # tâches injectées par simple_en (hud_check_rendu.lot_b_tasks)
     "Agent du lot B", "Fini récent", "Fini ancien", "Commande finie",
 )
@@ -323,8 +323,8 @@ async def run(url: str) -> None:
             " && [...document.querySelectorAll('#tasks .task.done .step')].some(s => s.textContent.endsWith('Failed · 24 actions'))"))
         await scan(p, "en cours : tâches finies")
         # descriptions de d1, d2 traduites par le catalogue (« Sort this week's emails ») ; d4, d5 non
-        for desc, where in (("Sort this week", "détail d'agent en cours"), ("Build the Studio", "détail d'une commande"),
-                            ("Corriger le paywall", "détail d'agent en échec"), ("Lot A du plan", "détail avec passation")):
+        for desc, where in (("Sort this week", "détail d'agent en cours"), ("Copy the photos", "détail d'une commande"),
+                            ("Comparer les billets", "détail d'agent en échec"), ("Liste des cartons", "détail avec passation")):
             await p.js(f"[...document.querySelectorAll('#tasks .task')].find(r => r.textContent.includes({json.dumps(desc)})).click()")
             await p.until("!!document.querySelector('.modal.agent-detail .ad-meta')", 4)
             await asyncio.sleep(0.4)
@@ -337,7 +337,7 @@ async def run(url: str) -> None:
                 await p.shot("apres-en-detail-agent.png")
             await close_panel(p)
         await p.js("window.__ws.send(JSON.stringify({ cmd: 'demo_expire', task_id: 'd5' }))")
-        await p.js("[...document.querySelectorAll('#tasks .task')].find(r => r.textContent.includes('Lot A du plan')).click()")
+        await p.js("[...document.querySelectorAll('#tasks .task')].find(r => r.textContent.includes('Liste des cartons')).click()")
         check("détail expiré en anglais (« no longer available »)", await p.until(
             "(document.querySelector('.modal.agent-detail .ad-expired')?.textContent || '').includes('no longer available')", 4))
         await scan(p, "détail expiré")
@@ -345,8 +345,8 @@ async def run(url: str) -> None:
         # carte de confirmation (texte du garde-fou traduit) et question à choix
         await p.js("window.__ws.send(JSON.stringify({ cmd: 'demo_confirm' }))")
         await p.until("!document.querySelector('#confirm').classList.contains('hidden')", 5)
-        check("carte de confirmation traduite (« Heads up: a git publish (push). Should I continue? »)", await p.js(
-            "document.querySelector('#confirm-question').textContent === 'Heads up: a git publish (push). Should I continue?'"))
+        check("carte de confirmation traduite (« Heads up: a scheduled task. Should I continue? »)", await p.js(
+            "document.querySelector('#confirm-question').textContent === 'Heads up: a scheduled task. Should I continue?'"))
         await scan(p, "carte de confirmation")
         await p.shot("apres-en-confirmation.png")
         await click(p, "#confirm-no")
