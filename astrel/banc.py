@@ -154,13 +154,13 @@ def _usage_tokens(usage: dict) -> int:
 def command(mcp_file: Path, budget_usd: float = SCENARIO_BUDGET_USD) -> list[str]:
     """Le prompt passe par l'entrée standard : les options à valeurs multiples
     (`--tools`, `--mcp-config`…) avaleraient un argument placé après elles."""
-    from .brain import VOICE_SYSTEM_PROMPT
+    from .brain import VOICE_SYSTEM_PROMPT, fichier_prompt
 
     return [config.CLAUDE_BIN, "-p", "--output-format", "stream-json", "--verbose",
             "--restricted", "--strict-mcp-config", "--mcp-config", str(mcp_file),
             "--no-session-persistence", "--model", MODEL, "--max-budget-usd", f"{budget_usd:.2f}",
             "--tools", "", "--allowedTools", f"mcp__{SERVER}", "--permission-prompts", "none",
-            "--append-system-prompt", VOICE_SYSTEM_PROMPT]
+            "--append-system-prompt-file", fichier_prompt(VOICE_SYSTEM_PROMPT)]  # 03/11 : cmd.exe, 8 191 car.
 
 
 def _mcp_config(log_path: Path) -> dict:

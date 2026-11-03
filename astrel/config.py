@@ -447,6 +447,8 @@ ESTOP_FILE = RUNTIME / "ESTOP"
 # interdits, budget. Lancée et arrêtée par l'utilisateur seul (HUD, CLI), protégée
 # par le garde-fou comme le mode : Claude ne peut ni la lancer ni l'élargir.
 MISSION_FILE = RUNTIME / "mission.json"
+# 03/11 : prompt système du cerveau, passé au CLI par fichier (cmd.exe de Windows : ligne ≤ 8 191 caractères).
+PROMPT_FILE = RUNTIME / "prompt-systeme.txt"
 MISSION_MAX_TURNS = int(_env_float("ASTREL_MISSION_MAX_TURNS", 20))
 MISSION_MAX_MINUTES = _env_float("ASTREL_MISSION_MAX_MINUTES", 60.0)
 MISSION_MAX_TOKENS = int(_env_float("ASTREL_MISSION_MAX_TOKENS", 3_000_000))

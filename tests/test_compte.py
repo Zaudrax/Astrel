@@ -39,8 +39,12 @@ elif args[:2] == ["auth", "logout"]:
 @pytest.fixture
 def fake(tmp_path, monkeypatch):
     exe = tmp_path / "claude"
-    exe.write_text(FAKE.replace("@PY@", sys.executable).replace("@DIR@", repr(str(tmp_path))))
+    exe.write_text(FAKE.replace("@PY@", sys.executable).replace("@DIR@", repr(str(tmp_path))), encoding="utf-8")
     exe.chmod(0o755)
+    if sys.platform == "win32":  # 03/11 : pas de « #! » sous Windows, un claude.cmd lance le script (comme npm)
+        cmd = tmp_path / "claude.cmd"
+        cmd.write_text(f'@"{sys.executable}" "{exe}" %*\r\n', encoding="utf-8")
+        exe = cmd
     monkeypatch.setattr(config, "CLAUDE_BIN", str(exe))
     c = compte_mod.Compte()
     monkeypatch.setattr(compte_mod, "compte", c)

@@ -14,6 +14,7 @@ from astrel.settings import reglages
 from astrel.voice.text import SentenceSplitter, clean_for_speech
 from test_budget import PROMPT_MAX_CHARS
 from test_whatsapp import wa, wa_env  # noqa: F401  (fixtures)
+from conftest import prompt_de
 
 
 @pytest.fixture
@@ -234,7 +235,7 @@ def test_cerveau_en_anglais_et_session_par_langue(tmp_path, monkeypatch, anglais
     b = brain.Brain()
     b.start(fresh=True)
     cmd = FakePopen.cmds[-1]
-    assert cmd[cmd.index("--append-system-prompt") + 1] == brain.VOICE_SYSTEM_PROMPT_EN and b.langue == "en"
+    assert prompt_de(cmd) == brain.VOICE_SYSTEM_PROMPT_EN and b.langue == "en"
     b._proc, b.session_id = FakePopen(["x"]), "11111111-1111-4111-8111-111111111111"
     b._remember_session()
     assert json.loads(config.SESSION_FILE.read_text())["langue"] == "en"

@@ -12,6 +12,7 @@ import json
 import re
 
 from astrel import agents, brain, config
+from conftest import prompt_de
 
 # Mesuré le 15/10 (caractères) : prompt 9 779 (8 519 avant les idées 2, 3 et 8),
 # agents 10 699. 17/10 (plan P3, lots B et D) : agents `bilan` et `archiviste`, 14 907 mesurés ; seule
@@ -94,7 +95,7 @@ def test_prompt_identique_d_un_demarrage_a_l_autre(tmp_path, monkeypatch):
     monkeypatch.setattr(brain.subprocess, "Popen", FakePopen)
     for _ in range(2):
         brain.Brain().start(fresh=True)
-    prompts = [c[c.index("--append-system-prompt") + 1] for c in cmds]
+    prompts = [prompt_de(c) for c in cmds]
     assert prompts[0] == prompts[1] == brain.VOICE_SYSTEM_PROMPT
     files = [c[c.index("--agents") + 1] for c in cmds]
     assert files[0] == files[1]

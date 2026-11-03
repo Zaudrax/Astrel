@@ -338,6 +338,18 @@ def _browsers_line(extra: int | None, langue: str = "fr") -> str:
             "autres, sinon ils se ferment leurs pages mutuellement.\n")
 
 
+def fichier_prompt(texte: str) -> str:
+    """Prompt système écrit dans `runtime/prompt-systeme.txt` (0600, sans suivre de lien), RÉÉCRIT à chaque
+    lancement du cerveau : une retouche entre deux lancements est écrasée. Rend son chemin."""
+    from .platform import systeme
+    chemin = config.PROMPT_FILE
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    fd = systeme.ouvrir_sans_lien(chemin, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(texte)
+    return str(chemin)
+
+
 def voice_system_prompt(extra_browsers: int | None = -1, langue: str = "fr") -> str:
     """Invite système : agents lus dans `config/agents/`, navigateurs de test comptés
     (`extra_browsers` ; -1 = `config.BROWSER_EXTRA`). Même entrée, même texte : le cache du
@@ -913,7 +925,9 @@ class Brain:
             # le hook PreToolUse d'Astrel est le vrai gardien, et il peut refuser.
             "--dangerously-skip-permissions",
             "--settings", str(settings),
-            "--append-system-prompt", voice_system_prompt(self._browsers_declared(), self.langue),
+            # 03/11 (CI Windows) : par un FICHIER, pas en ligne : sous Windows, `claude.cmd` (npm) passe par
+            # cmd.exe, qui refuse une ligne de plus de 8 191 caractères (« The command line is too long »).
+            "--append-system-prompt-file", fichier_prompt(voice_system_prompt(self._browsers_declared(), self.langue)),
             "--add-dir", str(config.WORKDIR),
         ]
         cmd += ["--resume", resume] if resume else ["--session-id", str(uuid.uuid4())]

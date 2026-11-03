@@ -17,7 +17,7 @@ from faux_ollama import FauxOllama
 from test_reports import ch, astrel, of, published  # noqa: F401  (fixtures)
 
 FORBIDDEN = ("--mcp-config", "--agents", "--dangerously-skip-permissions", "--allowedTools", "--allowed-tools",
-             "--permission-mode", "--settings", "--add-dir", "--resume", "--append-system-prompt",
+             "--permission-mode", "--settings", "--add-dir", "--resume", "--append-system-prompt", "--append-system-prompt-file",
              "--plugin-dir", "--mcp-debug")
 
 

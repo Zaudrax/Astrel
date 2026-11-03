@@ -60,6 +60,7 @@ def _filet_de_session_images_videos(tmp_path_factory):
     mp.setattr(attachments, "ATTACH_DIR", base / "attachments")
     mp.setattr(medias, "MEDIA_DIR", base / "medias")
     mp.setattr(graph, "USAGE_FILE", base / "graph-usage.json")
+    mp.setattr(config, "PROMPT_FILE", base / "prompt-systeme.txt")  # 03/11 : jamais le vrai runtime/
     yield
     mp.undo()
 
@@ -440,3 +441,12 @@ def mode_prive(chemin, attendu: int = 0o600) -> bool:
     import os
     from pathlib import Path
     return os.name == "nt" or (Path(chemin).stat().st_mode & 0o777) == attendu
+
+
+def prompt_de(cmd: list) -> str:
+    """Prompt système d'une ligne de commande du CLI : en texte (`--append-system-prompt`) ou, depuis le 03/11,
+    par un fichier (`--append-system-prompt-file`, cmd.exe de Windows limitant une ligne à 8 191 caractères)."""
+    from pathlib import Path
+    if "--append-system-prompt-file" in cmd:
+        return Path(cmd[cmd.index("--append-system-prompt-file") + 1]).read_text(encoding="utf-8")
+    return cmd[cmd.index("--append-system-prompt") + 1]

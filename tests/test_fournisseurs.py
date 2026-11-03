@@ -26,7 +26,7 @@ from astrel.fournisseurs import Effectif, Secret
 from astrel.settings import reglages
 from faux_openai import FauxOpenAI
 from test_reports import ch, astrel, of, published  # noqa: F401  (fixtures)
-from conftest import mode_prive
+from conftest import mode_prive, prompt_de
 
 ROOT = Path(__file__).resolve().parent.parent
 CLE = "sk-ant-api03-CLE-FACTICE-DU-TEST-0123456789abcdef"
@@ -198,7 +198,7 @@ def test_abonnement_inchange_mais_variables_du_shell_retirees(fake_cli, monkeypa
     settings = json.loads(config.SETTINGS_FILE.read_text())
     assert "apiKeyHelper" not in settings
     assert any(h["matcher"] == "Agent|Task" for h in settings["hooks"]["PreToolUse"])
-    assert "--dangerously-skip-permissions" in seen["cmd"] and "--append-system-prompt" in seen["cmd"]
+    assert "--dangerously-skip-permissions" in seen["cmd"] and "--append-system-prompt-file" in seen["cmd"]
 
 
 def test_cle_claude_par_assistant_jamais_en_clair(fake_cli):
@@ -212,7 +212,7 @@ def test_cle_claude_par_assistant_jamais_en_clair(fake_cli):
     assert settings["apiKeyHelper"] == fournisseurs.helper("cle_claude")
     assert any(h["matcher"] == "*" for h in settings["hooks"]["PreToolUse"])  # garde-fou en place
     assert b.fournisseur.genre == "cle_claude" and fournisseurs.etat.actif.genre == "cle_claude"
-    prompt = seen["cmd"][seen["cmd"].index("--append-system-prompt") + 1]
+    prompt = prompt_de(seen["cmd"])
     assert CLE not in prompt and chemins_machine.longueur_type(prompt) <= 10_800
 
 
