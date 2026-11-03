@@ -288,7 +288,7 @@ def _cle(creer: bool) -> bytes | None:
     try:
         st = os.lstat(path)
         if systeme.proprietaire_seul(st):  # 03/11 : pas d'uid sous Windows
-            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            fd = systeme.ouvrir_sans_lien(path, os.O_RDONLY)
             with os.fdopen(fd, "rb") as fh:
                 key = fh.read(4096)
             if len(key) >= 32:

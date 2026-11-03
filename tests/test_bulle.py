@@ -11,6 +11,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+# 03/11 (portage) : bulle GTK = Linux, avec PyGObject et pycairo du système ; ailleurs, la bulle Qt (test_bulle_qt.py).
+pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="bulle GTK : Linux seulement")
+
 ROOT = Path(__file__).resolve().parent.parent
 
 CODE = r"""

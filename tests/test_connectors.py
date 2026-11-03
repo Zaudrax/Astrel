@@ -24,7 +24,8 @@ def isolated(tmp_path, monkeypatch):
         monkeypatch.delenv(key, raising=False)
     tz_avant = os.environ.get("TZ")
     monkeypatch.setenv("TZ", "Europe/Paris")
-    time.tzset()
+    if hasattr(time, "tzset"):  # 03/11 : absent sous Windows
+        time.tzset()
     agenda._cache.clear()
     yield
     # 30/10 : TZ remise À LA MAIN, jamais `monkeypatch.undo()` : il défaisait aussi l'isolation du
@@ -33,7 +34,8 @@ def isolated(tmp_path, monkeypatch):
         os.environ.pop("TZ", None)
     else:
         os.environ["TZ"] = tz_avant
-    time.tzset()
+    if hasattr(time, "tzset"):  # 03/11 : absent sous Windows
+        time.tzset()
 
 
 def secrets(tmp_path, **values):

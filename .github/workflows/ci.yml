@@ -42,18 +42,19 @@ jobs:
         run: echo "$GITHUB_WORKSPACE/tools/ci/faux-claude" >> "$GITHUB_PATH"
       - name: Contrôle de la machine (avant installation)
         run: python tools/check_install.py --ci
-      - name: Dépendances Python (sans les ~1 Go de CUDA, inutiles aux tests)
+      - name: Dépendances Python dans .venv, comme install.py (sans les ~1 Go de CUDA, inutiles aux tests)
         run: |
           grep -v '^nvidia-' requirements.txt > /tmp/requirements-ci.txt
-          python -m pip install --upgrade pip
-          python -m pip install -r /tmp/requirements-ci.txt websockets
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r /tmp/requirements-ci.txt websockets
       - name: Tests Python (dont ceux du HUD en Node, par tests/test_hud_markdown.py)
-        run: python -m pytest -q
+        run: .venv/bin/python -m pytest -q
       - name: Rendu du HUD en Chrome headless
-        run: python tools/hud_check_rendu.py
+        run: .venv/bin/python tools/hud_check_rendu.py
       - name: Essai de démarrage (vrai Astrel, faux Claude, sans micro ni haut-parleur)
         if: always()
-        run: python tools/ci/demarrage.py
+        run: .venv/bin/python tools/ci/demarrage.py
 
   portage:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.ref_name == 'portage'
@@ -63,7 +64,7 @@ jobs:
         os: [macos-14, windows-2022]
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ github.ref_name != 'portage' }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -77,13 +78,21 @@ jobs:
         run: brew install cairo pkg-config
       - name: Contrôle de la machine (avant installation)
         run: python tools/check_install.py --ci
-      - name: "Dépendances complètes (mesure : quelles roues manquent ?)"
-        run: python -m pip install -r requirements.txt websockets
+      - name: "Dépendances complètes dans .venv, comme install.py (03/11 : les hooks appellent l'interpréteur de la venv)"
+        shell: bash
+        run: |
+          python -m venv .venv
+          if [ -f .venv/bin/python ]; then VPY=.venv/bin/python; else VPY=.venv/Scripts/python.exe; fi
+          echo "VPY=$VPY" >> "$GITHUB_ENV"
+          "$VPY" -m pip install -r requirements.txt websockets pytest-timeout==2.4.0
       - name: Essai de démarrage (vrai Astrel, faux Claude, sans micro ni haut-parleur)
-        run: python tools/ci/demarrage.py
+        shell: bash
+        run: '"$VPY" tools/ci/demarrage.py'
       - name: Tests de la couche plateforme, de l'installation et du canal local (plan P6)
         if: always()
-        run: python -m pytest -q -p no:cacheprovider tests/test_platform.py tests/test_install.py tests/test_ipc.py
+        shell: bash
+        run: '"$VPY" -m pytest -q -p no:cacheprovider tests/test_platform.py tests/test_install.py tests/test_ipc.py'
       - name: Suite complète (mesure)
         if: always()
-        run: python -m pytest -q -p no:cacheprovider
+        shell: bash
+        run: '"$VPY" -m pytest -q -p no:cacheprovider --durations=15 --timeout=120' 

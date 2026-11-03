@@ -116,8 +116,8 @@ def test_reglages_declarent_les_deux_hooks(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "SETTINGS_FILE", tmp_path / "s.json")
     settings = json.loads(brain.write_settings().read_text(encoding="utf-8"))
     hooks = settings["hooks"]["PreToolUse"]
-    assert hooks[0]["matcher"] == "*" and str(config.HOOK_SCRIPT) in hooks[0]["hooks"][0]["command"]
-    assert hooks[1]["matcher"] == "Agent|Task" and str(config.ROUTE_HOOK_SCRIPT) in hooks[1]["hooks"][0]["command"]
+    assert hooks[0]["matcher"] == "*" and config.HOOK_SCRIPT.as_posix() in hooks[0]["hooks"][0]["command"]
+    assert hooks[1]["matcher"] == "Agent|Task" and config.ROUTE_HOOK_SCRIPT.as_posix() in hooks[1]["hooks"][0]["command"]
 
 
 def test_reglages_bloquent_les_connecteurs_inutiles(tmp_path, monkeypatch):
@@ -263,7 +263,7 @@ def test_equipe_pilote_lit_sa_fiche():
         a = found[name]
         first = a["prompt"].splitlines()[0]
         assert first.startswith("Première action, obligatoire : lis avec Read"), name
-        assert str(agents.METIERS_DIR / "equipe.md") in first and "{metiers}" not in a["prompt"]
+        assert (agents.METIERS_DIR / "equipe.md").as_posix() in first and "{metiers}" not in a["prompt"]
         if name != "codeur":
             assert "mcp__astrel__passation" in a["tools"], name
     assert "Playwright" not in found["testeur"]["tools"] and "headless" in found["testeur"]["description"]
@@ -278,7 +278,7 @@ def test_regle_de_couverture_citee():
     assert "incomplet : N sur M" in regle and "stratifié" in regle
     found = agents.load_agents()
     for name in ("chercheur", "stratege-marketing", "avocat-du-diable"):
-        assert str(agents.METIERS_DIR / "couverture.md") in found[name]["prompt"], name
+        assert (agents.METIERS_DIR / "couverture.md").as_posix() in found[name]["prompt"], name
     for fiche in ("relecteur.md", "avocat-du-diable.md", "analyste-concurrent.md"):
         assert "couverture.md" in (agents.METIERS_DIR / fiche).read_text(encoding="utf-8"), fiche
 

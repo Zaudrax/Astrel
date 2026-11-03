@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config, equipe
+from .platform import systeme
 
 try:  # comme equipe.py : fcntl n'existe pas sous Windows (verrou du process seulement)
     import fcntl
@@ -178,7 +179,6 @@ def non_lus(mission: Any) -> dict[str, list[dict[str, Any]]]:
     return out
 
 
-_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
 
 class LienRefuse(OSError):
@@ -206,7 +206,7 @@ class _Verrou:
         try:
             _sans_lien(self.path.parent)
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.fh = os.fdopen(os.open(self.path, os.O_RDWR | os.O_APPEND | os.O_CREAT | _NOFOLLOW, 0o600),
+            self.fh = os.fdopen(systeme.ouvrir_sans_lien(self.path, os.O_RDWR | os.O_APPEND | os.O_CREAT, 0o600),
                                 "a+", encoding="utf-8")
             if fcntl is not None:
                 fcntl.flock(self.fh.fileno(), fcntl.LOCK_EX)
@@ -232,7 +232,7 @@ def _ajouter(path: Path, item: dict[str, Any]) -> None:
     line = (json.dumps(item, ensure_ascii=False) + "\n").encode("utf-8")
     _sans_lien(path.parent)
     # 25/10 (audit p33-p34, B1) : O_NOFOLLOW, un courrier.jsonl remplacé par un lien n'écrit pas dans sa cible.
-    with os.fdopen(os.open(path, os.O_RDWR | os.O_APPEND | os.O_CREAT | _NOFOLLOW, 0o600), "a+b") as fh:
+    with os.fdopen(systeme.ouvrir_sans_lien(path, os.O_RDWR | os.O_APPEND | os.O_CREAT, 0o600), "a+b") as fh:
         if os.fstat(fh.fileno()).st_nlink > 1:  # 2e passage (relecteur) : lien DUR vers un autre fichier
             raise LienRefuse(f"{path.name} : lien dur refusé")
         if fh.seek(0, os.SEEK_END) > 0:

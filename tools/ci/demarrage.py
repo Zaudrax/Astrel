@@ -30,6 +30,9 @@ DELAI_ARRET_S = 60.0
 
 
 def main() -> int:
+    for flux in (sys.stdout, sys.stderr):  # Windows : sortie de la CI en cp1252, qui refuse « 🔊 »
+        if hasattr(flux, "reconfigure"):
+            flux.reconfigure(encoding="utf-8", errors="replace")
     env = dict(os.environ)
     env["PATH"] = str(FAUX) + os.pathsep + env.get("PATH", "")
     env["ASTREL_AUDIO_ENGINE"] = "fichier"

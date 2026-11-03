@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import time
+from pathlib import Path
 
 import aiohttp
 import pytest
@@ -179,9 +180,9 @@ def test_la_vraie_cle_n_est_jamais_touchee_par_les_tests(tmp_path):
 def test_cle_de_session_protegee_par_le_garde_fou():
     key = config.HUD_SESSION_KEY_FILE
     for tool, inp in (("Read", {"file_path": str(key)}),
-                      ("Bash", {"command": f"cat {key}"}),
+                      ("Bash", {"command": f"cat {Path(key).as_posix()}"}),
                       ("Bash", {"command": "cat runtime/" + key.name}),
-                      ("Bash", {"command": f"echo 00 > {key}"}),
+                      ("Bash", {"command": f"echo 00 > {Path(key).as_posix()}"}),
                       ("Write", {"file_path": str(key), "content": "00"})):
         v = guard.assess(tool, inp, mode="autonome", cwd=str(config.ROOT))
         assert v.needs_confirm and v.guard, (tool, inp, v.desc)

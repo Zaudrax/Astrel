@@ -59,7 +59,7 @@ def list_notes(folder: str = "") -> list[dict]:
         return []
     out = []
     for p in sorted(base.rglob("*.md")):
-        rel = str(p.relative_to(VAULT))
+        rel = p.relative_to(VAULT).as_posix()
         if rel.startswith("."):
             continue
         out.append({"path": rel, "title": _title(p), "modifie": time.strftime("%Y-%m-%d", time.localtime(p.stat().st_mtime))})
@@ -152,7 +152,7 @@ def _connect_index(db: Path) -> sqlite3.Connection:
 def _note_files() -> dict[str, Path]:
     out = {}
     for p in VAULT.rglob("*.md"):
-        rel = str(p.relative_to(VAULT))
+        rel = p.relative_to(VAULT).as_posix()
         if not rel.startswith("."):
             out[rel] = p
     return out
@@ -261,7 +261,7 @@ def _search_naive(query: str, limit: int = 8) -> list[dict]:
         first = min((folded.find(w) for w in words if w in folded), default=0)
         start = max(0, first - 80)
         snippet = " ".join(text[start:start + 260].split())
-        results.append({"path": str(p.relative_to(VAULT)), "title": _title(p), "score": score, "extrait": snippet})
+        results.append({"path": p.relative_to(VAULT).as_posix(), "title": _title(p), "score": score, "extrait": snippet})
     return sorted(results, key=lambda r: -r["score"])[:limit]
 
 
@@ -303,7 +303,7 @@ def write(rel: str, content: str, mode: str = "append") -> str:
         path.write_text(body + "\n", encoding="utf-8")
     if up_to_date:
         _seen[key] = _sig(path)
-    out = str(path.relative_to(VAULT))
+    out = path.relative_to(VAULT).as_posix()
     return out + (f" ({' ; '.join(remarks)})" if remarks else "")
 
 

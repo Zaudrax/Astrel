@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import config
+from .platform import systeme
 from .channels import channels, fold
 from .events import bus
 
@@ -302,9 +303,9 @@ def stage_file(raw: str, ref: str) -> tuple[Path, str, str, int]:
     why = file_refusal(real)
     if why:
         raise ValueError(why)
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)  # sans lien : ouvrir_sans_lien
     try:
-        fd = os.open(real, flags)
+        fd = systeme.ouvrir_sans_lien(real, flags)
     except OSError as exc:
         raise ValueError(f"fichier illisible ({exc.strerror})") from None
     dest: Path | None = None

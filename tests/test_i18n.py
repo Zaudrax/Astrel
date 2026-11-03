@@ -228,6 +228,10 @@ print(json.dumps([card.question.get_text(), card.no.get_label(), card.yes.get_la
             "Question already closed: reply ignored.", "Message Astrel… (Enter; Ctrl+V pastes an image)"]),
 ])
 def test_bulle_dans_la_langue_choisie(lang, want, tmp_path):
+    if not sys.platform.startswith("linux") or not shutil.which("xvfb-run"):
+        pytest.skip("bulle GTK sous Xvfb : Linux seulement")  # 03/11 : la bulle Qt a ses propres tests
+    pytest.importorskip("gi")
+    pytest.importorskip("cairo")
     """Carte de confirmation et mini-chat de la bulle, rendus sous Xvfb (écran virtuel, rien sur le bureau)."""
     env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
     env.update(ASTREL_UI_LANGUAGE=lang, PYTHONPATH=str(ROOT))

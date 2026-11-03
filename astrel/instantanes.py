@@ -40,6 +40,7 @@ import time
 from pathlib import Path
 
 from . import config
+from .platform import systeme
 
 DIR = config.RUNTIME / "instantanes"
 INDEX = DIR / "index.json"
@@ -221,7 +222,7 @@ def _sha_bytes(data: bytes) -> str:
 def _sha(path: Path) -> str | None:
     """Empreinte du contenu ; None si absent ; « ? » si illisible (ou pas un fichier ordinaire)."""
     try:
-        fd = os.open(path, os.O_RDONLY | _NOFOLLOW)
+        fd = systeme.ouvrir_sans_lien(path, os.O_RDONLY)
     except FileNotFoundError:
         return None
     except OSError:
@@ -340,7 +341,7 @@ def _lire_copie(reel: str) -> tuple[bytes, int] | str:
     """(contenu, droits) du fichier `reel`, ou la raison de ne pas le copier. Le fichier OUVERT est
     rejugé : vrai chemin (un dossier remplacé par un lien entre-temps), droits, liens, taille."""
     try:
-        fd = os.open(reel, os.O_RDONLY | _NOFOLLOW)
+        fd = systeme.ouvrir_sans_lien(reel, os.O_RDONLY)
     except OSError:
         return "fichier illisible"
     try:
@@ -381,7 +382,7 @@ def _verrou():
         os.chmod(DIR, 0o700)
     except OSError:
         pass
-    fd = os.open(VERROU, os.O_RDWR | os.O_CREAT | _NOFOLLOW, 0o600)
+    fd = systeme.ouvrir_sans_lien(VERROU, os.O_RDWR | os.O_CREAT, 0o600)
     fh = os.fdopen(fd, "a+")
     try:
         import fcntl
@@ -405,7 +406,7 @@ def _lire() -> dict:
 
 def _ecrire(data: dict) -> None:
     tmp = INDEX.with_name(f".index.{os.getpid()}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _NOFOLLOW, 0o600)
+    fd = systeme.ouvrir_sans_lien(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False)
     os.replace(tmp, INDEX)

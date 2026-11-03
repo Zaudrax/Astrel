@@ -34,12 +34,14 @@ import secrets
 import shutil
 import stat
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
 from typing import Any
 
 from . import config
+from .platform import systeme
 
 log = logging.getLogger("astrel.medias")
 
@@ -101,6 +103,7 @@ def source_roots() -> list[Path]:
     Noms anglais à côté des français : les mêmes dossiers sur un système en anglais."""
     home = Path.home()
     roots = [config.RUNTIME / "attachments", config.IMAGES_RUNTIME, Path("/tmp"), config.WORKDIR]
+    roots.append(Path(tempfile.gettempdir()))  # 03/11 : le dossier temporaire du système (Windows : %TEMP%)
     roots += [home / d for d in ("Images", "Téléchargements", "Bureau", "Pictures", "Downloads", "Desktop")]
     return roots
 
@@ -291,9 +294,9 @@ def publish(raw: Any, budget: list[int] | None = None) -> dict[str, Any]:
     why = refusal(real)
     if why:
         raise ValueError(why)
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)  # sans lien : ouvrir_sans_lien
     try:
-        fd = os.open(real, flags)
+        fd = systeme.ouvrir_sans_lien(real, flags)
     except OSError as exc:
         raise ValueError(f"fichier illisible ({exc.strerror})") from None
     dest: Path | None = None
@@ -524,9 +527,9 @@ def open_target(mid: Any) -> Path | None:
     # L'application est choisie d'après le NOM : extension conforme au type, exigée (fiche 1).
     if refusal(real) or not _ext_ok(real, str(meta.get("mime"))):
         return None
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)  # sans lien : ouvrir_sans_lien
     try:
-        fd = os.open(real, flags)
+        fd = systeme.ouvrir_sans_lien(real, flags)
     except OSError:
         return None
     try:
