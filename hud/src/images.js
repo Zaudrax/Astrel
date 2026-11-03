@@ -65,6 +65,23 @@ const busy = new Set(); // actions sur les comptes en cours (« alias|action »)
 // Réglage changé ici et pas encore confirmé : un `settings` plus ancien (réponse au changement précédent)
 // ne doit pas le défaire à l'écran pendant l'aller-retour.
 const inflight = new Set();
+// 03/11 (CI : un choix rapide 4 s → 10 s → 4 s perdait le dernier) : valeur ATTENDUE après un choix local. Une
+// diffusion `settings` plus ancienne, arrivée en retard, ne la réécrit pas tant que le cœur ne l'a pas confirmée
+// (3 s au plus) ; sinon le dernier choix paraissait déjà fait et n'était jamais envoyé.
+const attendus = new Map();
+function attendre(key, valeur) {
+  inflight.add(key);
+  attendus.set(key, { valeur: String(valeur ?? ""), t: Date.now() });
+}
+function diffusionPerimee(key, valeur) {
+  const a = attendus.get(key);
+  if (!a) return false;
+  if (String(valeur ?? "") === a.valeur || Date.now() - a.t > 3000) {
+    attendus.delete(key);
+    return false;
+  }
+  return true;
+}
 let panel = null; // éléments du panneau
 
 // ------------------------------------------------------------------ état
@@ -153,7 +170,7 @@ export function initImages(opts = {}) {
   on("settings", (ev) => {
     for (const g of ev?.groups || []) {
       for (const it of g.items || []) {
-        if (inflight.has(it.key)) continue;
+        if (inflight.has(it.key) || diffusionPerimee(it.key, it.value)) continue;
         if (it.key === "images_mode") reglageMode = String(it.value || "");
         if (it.key === "images_manuel") reglageManuel = String(it.value || "");
         if (it.key === "images_ordre") reglageOrdre = String(it.value || "");
@@ -343,7 +360,7 @@ async function pickVideo(value) {
   const before = reglageVideo;
   reglageVideo = value;
   paintPanel();
-  inflight.add("video_choix");
+  attendre("video_choix", value);
   const r = await command("settings_set", { key: "video_choix", value });
   inflight.delete("video_choix");
   if (r?.ok === false) {
@@ -371,7 +388,7 @@ async function setMode(m) {
   const before = reglageMode;
   reglageMode = m; // tout de suite à l'écran ; le cœur confirme par `settings`
   paintPanel();
-  inflight.add("images_mode");
+  attendre("images_mode", m);
   const r = await command("settings_set", { key: "images_mode", value: m });
   inflight.delete("images_mode");
   if (r?.ok === false) {
@@ -393,7 +410,7 @@ async function pickManual(s, m) {
   const before = reglageManuel;
   reglageManuel = value;
   paintPanel();
-  inflight.add("images_manuel");
+  attendre("images_manuel", value);
   const r = await command("settings_set", { key: "images_manuel", value });
   inflight.delete("images_manuel");
   if (r?.ok === false) {
