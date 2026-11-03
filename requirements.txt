@@ -20,6 +20,8 @@ nvidia-cudnn-cu12==9.26.0.51 ; sys_platform == "linux"
 sounddevice==0.5.6 ; sys_platform != "linux"
 
 # Voix
+# Piper (GPL-3.0) : PROGRAMME SÉPARÉ. Ce paquet ne sert qu'à installer la commande `piper`, qu'Astrel lance
+# en sous-processus (astrel/voice/engines.py) ; aucun module piper n'est importé (02/11).
 piper-tts==1.8.0
 edge-tts==7.3.1
 google-genai==2.25.0

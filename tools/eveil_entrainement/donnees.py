@@ -124,7 +124,7 @@ def _key(*parts) -> str:
     return hashlib.sha1("|".join(map(str, parts)).encode()).hexdigest()[:16]
 
 
-_voices: dict[str, object] = {}
+_voices: dict[str, tuple] = {}  # modèle → (réglages, PiperEngine)
 
 
 def piper_say(model: str, text: str, speaker: int | None, speed: float, noise: float, noise_w: float) -> np.ndarray:
@@ -133,18 +133,24 @@ def piper_say(model: str, text: str, speaker: int | None, speed: float, noise: f
         return banc._read(path)
     from math import gcd
 
-    from piper import PiperVoice
-    from piper.config import SynthesisConfig
     from scipy.signal import resample_poly
 
-    if model not in _voices:
-        _voices[model] = PiperVoice.load(str(DATA / "piper" / f"{model}.onnx"))
-    voice = _voices[model]
-    syn = SynthesisConfig(speaker_id=speaker, length_scale=1.0 / speed, noise_scale=noise, noise_w_scale=noise_w)
-    chunks, rate = [], 22050
-    for c in voice.synthesize(text, syn_config=syn):
-        rate = c.sample_rate
-        chunks.append(np.frombuffer(c.audio_int16_bytes, dtype=np.int16))
+    # 02/11 (licence) : Piper (GPL-3.0) est lancé comme PROGRAMME séparé, jamais importé. Le CLI fixe
+    # locuteur, vitesse et bruit au lancement : un process par modèle, relancé quand les réglages changent
+    # (~1,3 s par extrait NON caché, contre ~0,1 s avant ; les extraits déjà faits restent dans CLIPS).
+    from astrel.voice.engines import PiperEngine
+
+    réglages = (speaker, speed, noise, noise_w)
+    vu = _voices.get(model)
+    if vu is None or vu[0] != réglages:
+        if vu is not None:
+            vu[1].close()
+        _voices[model] = (réglages, PiperEngine(model, speaker=speaker, length_scale=1.0 / speed,
+                                                noise_scale=noise, noise_w_scale=noise_w,
+                                                model_dir=DATA / "piper"))
+    voice = _voices[model][1]
+    chunks = [np.frombuffer(c, dtype=np.int16) for c in voice.synthesize(text)]
+    rate = voice.sample_rate
     raw = np.concatenate(chunks).astype(np.float64)
     g = gcd(RATE, rate)
     pcm = resample_poly(raw, RATE // g, rate // g)

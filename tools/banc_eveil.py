@@ -158,27 +158,26 @@ def _read(path: Path) -> np.ndarray:
         return np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float64)
 
 
-_piper = None
+_piper: dict = {}  # (locuteur, vitesse) → PiperEngine : un process piper chacun, gardé ouvert
 
 
 def piper(text: str, speaker: int, speed: float) -> np.ndarray:
-    global _piper
     path = CACHE / f"p-{_key(text, speaker, speed)}.wav"
     if path.exists():
         return _read(path)
     from math import gcd
 
-    from piper import PiperVoice
-    from piper.config import SynthesisConfig
     from scipy.signal import resample_poly
 
-    if _piper is None:
-        _piper = PiperVoice.load(str(config.MODELS / "piper" / "fr_FR-upmc-medium.onnx"))
-    syn = SynthesisConfig(speaker_id=speaker, length_scale=1.0 / speed)
-    chunks, rate = [], 22050
-    for c in _piper.synthesize(text, syn_config=syn):
-        rate = c.sample_rate
-        chunks.append(np.frombuffer(c.audio_int16_bytes, dtype=np.int16))
+    # 02/11 (licence) : Piper (GPL-3.0) est lancé comme PROGRAMME séparé, jamais importé.
+    from astrel.voice.engines import PiperEngine
+
+    engine = _piper.get((speaker, speed))
+    if engine is None:
+        engine = _piper[(speaker, speed)] = PiperEngine("fr_FR-upmc-medium", speaker=speaker,
+                                                        length_scale=1.0 / speed)
+    chunks = [np.frombuffer(c, dtype=np.int16) for c in engine.synthesize(text)]
+    rate = engine.sample_rate
     raw = np.concatenate(chunks).astype(np.float64)
     g = gcd(RATE, rate)
     pcm = resample_poly(raw, RATE // g, rate // g)

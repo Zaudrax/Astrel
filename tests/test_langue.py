@@ -589,3 +589,19 @@ def test_tournures_neutres_jamais_un_oui_seules():
     for t in ("non, pas de souci", "oui pas de souci mais ne le supprime pas", "oui, pas de souci, attends",
               "yes, no problem, but don't push", "no problem, cancel it", "pas de souci pas de souci oui jamais"):
         assert d(t) is False and d(t, english=True) is False, t
+
+
+def test_invite_anglaise_sans_prenom_dit_the_user(monkeypatch):
+    """02/11 : sans prénom au profil, l'invite anglaise dit « the user », jamais « l'utilisateur's »."""
+    monkeypatch.setattr(config, "USER_NAME", config.USER_NAME_DEFAULT)
+    en = brain.voice_system_prompt(langue="en")
+    assert "the user's personal assistant" in en and "l'utilisateur" not in en
+    fr = brain.voice_system_prompt(langue="fr")
+    assert "l'utilisateur" in fr and "the user" not in fr
+
+
+def test_invite_anglaise_avec_prenom_inchangee(monkeypatch):
+    monkeypatch.setattr(config, "USER_NAME", "Camille")
+    en = brain.voice_system_prompt(langue="en")
+    assert "Camille's personal assistant" in en and "the user" not in en
+    assert "Camille" in brain.voice_system_prompt(langue="fr")

@@ -76,7 +76,10 @@ def _profile() -> dict:
 
 
 PROFILE = _profile()
-USER_NAME = str(PROFILE.get("nom") or "").strip() or "l'utilisateur"
+# Sans prénom au profil : « l'utilisateur », et « the user » dans l'invite anglaise (02/11, brain.personalize).
+USER_NAME_DEFAULT = "l'utilisateur"
+USER_NAME_DEFAULT_EN = "the user"
+USER_NAME = str(PROFILE.get("nom") or "").strip() or USER_NAME_DEFAULT
 SYSTEM_DESC = str(PROFILE.get("systeme") or "").strip() or _SYSTEM_LABEL
 # 23/10 (plan P31, demande de l'utilisateur) : nom AFFICHÉ du produit (HUD, bulle, textes d'écran du cœur),
 # « Astrel » par défaut. Valeur par défaut du réglage `assistant_name` (Réglages › Apparence) ;
@@ -259,10 +262,14 @@ def _saved_voice() -> str:
 TTS_ENGINE = os.environ.get("ASTREL_TTS_ENGINE") or _saved_voice() or "edge:fr-FR-RemyMultilingualNeural"
 TTS_FALLBACK = os.environ.get("ASTREL_TTS_FALLBACK", "piper:fr_FR-upmc-medium")
 TTS_SPEED = _env_float("ASTREL_TTS_SPEED", 1.0)
+# 02/11 (licence) : Piper (GPL-3.0) est un PROGRAMME SÉPARÉ, lancé en sous-processus et jamais importé.
+# Vide = le `piper` installé à côté du Python d'Astrel (paquet piper-tts), sinon celui du PATH.
+PIPER_CMD = os.environ.get("ASTREL_PIPER_CMD", "")
 # 02/11 (demande de l'utilisateur) : conversation en ANGLAIS (réglage `conversation_language`, `astrel/langue.py`).
 # Sa voix est retenue à part (VOICE_EN_FILE) ; par défaut Andrew, voix américaine NON multilingue : une voix
 # multilingue change de langue pour toute la phrase sur un mot étranger (Rémy, 26/09), et un nom de
-# projet français ferait basculer Andrew. Secours local : Piper « joe » (jeu de données CC0).
+# projet français ferait basculer Andrew. Secours local : Piper « joe » (jeu de données CC0, affiné depuis la voix
+# « lessac », données sous licence de recherche non commerciale : voir NOTICE).
 CONVERSATION_LANGUAGE = "fr"
 VOICE_EN_FILE = RUNTIME / "voice-en.txt"
 TTS_ENGINE_EN_DEFAULT = "edge:en-US-AndrewNeural"
@@ -432,6 +439,8 @@ MISSION_MAX_TURNS = int(_env_float("ASTREL_MISSION_MAX_TURNS", 20))
 MISSION_MAX_MINUTES = _env_float("ASTREL_MISSION_MAX_MINUTES", 60.0)
 MISSION_MAX_TOKENS = int(_env_float("ASTREL_MISSION_MAX_TOKENS", 3_000_000))
 MISSION_MAX_ATTEMPTS = int(_env_float("ASTREL_MISSION_MAX_ATTEMPTS", 3))
+# 02/11 (plan P43) : « FINIE » démentie par la vérification au plus N fois, puis la mission s'arrête.
+MISSION_MAX_VERIFS = int(_env_float("ASTREL_MISSION_MAX_VERIFS", 3))
 # La mission s'arrête d'elle-même si la fenêtre de 5 h de l'abonnement dépasse ce niveau.
 MISSION_QUOTA_STOP = _env_float("ASTREL_MISSION_QUOTA_STOP", 0.90)
 # Relève automatique : quand le contexte du cerveau dépasse ce nombre de tokens
@@ -649,7 +658,7 @@ CONTROL_SOCKET = RUNTIME / "control.sock"
 # --- Serveur du HUD (bus d'événements) ---
 # Lié à 127.0.0.1 UNIQUEMENT, avec un jeton aléatoire à chaque démarrage : une
 # commande reçue ici vaut une commande vocale, elle ne doit venir que de la
-# machine.
+# machine, jamais 0.0.0.0.
 HUD_HOST = "127.0.0.1"
 HUD_PORT = int(os.environ.get("ASTREL_HUD_PORT", "4719"))
 HUD_TOKEN_FILE = RUNTIME / "hud-token"

@@ -94,6 +94,17 @@ class _Item:
     tag: str = ""
 
 
+def _close_engine(engine: Engine | None) -> None:
+    """Ferme un moteur (process piper) ; jamais d'exception : fermer ne doit pas faire taire la voix."""
+    close = getattr(engine, "close", None)
+    if close is None:
+        return
+    try:
+        close()
+    except Exception:  # noqa: BLE001
+        log.exception("fermeture de la voix %s", getattr(engine, "name", "?"))
+
+
 class Speaker:
     def __init__(
         self,
@@ -124,6 +135,9 @@ class Speaker:
         self._speaking_tag = ""                   # étiquette de la phrase en cours de synthèse/lecture
         self._cancelled: deque[str] = deque(maxlen=64)  # étiquettes retirées : plus jamais dites
         self._running = True
+        # 02/11 : moteurs remplacés (voix ou secours changés à chaud), fermés par le fil de l'orateur
+        # entre deux phrases : le process piper d'une voix quittée ne reste pas ouvert pour rien.
+        self._retired: list[Engine] = []
         self._worker = threading.Thread(target=self._loop, name="speaker", daemon=True)
 
     # --- cycle de vie ---
@@ -153,12 +167,24 @@ class Speaker:
         self.interrupt()
         self._resumed.set()
         self._queue.put(_Item("", -1))
+        for engine in (*self._retired, self._primary, self._fallback):
+            _close_engine(engine)
+        self._retired = []
+
+    def _retire(self, engine: Engine | None) -> None:
+        if engine is not None and engine is not self._primary and engine is not self._fallback:
+            self._retired.append(engine)
+
+    def _close_retired(self) -> None:
+        while self._retired:
+            _close_engine(self._retired.pop())
 
     def set_voice(self, spec: str) -> str:
         """Change de voix à chaud (sélecteur du HUD)."""
         engine = build_engine(spec)
         engine.load()  # lève si inutilisable : l'ancienne voix reste en place
-        self._primary = engine
+        old, self._primary = self._primary, engine
+        self._retire(old)
         self._degraded_until = 0.0
         self._failures = 0
         self._publish_voice()
@@ -175,7 +201,8 @@ class Speaker:
         except Exception as exc:
             log.warning("voix de secours %s indisponible (%s) : la précédente reste", engine.name, exc)
             return self._fallback.name if self._fallback is not None else ""
-        self._fallback = engine
+        old, self._fallback = self._fallback, engine
+        self._retire(old)
         return engine.name
 
     @property
@@ -418,6 +445,7 @@ class Speaker:
         return " ".join(parts)
 
     def _speak(self, text: str, generation: int) -> None:
+        self._close_retired()
         engine = self._active_engine()
         if engine is self._fallback:
             try:

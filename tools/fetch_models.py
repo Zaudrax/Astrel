@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parent.parent
 M = ROOT / "models"
 
 HF = "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR"
-# 02/11 (conversation anglaise) : voix de secours locale en anglais, « joe » (jeu de données CC0).
+# 02/11 (conversation anglaise) : voix de secours locale en anglais, « joe » (jeu de données CC0 ;
+# modèle affiné depuis la voix « lessac », sous licence de recherche non commerciale : voir NOTICE).
 HF_EN = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US"
 MP = "https://storage.googleapis.com/mediapipe-models"
 

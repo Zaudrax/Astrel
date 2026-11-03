@@ -16,7 +16,6 @@ Python (pip, requirements.txt)
 - faster-whisper 1.2.1 (MIT), avec CTranslate2 (MIT). Le modèle Whisper
   « small » converti (Systran/faster-whisper-small, MIT) est téléchargé depuis
   Hugging Face au premier lancement.
-- Piper (piper-tts 1.8.0) : GPL-3.0-or-later.
 - edge-tts 7.3.1 : LGPL-3.0. Il appelle le service de synthèse vocale en ligne
   de Microsoft Edge, soumis aux conditions de Microsoft.
 - onnxruntime (MIT), google-genai (Apache-2.0), aiohttp (Apache-2.0 et MIT),
@@ -26,11 +25,30 @@ Python (pip, requirements.txt)
   sounddevice (MIT, hors Linux).
 - nvidia-cublas-cu12 et nvidia-cudnn-cu12 (Linux) : licence propriétaire NVIDIA.
 
+Programme tiers séparé, appelé comme une commande
+- Piper (paquet pip piper-tts 1.8.0, https://github.com/OHF-Voice/piper1-gpl) :
+  GPL-3.0-or-later. Voix locale de secours. C'est un programme distinct,
+  installé à part (pip, requirements.txt) : Astrel le lance comme une commande
+  externe (« piper », en sous-processus), lui envoie du texte sur son entrée et
+  lit les fichiers WAV qu'il écrit. Astrel n'importe ni ne lie aucun de ses
+  modules ; aucun fichier de Piper n'est inclus dans ce dépôt. Son code source
+  et sa licence sont à l'adresse ci-dessus. On peut le remplacer ou le retirer
+  sans toucher à Astrel (variable ASTREL_PIPER_CMD) : seule la voix de secours
+  hors ligne disparaît.
+
 Modèles téléchargés par tools/fetch_models.py
-- Voix Piper fr_FR-upmc-medium (rhasspy/piper-voices) : données UPMC sous
-  CC BY-SA 4.0, d'après sa fiche de modèle.
-- Voix Piper en_US-joe-medium (rhasspy/piper-voices), secours local de la
-  conversation anglaise : données sous CC0, d'après sa fiche de modèle.
+- Voix Piper (https://huggingface.co/rhasspy/piper-voices, dépôt étiqueté MIT).
+  D'après leurs fiches de modèle (MODEL_CARD) :
+  - fr_FR-upmc-medium : données « UPMC Pierre »
+    (https://github.com/marytts/upmc-pierre-data) sous CC BY-SA 4.0 ;
+  - en_US-joe-medium, secours local de la conversation anglaise : données
+    « joe » (https://github.com/OHF-Voice/voice-datasets) sous CC0 ;
+  - les deux sont affinées à partir de la voix anglaise « lessac » (medium),
+    entraînée sur les données Lessac Technologies / Voice Factory du Blizzard
+    Challenge 2013, diffusées sous une licence de RECHERCHE qui exclut tout usage
+    commercial (https://www.cstr.ed.ac.uk/projects/blizzard/2013/lessac_blizzard2013/license.html).
+    Ces voix ne sont donc ni dans le domaine public ni libres de tout usage :
+    à réserver, comme Astrel, à un usage non commercial.
 - MediaPipe blaze_face_short_range et gesture_recognizer (Google) : Apache-2.0.
 
 Node.js (npm)
