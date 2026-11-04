@@ -178,6 +178,16 @@ def from_claude(pid: int, claude_pid: int | None, service_cg: str | None = None)
     return False
 
 
+def confinement_actif() -> bool:
+    """04/11 (lot B, H3) : un process DÉTACHÉ de Claude (setsid, double fork, environnement vidé) reste-t-il
+    reconnu ? Linux : le cœur tourne en service (cgroup `astrel.service`) ; Windows : le cerveau est dans le
+    Job Object. Ailleurs (macOS, `./run.sh`, WSL2 sans systemd, rattachement raté) : non, seules
+    l'ascendance et le marqueur `ASTREL_BRAIN` le reconnaissent, et le garde-fou ne juge pas leur retrait."""
+    if proc.uses_cgroup():
+        return bool(service_cgroup())
+    return proc.job_actif()
+
+
 def tcp_peer_pid(client_port: int, server_port: int) -> int:
     """Process qui tient le bout client d'une connexion locale au port du HUD
     (même principe que SO_PEERCRED, qui n'existe pas en TCP) : sous Linux, inode
@@ -238,6 +248,8 @@ class ControlServer:
                     # Ce que le client écrit lui-même dans ces champs est écrasé.
                     payload["_from_claude"] = from_claude(peer_pid(conn), self._claude_pid())
                     payload["_via"] = "socket"
+                    # 04/11 (lot B, H3) : sans confinement, le cœur ne laisse rien desserrer par ce canal.
+                    payload["_confine"] = confinement_actif()
                     reply = bus.command(payload)
                     text = reply if isinstance(reply, str) else json.dumps(reply, ensure_ascii=False)
                     conn.sendall((text + "\n").encode())

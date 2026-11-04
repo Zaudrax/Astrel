@@ -72,8 +72,9 @@ def test_ecriture_bash_du_fichier_des_cles_au_plafond(cmd):
 
 
 def test_ecriture_des_voisins_inoffensifs_inchangee():
-    for tool, path in (("Write", "config/mic_profiles.json"), ("Edit", "config/channels.json"),
+    # 04/11 (lot A) : `config/mic_profiles.json` n'est plus un voisin inoffensif (seuils du micro, protégés).
+    for tool, path in (("Write", "config/themes.json"), ("Edit", "config/channels.json"),
                        ("Write", "runtime/equipe/note.md"), ("Write", "/tmp/secrets.json")):
         assert not guard.assess(tool, {"file_path": path}, mode="autonome", cwd=str(R)).needs_confirm, path
-    assert not guard.assess("Bash", {"command": "echo x > config/mic_profiles.json"}, mode="autonome",
+    assert not guard.assess("Bash", {"command": "echo x > config/themes.json"}, mode="autonome",
                             cwd=str(R)).needs_confirm

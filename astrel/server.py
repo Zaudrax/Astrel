@@ -210,11 +210,45 @@ class HudServer:
 
     @web.middleware
     async def _security_headers(self, request: web.Request, handler):
-        resp = await handler(request)
+        # 04/11 (lot B, M4) : en-tête Host limité au HUD lui-même (127.0.0.1 ou localhost, sur SON port) :
+        # défense en profondeur contre un DNS rebinding ; absent ou autre = refusé, avant toute route.
+        if not self._host_ok(request):
+            log.warning("HUD : requête refusée, en-tête Host inattendu (%r)", request.headers.get("Host"))
+            resp = web.Response(status=421, text="Hôte refusé par le HUD d'Astrel.", content_type="text/plain")
+            self._add_headers(resp)
+            return resp
+        try:
+            resp = await handler(request)
+        except web.HTTPException as exc:  # 04/11 : les refus (401, 403, 404…) portent les mêmes en-têtes
+            self._add_headers(exc)
+            raise
+        self._add_headers(resp)
+        return resp
+
+    @staticmethod
+    def _add_headers(resp: web.StreamResponse) -> None:
+        if getattr(resp, "prepared", False):
+            return  # WebSocket fermé, réponse déjà partie : plus rien à poser
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("Referrer-Policy", "no-referrer")
         resp.headers.setdefault("Cache-Control", "no-store")
-        return resp
+        # 04/11 (lot B, M4) : jamais dans un cadre (habillage de clic) ; la CSP du <meta> de index.html ne peut
+        # pas porter `frame-ancestors`, d'où l'en-tête. Une CSP déjà posée (médias : sandbox) le reçoit en plus.
+        resp.headers["X-Frame-Options"] = "DENY"
+        csp = resp.headers.get("Content-Security-Policy", "")
+        if "frame-ancestors" not in csp:
+            resp.headers["Content-Security-Policy"] = f"{csp}; frame-ancestors 'none'" if csp else "frame-ancestors 'none'"
+
+    @staticmethod
+    def _host_ok(request: web.Request) -> bool:
+        """Host = 127.0.0.1:<port> ou localhost:<port>, le port étant celui où la connexion est arrivée."""
+        host = (request.headers.get("Host") or "").strip().lower()
+        sock = request.transport.get_extra_info("sockname") if request.transport else None
+        try:
+            port = int(sock[1])
+        except (TypeError, ValueError, IndexError):
+            port = config.HUD_PORT
+        return host in {f"{config.HUD_HOST}:{port}", f"127.0.0.1:{port}", f"localhost:{port}"}
 
     def _token_ok(self, candidate: str | None) -> bool:
         return bool(candidate) and hmac.compare_digest(candidate.encode(), self.token.encode())

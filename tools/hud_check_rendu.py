@@ -462,8 +462,26 @@ async def run(url):
         await p.js("document.querySelector('.modal-ok').click()")
         check("arrêtée : bandeau retiré, panneau « arrêtée »", await p.until(
             "document.querySelector('#mission-banner').hidden && document.querySelector('#mission .pill')?.textContent === 'arrêtée'", 3))
+        # 04/11 (demande : une mission d'essai finie revenait après relance) : la croix FERME la mission
+        # côté cœur (`mission_close`, clé `mission_id`), le navigateur ne retient plus rien quand c'est fait.
+        await p.js("localStorage.removeItem('astrel-mission-masquee'), true")
+        closes = await sent("mission_close")
         await p.js("document.querySelector('#mission-hide').click()")
         check("la croix masque la mission finie", await p.until("document.querySelector('#mission').classList.contains('hidden')", 2))
+        await p.until(f"window.__sent.filter(m => m.cmd === 'mission_close').length > {closes}", 3)
+        close = await p.js("window.__sent.filter(m => m.cmd === 'mission_close').pop()") or {}
+        await asyncio.sleep(0.3)  # réponse du cœur
+        check(f"la croix envoie mission_close avec mission_id ({close.get('mission_id')!r}), rien en localStorage",
+              str(close.get("mission_id") or "").startswith("m-") and close.get("mission_id") != close.get("id")
+              and await p.js("localStorage.getItem('astrel-mission-masquee') === null"))
+        # Une autre mission affichée, puis l'état de la vraie : close, elle est publiée comme absente.
+        await p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': 'demo_mission', 'etat': 'verifiee'}))})")
+        await p.until("!document.querySelector('#mission').classList.contains('hidden')", 3)
+        await p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': 'mission'}))})")
+        check("mission close : republiée comme absente, panneau caché sans souvenir du navigateur", await p.until(
+            "document.querySelector('#mission').classList.contains('hidden') "
+            "&& document.querySelector('#mission-title').classList.contains('hidden') "
+            "&& document.querySelector('#mission-banner').hidden", 3))
 
         await check_lots_15_10(p)
         await check_detail_agent(p)  # 21/10 (plan P18)
@@ -1079,7 +1097,12 @@ async def check_mission_preuve(p: Page) -> None:
     await p.js(f"document.querySelector('#mission-banner').hidden = true; {box}.replaceChildren(), true")
     await demo("verifiee")
     await p.until(f"{box}.classList.contains('done')", 3)
+    # 04/11 : mission de démo (« m-demo », inconnue du cœur) : mission_close refusé → repli du navigateur.
+    await p.js("localStorage.removeItem('astrel-mission-masquee'), true")
     await p.js("document.querySelector('#mission-hide').click(), true")
+    check("mission_close refusé par le cœur : masquée quand même, retenue par le navigateur (repli)", await p.until(
+        f"{box}.classList.contains('hidden') && !!localStorage.getItem('astrel-mission-masquee')", 3))
+    await p.js("localStorage.removeItem('astrel-mission-masquee'), true")
 
 
 async def check_todo(p: Page) -> None:
@@ -1853,11 +1876,13 @@ async def check_reglages(p: Page) -> None:
     await p.key("Escape", vk=27)
     closed = await p.until("!document.querySelector('.modal-back')", 2)
     await p.js("document.querySelector('#settings-chip').click()")
-    await p.until("document.querySelectorAll('.modal.wide .settings-group').length === 15", 3)
+    # 04/11 (CI, machine plus lente) : les valeurs du cœur arrivent après l'ouverture ; on les attend
+    await p.until("document.querySelectorAll('.modal.wide .settings-group').length === 15"
+                  " && __flag('google_calendar')?.checked === true", 5)
     again = await p.js("""(() => ({ open: [...document.querySelectorAll('.modal.wide details')].filter(d => d.open).map(d => d.dataset.group),
         agenda: __flag('google_calendar').checked }))()""")
-    check(f"Échap ferme les réglages ; rouverts : groupes dépliés gardés {again['open']}, valeurs du cœur",
-          closed and again["open"] == ["seuils"] and again["agenda"])
+    check(f"Échap ferme les réglages ({closed}) ; rouverts : groupes dépliés gardés {again['open']}, valeurs du cœur"
+          f" (agenda {again['agenda']})", closed and again["open"] == ["seuils"] and again["agenda"])
     await p.js("document.querySelector('.modal.wide .modal-x').click()")
     check("la croix ferme les réglages", await p.until("!document.querySelector('.modal-back')", 2))
 
@@ -5004,7 +5029,9 @@ async def check_medias(p: Page) -> None:
         return {{ csp: r.headers.get('content-security-policy'), nosniff: r.headers.get('x-content-type-options'),
                  type: r.headers.get('content-type'), bad: bad.status, unk: unk.status }}; }})()""")
     check(f"P26 route /api/media : CSP « {route['csp']} », {route['nosniff']}, {route['type']}, 404 ({route['bad']}, {route['unk']})",
-          route["csp"] == "default-src 'none'; sandbox" and route["nosniff"] == "nosniff" and route["type"] == "image/webp"
+          # 04/11 (lot B, M4) : le serveur ajoute `frame-ancestors 'none'` à toute CSP.
+          route["csp"] == "default-src 'none'; sandbox; frame-ancestors 'none'" and route["nosniff"] == "nosniff"
+          and route["type"] == "image/webp"
           and route["bad"] == 404 and route["unk"] == 404)
     # Simple : cartes visibles, ni taille ni chemin
     await p.js("document.documentElement.dataset.affichage = 'simple', true")

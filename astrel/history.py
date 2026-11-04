@@ -13,10 +13,19 @@ caractères par message. Les messages automatiques d'Astrel (réflexes, alertes,
 relève, tâches de fond) sont gardés mais classés après ceux de l'utilisateur
 (idée d'hermes-agent). Le résultat : des EXTRAITS courts avec la date et la
 session, pour retrouver « ce qu'on avait dit sur X » sans relire de gros fichiers.
+
+04/11 (lot de sécurité B, T45) : la base (et ses journaux -wal, -shm, -journal) est en 0600, créée ainsi et
+corrigée si elle existait (les transcriptions sont en 0600 : l'index ne doit pas les rendre lisibles aux
+autres comptes) ; les secrets (clés, jetons, mots de passe) sont MASQUÉS à l'indexation
+(`memory_scan.mask_secrets`, le masquage du coffre) ; `secure_delete` efface vraiment ce qui est retiré.
+Un index d'avant (sans version, ou autre version) est vidé UNE fois puis compacté (VACUUM) : il contenait
+du texte non masqué ; il se reconstruit à la recherche suivante.
 """
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
 import sqlite3
 import threading
@@ -25,8 +34,12 @@ from pathlib import Path
 from typing import Any
 
 from . import config
+from .tools import memory_scan
+
+log = logging.getLogger("astrel.history")
 
 MAX_TEXT = 4000
+SCHEMA_VERSION = "2"  # 04/11 (T45) : textes masqués à l'indexation ; une autre version est refaite
 _AUTO_RE = re.compile(r"^\s*(\[(Réflexe programmé|Alerte automatique|Relève automatique|Nouvelle session)"
                       r"|<task-notification>|<system-reminder>|<command-|Caveat:)")
 _lock = threading.Lock()
@@ -40,10 +53,60 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages USING fts5(
 """
 
 
-def _connect(db: Path) -> sqlite3.Connection:
+def base_privee(db: Path) -> None:
+    """04/11 (T45) : la base SQLite `db` et ses journaux en 0600 (lecture et écriture pour l'utilisateur seul).
+    Créée ainsi si elle manque (sqlite crée ensuite ses journaux avec les mêmes droits), corrigée sinon.
+    Un lien à la place de la base : refusé (OSError), plutôt que d'ouvrir ailleurs."""
+    db.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(db, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    os.close(fd)
+    for path in (db, *(db.with_name(db.name + s) for s in ("-wal", "-shm", "-journal"))):
+        try:
+            if path.exists() and not path.is_symlink():
+                os.chmod(path, 0o600)
+        except OSError as exc:
+            log.warning("droits de %s non corrigés : %s", path.name, exc)
+
+
+def ouvrir(db: Path, version: str, drop: str) -> sqlite3.Connection:
+    """04/11 (T45) : connexion à une base privée (0600, `secure_delete`). Version de schéma différente de
+    `version` (ou absente) : `drop` (SQL) vide l'ancien contenu, puis VACUUM le compacte (les pages libérées
+    ne gardent pas l'ancien texte) ; une seule fois, la version est notée dans la table `meta`."""
+    base_privee(db)
     con = sqlite3.connect(str(db), timeout=10)
+    try:
+        con.execute("PRAGMA secure_delete = ON")  # ce qui est retiré est écrasé, pas seulement oublié
+        con.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+        row = con.execute("SELECT value FROM meta WHERE key = 'schema'").fetchone()
+        if not row or row[0] != version:
+            log.info("%s : index d'une autre version (%s), vidé puis compacté", db.name, row[0] if row else "aucune")
+            con.executescript(drop + "\nDELETE FROM meta;")
+            con.execute("INSERT INTO meta VALUES ('schema', ?)", (version,))
+            con.commit()
+            try:
+                con.execute("VACUUM")
+            except sqlite3.OperationalError as exc:  # base occupée par un autre process : secure_delete a écrasé
+                log.warning("%s : VACUUM impossible (%s)", db.name, exc)
+    except BaseException:
+        con.close()
+        raise
+    return con
+
+
+def _connect(db: Path) -> sqlite3.Connection:
+    con = ouvrir(db, SCHEMA_VERSION, "DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS files;")
     con.executescript(SCHEMA)
     return con
+
+
+def preparer(db: Path | None = None) -> None:
+    """04/11 (T45) : au démarrage du cœur, une base déjà là est mise en 0600 et, si elle est d'avant le
+    masquage, vidée et compactée tout de suite (sans attendre une recherche). Rien si elle n'existe pas."""
+    db = db or config.HISTORY_DB
+    if not db.exists():
+        return
+    with _lock:
+        _connect(db).close()
 
 
 def _text_of(content: Any) -> str:
@@ -67,6 +130,8 @@ def _entry(line: str) -> tuple[str, str, str, str] | None:
     text = _text_of(msg.get("content")).strip()
     if not text:
         return None
+    # 04/11 (T45) : secrets masqués AVANT la coupe (un secret à cheval sur la limite ne reste pas à moitié).
+    text = memory_scan.mask_secrets(text)[0]
     return d["type"], text[:MAX_TEXT], str(d.get("sessionId") or ""), str(d.get("timestamp") or "")
 
 

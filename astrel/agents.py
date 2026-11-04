@@ -45,8 +45,14 @@ AGENTS_FILE = config.RUNTIME / "agents.json"
 ROUTE_LOG = Path(os.environ.get("ASTREL_ROUTE_LOG") or config.LOGS / "route.jsonl")
 
 RANK = {"haiku": 0, "sonnet": 1, "opus": 2}
-_LIST_KEYS = {"tools", "disallowedTools", "skills"}
-_BOOL_KEYS = {"omitClaudeMd", "background"}
+# 04/11 (lot de sécurité A, accord de l'utilisateur ; audit 2, F5) : LISTE BLANCHE des clés d'en-tête. Avant, toute
+# clé était recopiée dans le JSON de `--agents` (`hooks`, `mcpServers`, `permissionMode`… d'une définition
+# réécrite partaient au CLI). Une clé inconnue est ignorée (journal). Les serveurs propres à un agent sont
+# ajoutés par le code (`_agent_servers`), jamais par l'en-tête.
+HEADER_KEYS = frozenset({"name", "description", "model", "effort", "tools", "disallowedTools", "maxTurns",
+                         "omitClaudeMd"})
+_LIST_KEYS = {"tools", "disallowedTools"}
+_BOOL_KEYS = {"omitClaudeMd"}
 _INT_KEYS = {"maxTurns"}
 
 # Agents intégrés au CLI qui n'écrivent jamais (pas d'Edit/Write).
@@ -84,6 +90,9 @@ def _parse(text: str) -> tuple[dict[str, Any], str]:
                 key, colon, value = line.partition(":")
                 key, value = key.strip(), value.strip()
                 if not colon or not key:
+                    continue
+                if key not in HEADER_KEYS:
+                    log.warning("en-tête d'agent : clé %r ignorée (liste blanche)", key[:40])
                     continue
                 if key in _LIST_KEYS:
                     meta[key] = [v.strip() for v in value.strip("[]").split(",") if v.strip()]

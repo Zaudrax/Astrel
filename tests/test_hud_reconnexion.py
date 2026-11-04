@@ -222,7 +222,7 @@ def test_secret_du_hud_designe_sans_son_nom_demande(cmd, cwd):
 
 @pytest.mark.parametrize("cmd", [
     "ls runtime/",
-    "cat runtime/*.json | head",
+    "cat runtime/plans/*.json | head",  # 04/11 (lot A) : `runtime/*.json` vise mcp.json, un secret depuis ce jour
     "ls hud/src/*.js; cat hud/*.html | wc -l",
     f"grep -n \"{TOK}\" astrel/cli.py",                                 # motif de recherche, pas le fichier
     "grep -n 'hud.*' astrel/cli.py",

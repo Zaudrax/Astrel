@@ -340,14 +340,19 @@ def test_socket_transmet_cats(monkeypatch, tmp_path):
         calls.append(cats)
         return True
 
+    # 04/11 (lot B, T43.5-A) : les catégories sont RECALCULÉES par le cœur depuis l'entrée de l'outil
+    # (celles du client sont ignorées) ; l'ancien format (sans entrée) est refusé sans carte.
+    monkeypatch.setattr(guard, "MODE_FILE", tmp_path / "autonomy.json")
+    monkeypatch.setattr(guard, "GRANTS_FILE", tmp_path / "grants.json")
     srv = confirm.ConfirmServer(ask)
     srv.start()
+    push = {"command": "git push"}
     try:
-        assert confirm.request("Bash", "d", "git push", "k", cats=[L.GIT]) is True
-        assert confirm.request("Bash", "d", "git push", "k") is True  # ancien hook : pas de cats
+        assert confirm.request("Bash", "d", "git push", "k", cats=[L.FICHIERS_HUD], tool_input=push) is True
+        assert confirm.request("Bash", "d", "git push", "k", cats=[L.GIT]) is False  # ancien hook : refusé
     finally:
         srv.stop()
-    assert calls == [[L.GIT], None]
+    assert calls == [list(guard.assess("Bash", push, mode="autonome").cats)] and L.GIT in calls[0]
 
 
 def test_cats_mal_forme_vaut_liste_vide():
@@ -367,10 +372,12 @@ def test_coeur_sans_cats_ne_recoit_rien(monkeypatch, tmp_path):
         seen.append(lift)
         return True
 
+    monkeypatch.setattr(guard, "MODE_FILE", tmp_path / "autonomy.json")  # 04/11 (lot B) : mode isolé
+    monkeypatch.setattr(guard, "GRANTS_FILE", tmp_path / "grants.json")
     srv = confirm.ConfirmServer(ask)
     srv.start()
     try:
-        assert confirm.request("Bash", "d", "git push", "k", cats=[L.GIT]) is True
+        assert confirm.request("Bash", "d", "git push", "k", cats=[L.GIT], tool_input={"command": "git push"}) is True
     finally:
         srv.stop()
     assert seen == [False]

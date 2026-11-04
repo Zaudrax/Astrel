@@ -436,6 +436,16 @@ def _fiabilite_isolee(tmp_path, monkeypatch):
     monkeypatch.setattr(gel.chien, "_boucles", {})
 
 
+@pytest.fixture(autouse=True)
+def _coeur_valide(monkeypatch):
+    """04/11 (lot B, H2) : le code du cœur est tenu pour VALIDÉ dans les tests (sinon Total, levée et plans
+    automatiques seraient refusés tant que l'utilisateur n'a pas fait `./run.sh doctor --accept`). Les tests de
+    l'empreinte du cœur (`test_securite_lot_b.py`) remettent la vraie vérification."""
+    from astrel import totalgate
+
+    monkeypatch.setattr(totalgate, "_coeur", "")
+
+
 def mode_prive(chemin, attendu: int = 0o600) -> bool:
     """03/11 (CI Windows) : droits Unix du fichier (0600 par défaut). Windows n'a pas ces bits (os.chmod n'y règle
     que la lecture seule) : la protection y vient du profil de l'utilisateur, la vérification est sautée."""

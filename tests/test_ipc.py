@@ -141,10 +141,15 @@ def test_tcp_canal_de_confirmation_et_hook_parti(tcp, tmp_path, monkeypatch):
         alive_seen.append(kw["alive"]())
         return True
 
+    # 04/11 (lot B, T43.5-A) : la demande porte l'entrée de l'outil ; mode et autorisations isolés.
+    from astrel import guard
+
+    monkeypatch.setattr(guard, "MODE_FILE", tmp_path / "autonomy.json")
+    monkeypatch.setattr(guard, "GRANTS_FILE", tmp_path / "grants.json")
     srv = confirm.ConfirmServer(ask)
     srv.start()
     try:
-        assert confirm.request("Bash", "d", "git push", "k") is True
+        assert confirm.request("Bash", "d", "git push", "k", tool_input={"command": "git push"}) is True
     finally:
         srv.stop()
     assert alive_seen == [True]

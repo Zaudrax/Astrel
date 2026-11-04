@@ -411,15 +411,23 @@ def test_socket_de_confirmation_transmet_tout(monkeypatch, tmp_path):
         calls.append((tool, key, kw))
         return True
 
+    # 04/11 (lot B, T43.5-A) : desc, clés et garde-fou sont RECALCULÉS par le cœur depuis l'entrée de
+    # l'outil ; ceux du client (k1, k2, guard) sont ignorés. Mode et autorisations isolés.
+    monkeypatch.setattr(guard, "MODE_FILE", tmp_path / "autonomy.json")
+    monkeypatch.setattr(guard, "GRANTS_FILE", tmp_path / "grants.json")
+    push = {"command": "git push"}
+    expected = guard.assess("Bash", push, mode="autonome", cwd="/tmp/x")
     srv = confirm.ConfirmServer(ask)
     srv.start()
     try:
         t0 = time.time()
-        assert confirm.request("Bash", "d", "git push", "k1", keys=["k1", "k2"], guard=True, cwd="/tmp/x") is True
+        assert confirm.request("Bash", "d", "git push", "k1", keys=["k1", "k2"], guard=True, cwd="/tmp/x",
+                               tool_input=push) is True
     finally:
         srv.stop()
     tool, key, kw = calls[0]
-    assert kw["keys"] == ["k1", "k2"] and kw["guard"] is True and kw["cwd"] == "/tmp/x"
+    assert key == expected.key and kw["keys"] == list(expected.keys) and "k1" not in kw["keys"]
+    assert kw["guard"] is False and kw["cwd"] == "/tmp/x"
     assert t0 - 1 <= kw["received_at"] <= time.time() and callable(kw["alive"])
 
 

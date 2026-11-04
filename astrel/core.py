@@ -1012,6 +1012,11 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             log.warning("commande %r refusée : elle vient de Claude (%s)", name, cmd)
             bus.publish("notice", level="warning", text=f"Claude a tenté « {name} » : refusé, c'est à toi seul.")
             return {"ok": False, "error": "commande réservée à l'utilisateur (HUD ou terminal), refusée à Claude"}
+        if totalgate.refused_unconfined(name, cmd):
+            # 04/11 (lot B, H3) : sans cgroup ni Job Object, le canal de contrôle ne reconnaît pas un process
+            # détaché de Claude : ce qui desserre ne passe que par le HUD (le « non » d'une carte, si).
+            log.warning("commande %r refusée sur le canal de contrôle : aucun confinement de Claude", name)
+            return {"ok": False, "error": totalgate.REFUS_SANS_CONFINEMENT}
 
         if name == "toggle":
             name = "unmute" if self._off else "mute"
@@ -1064,6 +1069,9 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         if name == "mission_auto":
             # T25 : outil MCP `mission_start`, Astrel lance lui-même une mission BORNÉE.
             return self._mission_auto(cmd)
+        if name == "mission_close":
+            # 04/11 : × du panneau Mission, mission TERMINÉE seulement ; refusée à Claude.
+            return self._mission_close(cmd)
         if name in ("settings_get", "settings_set", "settings_apply", "settings_action"):
             # Page « Réglages » du HUD (contrat du 15/10) : l'utilisateur seul.
             return self._settings_command(name, cmd)
@@ -1178,6 +1186,16 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             if not text:
                 return {"ok": False, "error": "texte vide"}
             source = str(cmd.get("source") or "clavier")
+            turn_text, turn_source = text, source
+            if cmd.get("_from_claude") is True:
+                # 04/11 (lot B, M1) : envoyé par un process de Claude (son Bash, un script) : le tour n'est jamais
+                # un tour de l'utilisateur (voix, clavier, WhatsApp), dont la mission, la reprise de la voix et les
+                # messages en attente se fient à la source. Tour de fond, dit tel quel à Claude. (Une bascule de
+                # mode tapée reste lue comme avant, avec ses refus : ce n'est pas un tour.)
+                if source != "fond":
+                    log.warning("say venu de Claude avec la source %r : traité comme un tour de fond", source)
+                turn_source = "fond"
+                turn_text = "[Message envoyé par un process de Claude, pas par l'utilisateur.] " + text
             # Le HUD joint le canal qu'il affiche : un clic sur un onglet suivi
             # aussitôt d'Entrée ne doit pas dépendre de l'ordre des commandes.
             channel = str(cmd.get("channel") or "")
@@ -1197,7 +1215,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                     return {**self.whatsapp.set_away(away == "absent", "clavier"), "away_command": True}
                 self._user_present("clavier")
             if joined.shown:
-                threading.Thread(target=self.handle, args=(text, source, channel), kwargs={"joined": joined},
+                threading.Thread(target=self.handle, args=(turn_text, turn_source, channel), kwargs={"joined": joined},
                                  name="typed-turn", daemon=True).start()
                 return {"ok": True, "attachments": joined.shown, **({"refused": refused} if refused else {})}
             mode = mode_phrase(text) if source == "clavier" else ""
@@ -1208,7 +1226,8 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                 bus.publish("transcript", who="user", text=text, source=source, channel=channel or channels.active,
                             mid=uuid.uuid4().hex[:12])
                 return {**self.set_usage(mode), "mode_command": True}
-            threading.Thread(target=self.handle, args=(text, source, channel), name="typed-turn", daemon=True).start()
+            threading.Thread(target=self.handle, args=(turn_text, turn_source, channel), name="typed-turn",
+                             daemon=True).start()
             return {"ok": True}
         if name in ("channel", "canal"):
             # Canal ouvert dans le HUD (un fil par projet) : l'AFFICHAGE seulement,
@@ -1296,6 +1315,13 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                 return {"ok": False, "error": "hud_only"}
             return {"ok": True, **memoire.top(), "memory": getattr(self, "_mem_view", None)}
         if name in ("read_report", "lire"):
+            if cmd.get("_from_claude") is True:
+                # 04/11 (lot B, M2) : Claude ne fait pas reparler Astrel : son texte de repli (libre) n'est pas
+                # dit, et le compte rendu suit Silencieux, la pause et l'absence (pas de lecture « expresse »).
+                if cmd.get("fallback"):
+                    log.warning("read_report venu de Claude : texte de repli refusé")
+                    return {"ok": False, "error": "texte de repli réservé au bouton 🔊 du HUD, refusé à Claude"}
+                return self._read_report(str(cmd.get("mid") or ""), force=False)
             return self._read_report(str(cmd.get("mid") or ""), str(cmd.get("fallback") or ""))
         if name == "confirm":
             # `confirm_id` (HUD, bulle) : « id » est l'identifiant de la requête WebSocket.
@@ -1336,6 +1362,13 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             return {"ok": True, "voices": [v.__dict__ for v in available_voices()], "active": self.speaker.voice}
         if name == "mics":
             return {"ok": True, "mics": audio.list_mics(), "active": self.mic.source}
+        if name in ("mic", "micprofile") and cmd.get("_from_claude") is True:
+            # 04/11 (lot B, H1) : source et seuils du micro, par lequel l'utilisateur confirme à la voix : à lui
+            # seul (comme le calibrage). Claude pourrait sinon brancher une source à lui ou rendre l'écoute sourde.
+            log.warning("commande %r refusée : elle vient de Claude", name)
+            bus.publish("notice", level="warning",
+                        text=f"Claude a tenté « {name} » : refusé, le choix et le réglage du micro sont à toi seul.")
+            return {"ok": False, "error": "choix et réglage du micro réservés à l'utilisateur (HUD, terminal), refusés à Claude"}
         if name == "mic":
             return self._set_mic(str(cmd.get("source") or cmd.get("text") or "").strip())
         if name == "micprofile":
@@ -1792,16 +1825,21 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                          name="choice-turn", daemon=True).start()
         return {"ok": True, "id": result["id"]}
 
-    def _read_report(self, mid: str, fallback: str = "") -> dict:
+    def _read_report(self, mid: str, fallback: str = "", force: bool = True) -> dict:
         """Bouton 🔊 du HUD : dit le compte rendu DÉJÀ affiché, sans repasser
         par Claude. `fallback` : le texte que le HUD affiche, pour un compte
-        rendu antérieur à une relance d'Astrel (la mémoire du cœur est vide)."""
-        text = reports.text(mid) or fallback.strip()[:20_000]
+        rendu antérieur à une relance d'Astrel (la mémoire du cœur est vide).
+        04/11 (lot B, M2) : `force=False` (venu de Claude) : pas de repli, et rien dit en silencieux,
+        dictée ou absence ; le compte rendu reste « à lire »."""
+        text = reports.text(mid) or (fallback.strip()[:20_000] if force else "")
         if not text:
             return {"ok": False, "error": "compte rendu introuvable"}
+        if not force and (self._voice_muted() or self._away()):
+            log.info("compte rendu %s non lu : demandé par Claude, voix coupée (%s)", mid, self._usage)
+            return {"ok": True, "dit": False, "paused": self.speaker.paused}
         log.info("compte rendu lu à la demande (%s)", mid or "sans identifiant")
         backlog.discard_mid(mid)  # en file pour plus tard : déjà entendu, ne pas le redire
-        self._say_text(text, force=True)  # un clic sur 🔊 est une demande expresse, même en silencieux
+        self._say_text(text, force=force)  # un clic sur 🔊 est une demande expresse, même en silencieux
         reports.mark_read(mid)
         # Voix en pause : il est gardé et sera dit à la reprise (▶).
         return {"ok": True, "paused": self.speaker.paused}
@@ -1986,6 +2024,10 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         """Un geste reconnu par HOLO."""
         pending = self._pending_confirm
         if action in ("yes", "no"):
+            if action == "yes" and pending and pending.get("guard"):
+                # 04/11 (lot B, H1) : une action sur le garde-fou ne se valide qu'à l'écran (ni voix, ni geste).
+                log.info("geste « oui » ignoré : action sur le garde-fou, réponse à l'écran seulement")
+                return
             if pending and pending["box"]["allow"] is None:
                 pending["box"].update(allow=action == "yes", by="geste")
                 pending["event"].set()
@@ -2011,6 +2053,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         Python termine et tue ce fil avant qu'il ait relancé quoi que ce soit."""
         time.sleep(0.5)  # laisser partir la réponse à la commande
         self.speaker.wait_idle(15.0)
+        self._mute_keep()  # 04/11 (lot B, M3) : un micro coupé le reste après la relance
         self.restart_requested = True
         self._running = False
 
@@ -2184,6 +2227,14 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         pid = r["id"]
         self._todo_plan("depose", pid)  # plan P38 lot 3 : carte créée ou liée, « attend l'utilisateur »
         if reglages.value("plan_mode") == "auto":
+            if totalgate.coeur_refus():
+                # 04/11 (lot B, H2) : code du cœur non validé par l'utilisateur : pas de validation automatique.
+                bus.publish("notice", level="warning",
+                            text=f"Plan {pid} déposé, pas validé automatiquement : {totalgate.REFUS_COEUR}.")
+                r["message"] = (f"Plan {pid} déposé, PAS lancé : le code du cœur a changé depuis la dernière "
+                                f"validation de l'utilisateur, il validera le plan dans la page Plans. Rends seulement "
+                                f"« Plan {pid} déposé ».")
+                return r
             if config.ESTOP_FILE.exists():
                 r["message"] = (f"Plan {pid} déposé, PAS lancé : arrêt d'urgence en cours, l'utilisateur le validera "
                                 f"dans la page Plans. Rends seulement « Plan {pid} déposé ».")
@@ -2261,7 +2312,9 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
     def _estop_watch(self) -> None:
         """L'arrêt d'urgence ne se lève que par « estop off » (HUD, terminal) :
         si `runtime/ESTOP` disparaît autrement (un script de Claude qui l'efface
-        sans le nommer, ce que le garde-fou ne peut pas voir), il est reposé."""
+        sans le nommer, ce que le garde-fou ne peut pas voir), il est reposé.
+        04/11 (lot B, M3) : même garde pour le micro coupé (`_mute_watch`), appelée d'ici (même fil, chaque seconde)."""
+        self._mute_watch()
         if self._estop_on is None:
             self._estop_on = config.ESTOP_FILE.exists()
             return
@@ -2275,6 +2328,33 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             bus.publish("notice", level="warning",
                         text="Le fichier d'arrêt d'urgence a été effacé sans ton accord : je l'ai remis. "
                              "« Reprendre tout » pour le lever.")
+
+    def _mute_watch(self) -> None:
+        """04/11 (lot B, M3) : le micro coupé ne se rallume que par l'utilisateur. Si `runtime/mic-muted` disparaît
+        alors que le cœur sait le micro coupé (un script de Claude qui l'efface, puis une relance), il est
+        reposé, comme l'ESTOP : sinon le micro se rallumait seul à la relance suivante."""
+        if not getattr(self, "_off", False) or MUTE_FILE.exists():
+            return
+        try:
+            MUTE_FILE.touch()
+        except OSError as exc:
+            log.warning("micro coupé non reposé : %s", exc)
+            return
+        if not getattr(self, "_off", False):  # rallumé par l'utilisateur à l'instant même : rien à reposer
+            MUTE_FILE.unlink(missing_ok=True)
+            return
+        log.warning("fichier du micro coupé effacé sans que l'utilisateur rallume le micro : reposé")
+        bus.publish("notice", level="warning",
+                    text="Le fichier du micro coupé a été effacé sans ton accord : je l'ai remis. "
+                         "🎙 pour rallumer le micro.")
+
+    def _mute_keep(self) -> None:
+        """04/11 (lot B, M3) : avant une relance ou un arrêt, le micro coupé est retenu sur le disque."""
+        if getattr(self, "_off", False) and not MUTE_FILE.exists():
+            try:
+                MUTE_FILE.touch()
+            except OSError:
+                log.warning("micro coupé non retenu : %s", MUTE_FILE)
 
     def _nudge(self, text: str) -> None:
         """Message DISCRET au cerveau (alerte de boucle) : rien dans le fil du HUD.
@@ -2411,7 +2491,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                     prompt = f"{prompt}\n\n" + langue.note("[Capture de l'écran de l'utilisateur jointe par le capteur WATCH.]")
             if source == "réflexe":
                 prompt = langue.note("[Réflexe programmé, l'utilisateur n'a rien demandé à l'instant.]") + f" {prompt}"
-            elif busy and source not in ("relève", "plan", "equipe", "quota"):  # un plan validé en mode auto : pas l'utilisateur
+            elif busy and source not in ("relève", "plan", "equipe", "quota", "fond"):  # un plan validé en mode auto : pas l'utilisateur
                 prompt = langue.note("[l'utilisateur te parle pendant que tu travailles.]") + f" {prompt}"
             if source in _UTILISATEUR:
                 self._last_user_at = time.time()
@@ -2992,7 +3072,13 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                     # « Mode autonome total » DIT par l'utilisateur (jamais tapé, jamais par Claude).
                     bus.publish("transcript", who="user", text=text, source="voix", channel=channels.active,
                                 mid=uuid.uuid4().hex[:12])
-                    self.set_total(total == "on", "voix")
+                    res = self.set_total(total == "on", "voix")
+                    if not res.get("ok"):
+                        # 04/11 (lot B) : refusé (modèle local, autre fournisseur, code du cœur modifié…) : le dire,
+                        # au lieu d'annoncer « activé » alors que rien n'a changé.
+                        error = langue.parle(str(res.get("error") or "refusé"))
+                        self.say_and_wait(f"Mode sans confirmation non activé : {error}.")
+                        return
                     self.say_and_wait("Mode sans confirmation activé : je ne te demande plus rien, sauf pour "
                                       "mon garde-fou. Dis « fin du mode total » pour revenir."
                                       if total == "on" else "Mode sans confirmation coupé : je te redemande "
@@ -3068,7 +3154,14 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
     def boot(self) -> None:
         """Charge tout ce qui est lent, en parallèle, et démarre les services."""
         self.status.set(state.BOOTING, text="Chargement…")
+        # 04/11 (lot B, H2) : le code chargé est-il celui que l'utilisateur a validé (`./run.sh doctor --accept`) ?
+        # Sinon : Total, levée et validation automatique des plans refusés, le reste marche.
+        coeur = totalgate.verifier_coeur()
+        if coeur:
+            log.warning("empreinte du cœur : %s (%s)", coeur,
+                        ", ".join(totalgate.core_changes() or ["aucune empreinte du cœur validée"])[:300])
         memory.ensure_vault()
+        threading.Thread(target=self._bases_privees, name="bases-privees", daemon=True).start()
         mcp_config.write()
         reglages.publish()  # page « Réglages » du HUD (instantané pour les HUD qui se connectent)
         try:
@@ -3109,6 +3202,11 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         self._publish_model()
         self._publish_context()
         bus.publish("estop", on=config.ESTOP_FILE.exists())
+        if coeur:
+            bus.publish("notice", level="warning",
+                        text="⚠ Code du cœur modifié depuis la dernière validation : mode Sans confirmation, levée du "
+                             "garde-fou et validation automatique des plans refusés. ./run.sh doctor --accept dans "
+                             "ton terminal.")
         try:
             self.whatsapp.start()  # plan P1 : pont lancé seulement si relié et actif
         except Exception:
@@ -3157,6 +3255,18 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             bus.publish("notice", level="error", text=f"Chargement impossible — {err}")
         self._last_turn = time.time()
         self._fiabilite_boot()  # 01/11 : chien de garde, messages d'avant l'arrêt proposés
+
+    @staticmethod
+    def _bases_privees() -> None:
+        """04/11 (lot B, T45) : index de l'historique et du coffre en 0600 ; ceux d'avant le masquage des
+        secrets vidés et compactés dès le démarrage (reconstruits à la recherche suivante)."""
+        from . import history
+
+        for nom, fn in (("historique", history.preparer), ("mémoire", memory.preparer_index)):
+            try:
+                fn()
+            except Exception:  # noqa: BLE001 — jamais un démarrage bloqué pour un index
+                log.exception("index %s : droits ou migration impossibles", nom)
 
     def _boot_brain(self) -> None:
         """Démarrage du cerveau. 19/10 (demande de l'utilisateur) : conversation à reprendre trop grosse
@@ -3303,6 +3413,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         if not self._running and self.status.current == state.OFF:
             return
         log.info("arrêt d'Astrel")
+        self._mute_keep()  # 04/11 (lot B, M3) : un micro coupé le reste au démarrage suivant
         self._running = False
         gel.chien.arreter()  # les boucles s'arrêtent exprès : pas une alerte de gel
         self.status.set(state.OFF, text="")

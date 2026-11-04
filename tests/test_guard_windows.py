@@ -80,3 +80,38 @@ def test_secret_aux_antislashs_non_cites_ou_en_majuscules(cible):
     assert guard.assess("Bash", {"command": f"cat {cible.resolve()}"}, mode="autonome").needs_confirm
     rel = cible.resolve().relative_to(config.ROOT.resolve()).as_posix().upper()
     assert guard.assess("Bash", {"command": f"cat {rel}"}, mode="autonome", cwd=str(config.ROOT)).needs_confirm
+
+
+def formes_win32(p: Path) -> list[str]:
+    """04/11 (lot A, audit 3 H4) : le même fichier sous les formes que Windows accepte et que Python ne ramenait
+    pas à son chemin : préfixes Win32, flux NTFS, point ou espace final, majuscules."""
+    s = str(p.resolve())
+    return ["\\\\?\\" + s, "\\\\.\\" + s, "//?/" + p.resolve().as_posix(), s + "::$DATA", s + ":flux", s + ".",
+            s + " .", s.upper(), "\\\\?\\" + s.upper() + "."]
+
+
+@pytest.mark.parametrize("cible", PROTEGES, ids=lambda p: p.name)
+def test_formes_win32_d_un_fichier_protege(cible):
+    for forme in formes_win32(cible):
+        for outil, entree in (("Write", {"file_path": forme, "content": "x"}),
+                              ("Edit", {"file_path": forme, "old_string": "a", "new_string": "b"})):
+            v = guard.assess(outil, entree, mode="autonome")
+            assert v.needs_confirm and v.guard, (outil, forme)
+        assert guard.assess("Bash", {"command": f"echo x > '{forme}'"}, mode="autonome").needs_confirm, forme
+
+
+@pytest.mark.parametrize("cible", SECRETS, ids=lambda p: p.name)
+def test_formes_win32_d_un_secret(cible):
+    for forme in formes_win32(cible):
+        assert guard.assess("Read", {"file_path": forme}, mode="autonome").needs_confirm, forme
+
+
+def test_nom_court_8_3_developpe():
+    import ctypes
+
+    s = str(config.ROOT.resolve())
+    buf = ctypes.create_unicode_buffer(32768)
+    if not ctypes.windll.kernel32.GetShortPathNameW(s, buf, len(buf)) or buf.value == s:
+        pytest.skip("pas de nom court 8.3 pour ce dossier (désactivés sur ce volume)")
+    court = buf.value + "\\astrel\\guard.py"
+    assert guard.assess("Write", {"file_path": court, "content": "x"}, mode="autonome").guard

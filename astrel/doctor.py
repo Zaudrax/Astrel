@@ -64,6 +64,18 @@ GUARD_FILES = [
     # 01/11 : ce que « annule » copie et réécrit hors du hook, et le hook qui l'appelle.
     config.ROOT / "astrel" / "instantanes.py",
     config.SUIVI_HOOK_SCRIPT,
+    # 04/11 (lot de sécurité A, accord de l'utilisateur) : tout ce que `guard.PROTECTED_CODE` protège depuis ce jour.
+    # (a) fermeture des imports des hooks qui voient Bash et Write (`tests/test_securite_lot_a.py` la calcule) ;
+    config.ROOT / "astrel" / "__init__.py", config.ROOT / "astrel" / "config.py", config.ROOT / "astrel" / "events.py",
+    config.ROOT / "astrel" / "platform" / "__init__.py", config.ROOT / "astrel" / "platform" / "materiel.py",
+    config.ROOT / "astrel" / "platform" / "systeme.py",
+    # (b) autres scripts cités par les réglages du CLI, leurs imports directs, le programme ajouté par rtk ;
+    config.ROUTE_HOOK_SCRIPT, config.RTK_HOOK_SCRIPT, config.QUOTA_HOOK_SCRIPT, config.CLE_API_SCRIPT,
+    config.MEMORY_HOOK_SCRIPT, config.STOP_HOOK_SCRIPT, config.ROOT / ".rtk" / "rtk",  # clés relatives à ROOT
+    config.ROOT / "astrel" / "agents.py", config.ROOT / "astrel" / "memoire.py",
+    config.ROOT / "astrel" / "quota_arret.py", config.ROOT / "astrel" / "rappel.py",
+    # (c) contrôles : ce module lui-même (il retient l'empreinte), la preuve de mission, la surveillance de la levée.
+    config.ROOT / "astrel" / "doctor.py", config.ROOT / "astrel" / "preuve.py", config.ROOT / "astrel" / "levee.py",
 ]
 # Dans hooks/ : protégé par le garde-fou (PROTECTED_PATHS), Claude ne peut pas le réécrire.
 FINGERPRINT_FILE = config.ROOT / "hooks" / "empreinte.json"
@@ -199,6 +211,23 @@ def check_fingerprint() -> Result:
     return OK, f"inchangée ({len(now)} fichiers)"
 
 
+def check_core_fingerprint() -> Result:
+    """04/11 (lot B, H2) : le code qui décide côté cœur (`totalgate.CORE_FILES`) est-il celui validé ?
+    Sinon, au démarrage, Total, levée et validation automatique des plans sont refusés."""
+    from . import totalgate
+
+    try:
+        known = json.loads(FINGERPRINT_FILE.read_text(encoding="utf-8")).get("coeur")
+    except (OSError, ValueError, AttributeError):
+        known = None
+    changed = totalgate.core_changes(known) if isinstance(known, dict) and known else None
+    if changed is None:
+        return ALERT, "aucune empreinte du cœur validée : ./run.sh --doctor --accept, depuis ton terminal"
+    if changed:
+        return ALERT, "modifié depuis la dernière validation : " + ", ".join(Path(f).name for f in changed)
+    return OK, f"inchangée ({len(totalgate.core_files())} fichiers)"
+
+
 def check_tool_policy() -> Result:
     """Plan P12, lot 6 : un fichier de politique illisible est IGNORÉ par le garde-fou
     (valeurs du code) ; le dire ici plutôt qu'en silence."""
@@ -240,9 +269,12 @@ def accept() -> tuple[bool, str]:
     """Retient l'empreinte actuelle. L'utilisateur seul : refusé à un process de Claude."""
     if launched_by_claude():
         return False, "Refusé : l'empreinte du garde-fou se valide depuis ton terminal, pas par Claude."
-    FINGERPRINT_FILE.write_text(json.dumps({"at": time.time(), "files": fingerprint()}, indent=2) + "\n",
+    from . import totalgate  # 04/11 (lot B, H2) : empreinte du code qui décide côté cœur, clé « coeur »
+
+    FINGERPRINT_FILE.write_text(json.dumps({"at": time.time(), "files": fingerprint(),
+                                            "coeur": totalgate.core_fingerprint()}, indent=2) + "\n",
                                 encoding="utf-8")
-    return True, "Empreinte du garde-fou retenue."
+    return True, "Empreinte du garde-fou et du cœur retenue."
 
 
 # ------------------------------------------------------------------ MCP
@@ -522,6 +554,7 @@ CHECKS: list[tuple[str, Callable[[], Result]]] = [
     ("hook de permission", check_hook),
     ("hook des fournisseurs CLI", check_hook_cli),
     ("empreinte du garde-fou", check_fingerprint),
+    ("empreinte du cœur", check_core_fingerprint),  # 04/11 (lot B, H2)
     ("politique d'outils", check_tool_policy),
     ("MCP astrel", lambda: check_mcp("astrel")),
     ("MCP connecteurs", lambda: check_mcp("connecteurs")),

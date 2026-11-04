@@ -168,10 +168,18 @@ def main() -> int:
 
     # 18/10 (plan P7) : `lift` = levable pendant une levée du garde-fou (le cœur décide).
     # 23/10 (plan P29) : `cats` = catégories de l'action (cases des limites de Total et de la levée).
+    # 03/11 (lot B, T43.5-A) : le cœur recalcule le verdict depuis l'ENTRÉE de l'outil (bornée sans
+    # changer le verdict) ; impossible à borner : refusé, sans carte. 04/11 : les champs d'avant partent
+    # aussi (`confirm.request`), pour le cœur encore en marche tant qu'il n'est pas relancé.
+    inp = confirm.entree_bornee(tool, tool_input, cwd)
+    if inp is None:
+        emit("deny", _refuse(payload, f"{verdict.desc} : entrée de l'outil illisible ou trop grande pour être "
+                                      "confirmée. Action bloquée. " + FERME))
+        return 0
     answer = confirm.request(tool, verdict.desc, guard.short_command(tool, tool_input), verdict.key,
                              keys=verdict.keys, guard=verdict.guard, cwd=cwd,
                              lift=bool(getattr(verdict, "lift", False)),
-                             cats=list(getattr(verdict, "cats", ()) or ()))
+                             cats=list(getattr(verdict, "cats", ()) or ()), tool_input=inp)
     if answer is None:
         emit("deny", _refuse(payload, f"Astrel injoignable pour confirmer : {verdict.desc}. Action bloquée. "
                                       "Sans réponse, ce n'est pas un accord : " + FERME))

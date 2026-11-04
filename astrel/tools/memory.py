@@ -86,7 +86,10 @@ def _title(p: Path) -> str:
 INDEX_DB = config.RUNTIME / "memoire.db"
 _index_lock = threading.Lock()
 
-_SCHEMA_VERSION = "2"
+# 04/11 (lot de sécurité B, T45) : version 3 = textes masqués à l'indexation (une note écrite hors de
+# `write`, par Obsidian, n'était pas masquée) ; base en 0600, `secure_delete`, ancienne version vidée puis
+# compactée (VACUUM), une fois (`history.ouvrir`).
+_SCHEMA_VERSION = "3"
 _INDEX_SCHEMA = """
 CREATE TABLE IF NOT EXISTS notes (path TEXT PRIMARY KEY, mtime_ns INTEGER, size INTEGER);
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
@@ -138,15 +141,22 @@ def _fts_query(terms: list[str], joiner: str = " ") -> str:
 
 
 def _connect_index(db: Path) -> sqlite3.Connection:
-    db.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(db), timeout=10)
-    con.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
-    row = con.execute("SELECT value FROM meta WHERE key = 'schema'").fetchone()
-    if not row or row[0] != _SCHEMA_VERSION:  # index d'une autre version : refait de zéro
-        con.executescript("DROP TABLE IF EXISTS notes; DROP TABLE IF EXISTS notes_fts; DELETE FROM meta;")
-        con.execute("INSERT INTO meta VALUES ('schema', ?)", (_SCHEMA_VERSION,))
+    from .. import history  # 04/11 (T45) : même ouverture privée que l'historique
+
+    # Index d'une autre version : refait de zéro (vidé, compacté ; `_refresh` le remplit).
+    con = history.ouvrir(db, _SCHEMA_VERSION, "DROP TABLE IF EXISTS notes; DROP TABLE IF EXISTS notes_fts;")
     con.executescript(_INDEX_SCHEMA)
     return con
+
+
+def preparer_index(db: Path | None = None) -> None:
+    """04/11 (T45) : au démarrage du cœur, l'index déjà là passe en 0600 (et, d'avant le masquage, est vidé et
+    compacté). Rien s'il n'existe pas."""
+    db = db or INDEX_DB
+    if not db.exists():
+        return
+    with _index_lock:
+        _connect_index(db).close()
 
 
 def _note_files() -> dict[str, Path]:
@@ -181,9 +191,12 @@ def _refresh(con: sqlite3.Connection) -> None:
         except (OSError, UnicodeDecodeError):
             continue
         con.execute("DELETE FROM notes_fts WHERE path = ?", (rel,))
+        # 04/11 (T45) : secrets masqués à l'indexation (une note d'Obsidian n'est pas passée par `write`).
+        text = memory_scan.mask_secrets(text)[0]
         quand = _QUAND_RE.search(text)
         con.execute("INSERT INTO notes_fts (path, title, name, quand, body) VALUES (?,?,?,?,?)",
-                    (rel, _title(p), re.sub(r"[-_]+", " ", p.stem), quand.group(1).strip() if quand else "", text))
+                    (rel, memory_scan.mask_secrets(_title(p))[0], re.sub(r"[-_]+", " ", p.stem),
+                     quand.group(1).strip() if quand else "", text))
         con.execute("INSERT OR REPLACE INTO notes VALUES (?,?,?)", (rel, *sig))
     con.commit()
 

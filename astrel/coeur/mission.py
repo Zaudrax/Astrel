@@ -35,7 +35,20 @@ class MissionCoeur:
     """Mission autonome bornée (`mission.py`) : commandes du HUD, outil `mission_start` (T25),"""
 
     def _publish_mission(self) -> None:
-        bus.publish("mission", **mission.describe())
+        # 04/11 : une mission close (× du HUD, ou finie depuis 24 h) part comme absente.
+        bus.publish("mission", **mission.vue_publiee())
+
+    def _mission_close(self, cmd: dict) -> dict:
+        """04/11 (demande : une mission d'essai finie revenait après relance) : × du panneau Mission.
+        Ferme une mission TERMINÉE (`closed_at`, rien d'effacé) ; l'utilisateur seul, comme les décisions de
+        mission : refusée à Claude. Clé `mission_id` (jamais `id`, écrasé par le HUD). Permise sous
+        ESTOP (affichage seulement : aucun tour, aucun droit)."""
+        if cmd.get("_from_claude") is True:
+            log.warning("commande 'mission_close' refusée : elle vient de Claude")
+            return {"ok": False, "error": "commande réservée à l'utilisateur (HUD ou terminal), refusée à Claude"}
+        r = mission.close(str(cmd.get("mission_id") or "").strip())
+        self._publish_mission()
+        return r
 
     def _mission_command(self, cmd: dict) -> dict:
         # L'action est lue comme le contrôle « réservé à l'utilisateur » la lit (`totalgate`) :
@@ -176,6 +189,8 @@ class MissionCoeur:
     def _mission_tick(self) -> None:
         """Relance le tour suivant d'une mission quand tout est calme : aucun tour,
         aucune confirmation, personne qui parle (un vrai message de l'utilisateur passe avant)."""
+        if mission.fermeture_a_publier():
+            self._publish_mission()  # 04/11 : finie depuis 24 h, le HUD la retire seul
         if not mission.active:
             return
         if config.ESTOP_FILE.exists():

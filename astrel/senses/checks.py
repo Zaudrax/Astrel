@@ -85,6 +85,18 @@ def _argv(check: dict) -> list[str]:
     return shlex.split(cmd) if cmd else []
 
 
+def _cwd(check: dict) -> str:
+    """Dossier où la commande d'une vérification tourne : `cwd` (chemin ABSOLU exigé), sinon le dossier de
+    travail. 04/11 (lot A, audit 2 T44-C) : `validate` la jugeait sans dossier alors qu'elle tournait ici, un
+    chemin relatif était jugé ailleurs que là où il s'exécutait."""
+    cwd = check.get("cwd")
+    if cwd in (None, ""):
+        return str(config.WORKDIR)
+    if not isinstance(cwd, str) or not guard.absolu(cwd):
+        raise ValueError("`cwd` : un chemin absolu est attendu")
+    return cwd
+
+
 def validate(check: dict) -> None:
     """Lève ValueError si la vérification est mal formée ou pas en lecture seule."""
     kind = check.get("kind")
@@ -101,7 +113,7 @@ def validate(check: dict) -> None:
         argv = _argv(check)
         if not argv:
             raise ValueError("commande `argv` (liste) ou `cmd` requise")
-        verdict = guard.classify("Bash", {"command": shlex.join(argv)})
+        verdict = guard.classify("Bash", {"command": shlex.join(argv)}, cwd=_cwd(check))  # 04/11 : là où elle tourne
         if verdict.needs_confirm:
             raise ValueError(f"une vérification doit être en lecture seule ; refusée : {verdict.desc}")
     if kind == "quota_above" and not isinstance(check.get("pct"), (int, float)):
@@ -198,8 +210,8 @@ def _command(check: dict, _q) -> tuple[bool, dict]:
     timeout = min(float(check.get("timeout", 30)), MAX_TIMEOUT_S)
     try:
         proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                              cwd=str(check.get("cwd") or config.WORKDIR), env=os.environ.copy())
-    except (OSError, subprocess.TimeoutExpired) as exc:
+                              cwd=_cwd(check), env=os.environ.copy())  # 04/11 : le dossier jugé par `validate`
+    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         return False, {"status": -1, "output": str(exc)[:300]}
     out = (proc.stdout or "") + (proc.stderr or "")
     ok = proc.returncode == int(check.get("exit", 0))

@@ -308,10 +308,18 @@ def test_cible_calculee_sans_garde_fou_reste_accordee_par_total(cmd):
 
 # ================================================================== 5. étiquettes
 
-@pytest.mark.parametrize("cmd", ["echo x > ~/$X", "echo x > config/$F.json", "echo x > ~/.claude/*.json"])
+@pytest.mark.parametrize("cmd", ["echo x > ~/$X", "echo x > ~/.claude/*.json"])
 def test_cible_incertaine_dit_incertaine(cmd):
     v = assert_plafond("Bash", cmd)
     assert v.desc == guard.D_WRITE and guard.L_CLAUDE_ID not in v.desc
+
+
+def test_cible_incertaine_dans_config():
+    """04/11 (lot A) : `config/` contient des fichiers protégés (profile.json, mic_profiles.json) : un nom
+    calculé y est une modification du garde-fou (avant : « destination incertaine ») ; jamais une lecture de
+    secret ni les identifiants de Claude Code."""
+    v = assert_plafond("Bash", "echo x > config/$F.json")
+    assert v.desc == "une modification du garde-fou d'Astrel"
 
 
 def test_ecrire_un_secret_n_est_pas_une_lecture():

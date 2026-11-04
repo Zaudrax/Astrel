@@ -620,7 +620,8 @@ def _demo_mission(etat: str) -> dict:
     preuve = None if etat == "accepted" else {"verification_id": "m-demo:7", "at": now - 30, "statut": statut,
                                                "verifie": ok, "controles": controles}
     status = {"verifiee": "done", "accepted": "accepted_unverified", "failed": "verification_failed"}.get(etat, "active")
-    return {"status": status, "phase": "verification_blocked" if etat == "decide" else "travail",
+    # 04/11 : `id` d'une mission de démo, inconnu de la vraie Mission : son × essuie un refus (repli du HUD).
+    return {"id": "m-demo", "status": status, "phase": "verification_blocked" if etat == "decide" else "travail",
             "objective": "Écrire le rapport de tests de Démo", "done_when": "le rapport existe et les tests passent",
             "critere": None if etat == "accepted" else critere, "origine": "claude" if etat == "decide" else "utilisateur",
             "approuve": False, "lancee_par": "astrel" if etat == "decide" else "utilisateur",
@@ -1737,7 +1738,12 @@ def main() -> int:
                      "reprendre_travail": mission.back_to_work, "approuver": mission.approve}[action]()
             else:
                 r = {"ok": True}
-            bus.publish("mission", **mission.describe())
+            bus.publish("mission", **mission.vue_publiee())  # 04/11 : close = publiée comme absente
+            return r
+        elif cmd.get("cmd") == "mission_close":  # 04/11 : × du panneau, la vraie Mission (dossier jetable)
+            from astrel.mission import mission
+            r = mission.close(str(cmd.get("mission_id") or "").strip())
+            bus.publish("mission", **mission.vue_publiee())
             return r
         elif cmd.get("cmd") == "demo_mission":  # 02/11 (plan P43) : un état donné, pour la mise en page
             bus.publish("mission", **_demo_mission(str(cmd.get("etat") or "")))

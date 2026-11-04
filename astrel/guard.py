@@ -122,6 +122,14 @@ de l'action sont décochées (`totalgate.confirmation_free`) ; Total et levée i
 instantanés avant écriture (`runtime/instantanes/`, code `instantanes.py`), la série de refus du
 disjoncteur (`REFUS_DIR`, lue par `hooks/permission_hook.py`) et les messages de l'utilisateur en attente
 (`runtime/messages-en-attente.json`, `attente.py`). Aucun verdict desserré.
+
+04/11 (lot de sécurité A, accord explicite de l'utilisateur ; audits du 03/11) : protégés en plus la fermeture
+des imports des hooks Bash/Write, les scripts cités par les réglages du CLI et leurs imports directs, le
+doctor, la preuve et la levée (`PROTECTED_CODE`) ; `runtime/mcp.json` (secret), le profil et le micro
+(`PROTECTED_PATHS`). Outils MCP : `browser_run_code_unsafe` refusé en dur, un outil absent d'un serveur
+connu jugé sur son nom (plus jamais libre d'office). Sources audio : critiques ; retrait du marqueur
+`ASTREL_BRAIN` : garde-fou ; détachement hors cgroup du service : question. Windows : formes `\\\\?\\`,
+flux NTFS, point final, 8.3, casse ramenées au chemin (`_win_forme`). Aucun verdict desserré.
 """
 from __future__ import annotations
 
@@ -232,6 +240,15 @@ D_PROGRAM = "une commande dont le programme est calculé"
 D_RM = "une suppression récursive dont la cible est incertaine"
 D_WRITE = "une écriture vers une destination incertaine"
 D_STDIN = "l'exécution d'un code produit par une autre commande"
+# 04/11 (lot de sécurité A, accord explicite de l'utilisateur ; audits du 03/11) :
+# - la voix confirme : une source audio créée ou choisie par Claude (pactl load-module, pw-loopback…)
+#   ferait entendre un « oui » qu'il fabrique (audit 3, H1) ;
+# - hors cgroup du service, « vient de Claude » repose sur la descendance et le marqueur `ASTREL_BRAIN`
+#   (`state.from_claude`) : le retirer est une action sur le garde-fou, se détacher (setsid, nohup,
+#   disown) une question quand le cgroup ne le rattrape pas (audit 3, H3).
+L_AUDIO = "une modification des sources audio du micro"
+L_BRAIN_MARK = "un retrait du marqueur qui reconnaît les process de Claude"
+L_DETACH = "le lancement d'un process détaché de Claude (setsid, nohup, disown)"
 
 # Code d'un AUTRE langage (python -c, heredoc lu par python, awk…) : illisible pour
 # l'analyse du shell, on y cherche seulement ces motifs-là. Un `sudo` caché dans un
@@ -266,18 +283,70 @@ NATIVE_POLICY = {
     "ScheduleWakeup": ("un réveil programmé", SENSITIVE),
 }
 
-# Serveurs MCP connus : outil → gravité (absent = libre). Un outil d'un serveur
-# INCONNU (connecteurs claude.ai…) est classé d'après son NOM (`_mcp_level`).
+# Serveurs MCP connus : outil → gravité ("" = libre, relu comme sans effet extérieur). Un outil d'un
+# serveur INCONNU (connecteurs claude.ai…) est classé d'après son NOM (`_mcp_level`).
+# 04/11 (lot A, audit 2 T44-B, accord de l'utilisateur) : avant, un outil ABSENT de la liste d'un serveur
+# connu était LIBRE dans les deux modes (le navigateur principal, connecté aux comptes de l'utilisateur,
+# était plus libre que les navigateurs jetables). Désormais il est jugé sur son nom, comme sur un
+# serveur inconnu (sensible au moins) ; chaque outil de `mcp_server.py` et `mcp_connectors.py` a sa
+# classe ici (`tests/test_securite_lot_a.py` le vérifie). Rien n'est desserré : "" seulement pour ce
+# qui était déjà libre ; en prudent, voir l'écran, la webcam ou le presse-papiers, ouvrir une adresse,
+# un fichier ou une app, allumer un capteur, générer une image ou une vidéo, envoyer un fichier sur
+# WhatsApp (chat avec soi-même), réactiver un réflexe, verrouiller, retirer un canal : demandés.
 MCP_POLICY: dict[str, dict[str, str]] = {
     "astrel": {
+        # voir
+        "screen_capture": SENSITIVE, "list_screens": "", "camera_capture": SENSITIVE, "system_status": "",
+        # agir sur le bureau (`open_path` d'un fichier qui lance du code : critique, `_mcp_input_level`)
+        "open_url": SENSITIVE, "open_app": SENSITIVE, "open_path": SENSITIVE, "notify": "",
+        "set_volume": "", "set_brightness": "", "set_dark_mode": "", "media_control": "",
+        "clipboard_read": SENSITIVE, "clipboard_write": SENSITIVE, "lock_screen": SENSITIVE,
         "power_action": CRITICAL, "wifi_toggle": CRITICAL,
-        "reminder_delete": SENSITIVE, "reflex_create": SENSITIVE, "reflex_delete": SENSITIVE,
+        # mémoire et historique (filtrés par `tools/memory.py`), « annule » (rejugé par `instantanes.py`)
+        "memory_search": "", "memory_read": "", "memory_write": "", "memory_list": "", "memory_versions": "",
+        "annuler_ecritures": "", "memory_review": "", "memory_propose": "", "history_search": "",
+        # rappels, capteurs, HUD (affichage seul ; le cœur refuse à Claude ce qui desserre)
+        "reminder_create": "", "reminder_list": "", "reminder_delete": SENSITIVE,
+        "sensor_status": "", "set_sensor": SENSITIVE, "set_voice_pause": "", "post_report": "", "show_media": "",
+        "ask_choice": "", "mission_start": "",
+        # crédits des comptes en ligne, envoi par WhatsApp (chat avec soi-même, filtré par le cœur)
+        "generate_image": SENSITIVE, "generate_video": SENSITIVE, "whatsapp_send_file": SENSITIVE,
+        # plans, todo, équipe, courrier, canaux : écrits par le cœur (plans protégés), données seulement
+        "plan_submit": "", "plan_reply": "", "plan_list": "",
+        "todo_add": "", "todo_list": "", "todo_move": "", "todo_edit": "", "todo_done": "", "todo_drop": "",
+        "passation": "", "courrier_ecrire": "", "courrier_lire": "",
+        "channel_list": "", "channel_create": "", "channel_edit": "", "channel_delete": SENSITIVE,
+        # réflexes (une vérification « command » est rejugée par `senses/checks.py`)
+        "reflex_list": "", "reflex_create": SENSITIVE, "reflex_enable": SENSITIVE, "reflex_delete": SENSITIVE,
     },
+    # Serveur « connecteurs » (`mcp_connectors.py`) : avant le 04/11, inconnu donc sensible par son nom ;
+    # la même gravité, écrite.
+    "connecteurs": {
+        "connectors_status": SENSITIVE, "calendar_upcoming": SENSITIVE, "calendar_create_event": SENSITIVE,
+        "calendar_list_calendars": SENSITIVE, "transport_search_stop": SENSITIVE,
+        "transport_departures": SENSITIVE, "transport_journey": SENSITIVE, "translate_text": SENSITIVE,
+        "translate_usage": SENSITIVE,
+    },
+    # Navigateur principal (profil persistant) ET navigateurs jetables `playwright2..4` (`_mcp_table`) :
+    # la même table ; un outil absent est jugé sur son nom (sensible au moins).
     "playwright": {
         "browser_file_upload": SENSITIVE, "browser_evaluate": SENSITIVE, "browser_fill_form": SENSITIVE,
         "browser_handle_dialog": SENSITIVE, "browser_drag": SENSITIVE,
     },
 }
+_PLAYWRIGHT = re.compile(r"playwright\d*")
+# 04/11 (lot A, audit 2 T44-A) : `browser_run_code_unsafe` (@playwright/mcp, capacité « core », activée par
+# défaut) exécute du JavaScript dans le PROCESS du serveur, « RCE-equivalent » selon ses auteurs : REFUSÉ
+# d'office sur tout serveur (`refused`, avant toute carte), en dur ici en plus de `hooks/tool-policy.json`
+# (un fichier de politique remplacé ou illisible ne le rouvre pas).
+REFUSED_MCP_TOOLS = frozenset({"browser_run_code_unsafe"})
+# `open_path` d'un fichier qui LANCE du code (lanceur, script, exécutable) : critique (xdg-open hors du
+# cgroup du service, le programme lancé ne passerait plus pour Claude).
+_OPEN_CODE_SUFFIXES = frozenset({
+    ".desktop", ".sh", ".bash", ".zsh", ".fish", ".csh", ".ksh", ".py", ".pyw", ".pyz", ".pl", ".rb", ".php",
+    ".js", ".mjs", ".cjs", ".jar", ".appimage", ".run", ".bin", ".exe", ".bat", ".cmd", ".com", ".ps1",
+    ".psm1", ".vbs", ".vbe", ".wsf", ".msi", ".msix", ".lnk", ".url", ".hta", ".reg", ".scr", ".cpl",
+    ".command", ".app", ".scpt", ".applescript", ".workflow", ".pkg", ".dmg", ".deb", ".rpm", ".flatpakref"})
 
 # Verbes d'un outil de connecteur qui rendent l'action IRRÉVERSIBLE ou publique.
 # Tout le reste (lire, chercher, étiqueter, archiver, brouillon, créer un
@@ -383,6 +452,11 @@ PROTECTED_PATHS = [p.resolve() for p in (
     # 01/11 (accord de l'utilisateur) : messages de l'utilisateur non traités avant un arrêt (`attente.py`, entrées
     # signées) : rejoués au démarrage comme venant de lui ; écrits et effacés par le cœur seul.
     config.ATTENTE_FILE,
+    # 04/11 (lot A, accord de l'utilisateur ; audit 1 F2, audit 3 H1 et M3) : le profil donne le dossier des
+    # projets (`config.WORKDIR`, donc où Claude écrit et supprime sans question, relu par le hook à chaque
+    # appel) ; le micro choisi, ses seuils et le micro coupé (persistant, rallumé par l'utilisateur seul) : la
+    # voix de l'utilisateur confirme et active Total. Écrits par le cœur ou l'installateur ; les LIRE reste libre.
+    config.PROFILE_FILE, config.MIC_FILE, config.CONFIG_DIR / "mic_profiles.json", config.RUNTIME / "mic-muted",
 )]
 REFUS_DIR = config.RUNTIME / "garde-refus"  # 01/11 : série de refus du disjoncteur (`hooks/permission_hook.py`)
 # 18/10 (plan P7) : ce qu'une LEVÉE du garde-fou (Réglages du HUD, l'utilisateur seul) laisse
@@ -426,7 +500,8 @@ _GUARD_COMMANDS = (r"autonomy|confirm|estop|stop-tout|stoptout|stop_tout|mission
 PROTECTED_BASH = re.compile(
     r"(?<![\w.-])(?:" + _PROTECTED_NAMES + r")(?![\w-])"
     r"|--send\s+[\"']?(?:" + _GUARD_COMMANDS + r")\b"
-    r"|[\"']cmd[\"']\s*:\s*[\"'](?:" + _GUARD_COMMANDS + r")\b"
+    r"|[\"']cmd[\"']\s*:\s*[\"'](?:" + _GUARD_COMMANDS + r")\b",
+    re.I if os.name == "nt" else 0,  # 04/11 (lot A) : NTFS ignore la casse (« ASTREL\GUARD.PY »)
 )
 # Ce qui ne se LIT même pas : le jeton du HUD donne la main sur tout le HUD ; la clé
 # de session (15/10) signe ses cookies, elle permettrait d'en fabriquer ; le profil
@@ -454,10 +529,18 @@ SECRET_PATHS = [config.HUD_TOKEN_FILE.resolve(), config.HUD_SESSION_KEY_FILE.res
                 QUOTA_KEY_FILE.resolve(),
                 # 27/10 (plan P40 A0, accord de l'utilisateur) : profils Chrome des comptes d'images et de
                 # vidéos IA (cookies de session Google, OpenAI) ; lus par le worker du cœur, hors du hook.
-                config.IMAGES_PROFILS.resolve()]
+                config.IMAGES_PROFILS.resolve(),
+                # 04/11 (lot A, audit 2 F3, accord de l'utilisateur) : configuration MCP du CLI, relue à CHAQUE
+                # démarrage du cerveau sans être réécrite (remise à zéro, changement de modèle) : elle
+                # déclare des commandes lancées par le CLI hors de tout appel d'outil, et porte le jeton de
+                # Home Assistant et les identifiants des connecteurs. Lecture = secret ; écriture = plafond
+                # (comme `.mcp.json`, `CEILING_WRITE`). Écrite par le cœur seul (`mcp_config.write`).
+                config.MCP_CONFIG_FILE.resolve()]
 SECRET_BASH = re.compile(r"(?<![\w.-])(?:hud-token|hud-session-key|hud-profile|whatsapp-auth|whatsapp-media"
                          r"|\.credentials\.json|secrets\.json|runtime/cli|confirmations-cle|quota-cle"
-                         r"|imagegen/profils)(?![\w-])")
+                         r"|imagegen/profils"
+                         r"|runtime/mcp\.json)(?![\w-])",  # 04/11 : le nom seul (« mcp.json ») sert ailleurs
+                         re.I if os.name == "nt" else 0)  # 04/11 : NTFS ignore la casse
 L_SECRET = ("la lecture d'un secret d'Astrel (jeton du HUD, identifiants ou médias WhatsApp, "
             "identifiants de Claude Code, clés API des fournisseurs)")
 # 23/10 (plan P29, fiche 3 du relecteur ; trou ANCIEN) : ÉCRIRE dans un secret, ou dans les
@@ -929,7 +1012,8 @@ def _tree_filters(prog: str, vals: list[tuple[str, str]]) -> tuple:
 
 
 _SECRET_FILES = frozenset(p.resolve() for p in (config.HUD_TOKEN_FILE, config.HUD_SESSION_KEY_FILE,
-                                                CLAUDE_CREDENTIALS, config.SECRETS_FILE))
+                                                CLAUDE_CREDENTIALS, config.SECRETS_FILE,
+                                                config.MCP_CONFIG_FILE))  # 04/11 (lot A)
 _SECRET_ALL = tuple(dict.fromkeys([*SECRET_PATHS, CLAUDE_CREDENTIALS]))
 
 
@@ -1182,6 +1266,29 @@ PROTECTED_CODE = [p.resolve() for p in (
     # 01/11 (accord de l'utilisateur) : décide ce que « annule ce que tu viens de faire » copie et RÉÉCRIT
     # hors du hook (outil MCP, terminal) ; importé par `hooks/suivi_outils.py`.
     config.ROOT / "astrel" / "instantanes.py",
+    # 04/11 (lot de sécurité A, accord explicite de l'utilisateur ; audits du 03/11, F1, F4, F5) : un hook est un
+    # NOUVEAU process à chaque appel d'outil, un module qu'il charge réécrit vaut dès l'appel suivant.
+    # (a) Fermeture COMPLÈTE des imports des hooks PreToolUse qui voient Bash et Write (`permission_hook.py`,
+    #     `suivi_outils.py`), calculée par `tests/test_securite_lot_a.py` (sous-process isolé + lecture des
+    #     imports, même tardifs) : le paquet, `config.py` (chemins de toutes les protections), le bus
+    #     d'événements (importé par `state.py`), `platform/` (choix du système, process, fichiers).
+    config.ROOT / "astrel" / "__init__.py", config.ROOT / "astrel" / "config.py",
+    config.ROOT / "astrel" / "events.py", config.ROOT / "astrel" / "platform" / "__init__.py",
+    config.ROOT / "astrel" / "platform" / "materiel.py", config.ROOT / "astrel" / "platform" / "systeme.py",
+    # (b) Autres scripts cités par les réglages du CLI (`brain.write_settings`) et leurs imports DIRECTS :
+    #     routage (son `updatedInput` s'applique APRÈS le jugement du garde-fou), rtk (préfixe ajouté à des
+    #     commandes déjà jugées) et son binaire, quota, `apiKeyHelper`, rappel de la mémoire (son contexte
+    #     est injecté à chaque message de l'utilisateur). `hooks/` l'est déjà.
+    config.ROOT / "astrel" / "route_hook.py", config.ROOT / "astrel" / "rtk_hook.py",
+    config.ROOT / "astrel" / "quota_hook.py", config.ROOT / "astrel" / "cle_api.py",
+    config.ROOT / ".rtk", config.RTK_BIN,
+    config.ROOT / "astrel" / "agents.py", config.ROOT / "astrel" / "memoire.py",
+    config.ROOT / "astrel" / "quota_arret.py", config.ROOT / "astrel" / "rappel.py",
+    # (c) Contrôles de sécurité : l'empreinte et le contrôle de santé (`doctor.py`, qui retient ce que l'utilisateur
+    #     accepte), la preuve de fin de mission (fin de la barrière d'écriture), la surveillance de la levée.
+    #     PAS `core.py` ni `astrel/coeur/` (choix de l'utilisateur, docs/DURCISSEMENT-GARDE-FOU.md).
+    config.ROOT / "astrel" / "doctor.py", config.ROOT / "astrel" / "preuve.py",
+    config.ROOT / "astrel" / "levee.py",
 )]
 _PATH_WORD = re.compile(r"[^\s;|&<>()'\"`=,]+")
 _CD = re.compile(r"(?:^|[;&|(\s])(?:cd|pushd)\s+([^\s;&|)]+)")
@@ -1192,7 +1299,20 @@ def _protected_code(raw_path: str) -> bool:
 
 
 _CODE_NAMES = {p.name for p in PROTECTED_CODE}
+_CODE_NAMES_CI = {n.lower() for n in _CODE_NAMES}  # 04/11 (lot A) : NTFS ignore la casse
 _NAMED_ANYWHERE = {"totalgate.py"}  # protégé par son NOM, quel que soit le dossier (`sed -i … totalgate.py`)
+# 04/11 (lot A) : noms protégés depuis ce jour et COURANTS dans tout projet Python : cités derrière un dossier
+# INCONNU (`touch "$PKG/__init__.py"`), ils ne demandent pas (comme avant le 04/11 ; une écriture vers `$PKG/…`
+# reste un doute, `_judge_write`). Résolus dans un dossier connu, ils restent jugés comme les autres.
+_GENERIC_CODE_NAMES = frozenset({"__init__.py", "config.py", "events.py", "agents.py", "doctor.py", "rtk", ".rtk"})
+
+
+def _cites_code_name(w: str) -> bool:
+    """Le mot contient-il le nom d'un fichier de `PROTECTED_CODE` (sans casse sous Windows) ?"""
+    if _WINDOWS:
+        w = w.lower()
+        return any(n in w for n in _CODE_NAMES_CI)
+    return any(n in w for n in _CODE_NAMES)
 
 
 def _bash_protected_code(cmd: str) -> str:
@@ -1203,8 +1323,7 @@ def _bash_protected_code(cmd: str) -> str:
     nommer n'est pas vu (limite connue du garde-fou).
     15/10 : ne sert plus qu'en REPLI, quand l'analyse structurée échoue (syntaxe
     illisible) ; sinon chaque commande est jugée à part (`_judge_cited`)."""
-    names = _CODE_NAMES
-    words = [w for w in _PATH_WORD.findall(cmd) if any(n in w for n in names)]
+    words = [w for w in _PATH_WORD.findall(cmd) if _cites_code_name(w)]
     if not words:
         return ""
     for w in words:
@@ -1519,11 +1638,98 @@ def absolu(p: str | os.PathLike) -> bool:
 # Git Bash, qui écrit « /c/Users/… » (aussi « /cygdrive/c/… », « /mnt/c/… ») ; Python sous Windows le lirait
 # « \\c\\Users… » sur le disque courant, et un fichier protégé passerait pour un autre. Ramené à « C:/Users/… ».
 _MSYS = re.compile(r"^/(?:cygdrive/|mnt/)?([A-Za-z])(?=/|$)")
+# 04/11 (lot de sécurité A, accord de l'utilisateur ; audit 3, H4) : Windows lit un même fichier sous d'autres
+# formes que Python ne ramène pas à son chemin : préfixes Win32 `\\?\`, `\\.\`, `\\?\UNC\` (gardés par
+# `ntpath.realpath`, et `\\?\C:` n'est pas le lecteur `C:` pour `PureWindowsPath`), partage administratif
+# local (`\\localhost\C$\…`), flux NTFS (`guard.py::$DATA` EST le fichier, `guard.py:x` un flux à côté),
+# point ou espace final (retirés par Windows), noms courts 8.3 (`ASTREL~1`). Ramenés à la forme normale
+# AVANT tout jugement (`_win_forme`, appelée par `_msys`) ; une forme qui ne se ramène pas à un lecteur
+# (volume, `GLOBALROOT`, disque physique, autre partage administratif) est INCERTAINE (`_win_douteux`) :
+# écrire = doute du garde-fou, lire = lecture d'un secret. La casse : comparaisons de `WindowsPath`, et
+# noms cités sans casse (`_cites_code_name`, `PROTECTED_BASH`, `SECRET_BASH`). Simulé partout par les
+# tests (`tests/test_securite_lot_a.py`), vrai Windows : `tests/test_guard_windows.py` (CI).
+_WINDOWS = os.name == "nt"
+_WIN_PREFIXE_UNC = re.compile(r"^[\\/]{2}[?.][\\/]UNC[\\/]", re.I)
+_WIN_PREFIXE_LECTEUR = re.compile(r"^[\\/]{2}[?.][\\/](?=[A-Za-z]:(?:[\\/]|$))")
+_WIN_PREFIXE = re.compile(r"^[\\/]{2}[?.](?:[\\/]|$)")  # ce qui reste après les deux premiers : incertain
+_WIN_PARTAGE_LOCAL = re.compile(r"^[\\/]{2}(?:localhost|127\.0\.0\.1|\[?::1\]?|\.)[\\/]([A-Za-z])\$(?=[\\/]|$)", re.I)
+_WIN_PARTAGE_ADMIN = re.compile(r"^[\\/]{2}[^\\/]+[\\/][A-Za-z]\$(?:[\\/]|$)")
+_WIN_LECTEUR = re.compile(r"^[A-Za-z]:")
+_WIN_COURT = re.compile(r"~\d")  # nom court 8.3 possible (`PROGRA~1`, `ASTREL~1.PY`)
+
+
+def _nom_long(s: str) -> str:
+    """Noms courts 8.3 développés (Windows : `GetLongPathNameW` sur la plus longue partie qui existe) ; la
+    suite, qui n'existe pas, ne peut désigner aucun fichier existant. Ailleurs, ou en cas d'échec : tel quel."""
+    if os.name != "nt":
+        return s
+    try:
+        import ctypes
+
+        tete, queue = s, ""
+        for _ in range(64):
+            buf = ctypes.create_unicode_buffer(32768)
+            n = ctypes.windll.kernel32.GetLongPathNameW(tete, buf, len(buf))  # type: ignore[attr-defined]
+            if 0 < n < len(buf):
+                return buf.value + queue
+            coupe = max(tete.rfind("\\"), tete.rfind("/"))
+            if coupe <= 2:
+                return s
+            tete, queue = tete[:coupe], tete[coupe:] + queue
+    except (OSError, AttributeError, ValueError):
+        pass
+    return s
+
+
+def _win_forme(raw: str) -> str:
+    """Forme normale Win32 d'un chemin (voir plus haut) : préfixes retirés, partage administratif local
+    ramené à son lecteur, flux NTFS et points ou espaces finaux retirés de chaque nom, noms 8.3 développés.
+    Une adresse (« :// ») ou un texte sans chemin reste tel quel."""
+    s = raw
+    if not s or "://" in s:
+        return s
+    m = _WIN_PREFIXE_UNC.match(s)
+    if m:
+        s = "\\\\" + s[m.end():]
+    else:
+        m = _WIN_PREFIXE_LECTEUR.match(s)
+        if m:
+            s = s[m.end():]
+    m = _WIN_PARTAGE_LOCAL.match(s)
+    if m:
+        s = m.group(1).upper() + ":" + s[m.end():]
+    morceaux = re.split(r"([\\/]+)", s)
+    noms = [k for k, x in enumerate(morceaux) if x and not re.fullmatch(r"[\\/]+", x)]
+    absolu_ = bool(_WIN_LECTEUR.match(s)) or s[:1] in ("\\", "/")
+    for rang, k in enumerate(noms):
+        nom = morceaux[k]
+        lecteur = ""
+        if k == 0 and _WIN_LECTEUR.match(nom):
+            lecteur, nom = nom[:2], nom[2:]
+        if ":" in nom and (absolu_ or lecteur or rang == len(noms) - 1):
+            nom = nom.split(":", 1)[0]  # « guard.py::$DATA », « guard.py:flux » : le fichier lui-même
+        if nom not in (".", ".."):
+            nom = nom.rstrip(". ") or nom  # « guard.py. », « guard.py  » : Windows retire la fin
+        morceaux[k] = lecteur + nom
+    s = "".join(morceaux)
+    if _WIN_COURT.search(s):
+        s = _nom_long(s)
+    return s
+
+
+def _win_douteux(raw: str) -> bool:
+    """04/11 : une forme Windows qui ne se ramène pas à un lecteur connu (volume, `GLOBALROOT`, disque physique,
+    partage administratif d'une autre machine ou sous un autre nom) : ce qu'elle désigne est INCONNU."""
+    if not _WINDOWS or not raw:
+        return False
+    s = _win_forme(str(raw).strip().strip("'\""))
+    return bool(_WIN_PREFIXE.match(s) or _WIN_PARTAGE_ADMIN.match(s))
 
 
 def _msys(raw: str) -> str:
-    if os.name != "nt":
+    if not _WINDOWS:
         return raw
+    raw = _win_forme(raw)  # 04/11 (lot A) : \\?\, flux NTFS, point final, noms 8.3
     if raw == "/tmp" or raw.startswith("/tmp/"):  # Git Bash monte /tmp sur %TEMP% (profil de l'utilisateur)
         return Path(tempfile.gettempdir()).as_posix() + raw[4:]
     m = _MSYS.match(raw)
@@ -1554,6 +1760,33 @@ def _bash_redirect_targets(cmd: str) -> list[str]:
     # « 2>&1 » et « >/dev/null » ne sont pas des écritures de fichier.
     targets = re.findall(r"(?<![0-9&])>>?\s*([^\s;|&>]+)", cmd)
     return [t for t in targets if not t.startswith("&") and t != "/dev/null"]
+
+
+def _mcp_table(server: str) -> dict[str, str] | None:
+    """04/11 (lot A) : table de `MCP_POLICY` du serveur ; les navigateurs jetables `playwright2..4` prennent
+    celle du navigateur principal (aucun n'est plus libre que l'autre). None : serveur inconnu."""
+    if server in MCP_POLICY:
+        return MCP_POLICY[server]
+    if _PLAYWRIGHT.fullmatch(server):
+        return MCP_POLICY["playwright"]
+    return None
+
+
+def _mcp_input_level(server: str, tool: str, tool_input: dict, level: str | None) -> str | None:
+    """04/11 (lot A) : gravité relevée d'après l'ENTRÉE de l'outil : `open_path` d'un lanceur, d'un script
+    ou d'un exécutable (xdg-open : le programme lancé sort du cgroup du service). Jamais abaissée."""
+    if server == "astrel" and tool == "open_path" and level != CRITICAL:
+        path = tool_input.get("path") if isinstance(tool_input, dict) else None
+        if not isinstance(path, str) or not path.strip():
+            return CRITICAL
+        p = Path(os.path.expanduser(path.strip()))
+        try:
+            runs = p.suffix.lower() in _OPEN_CODE_SUFFIXES or (p.is_file() and os.access(p, os.X_OK))
+        except (OSError, ValueError):
+            runs = True
+        if runs:
+            return CRITICAL
+    return level
 
 
 def _mcp_level(tool: str) -> str:
@@ -2958,6 +3191,8 @@ def _paths(c: str, ctx: _Ctx) -> list[Path] | None:
     (None : impossible à connaître)."""
     if _PROC_CWD.search(c):
         return None  # /proc/self/cwd pointe vers le dossier du SHELL, pas celui du hook (3/10)
+    if _win_douteux(c):
+        return None  # 04/11 (lot A) : `\\?\Volume{…}\…`, `\\machine\C$\…` : ce qui est désigné est inconnu
     c = _msys(c)  # 03/11 : Git Bash (« /c/Users/… ») sous Windows
     if c.startswith("~"):
         head, sep, tail = c.partition("/")
@@ -3031,6 +3266,9 @@ CATS: dict[str, tuple[str, ...]] = {
     # Toujours posées avec `guard=True` : plafond.
     L_GUARD: (_L.PLAFOND,), L_SECRET: (_L.PLAFOND,), L_CLAUDE_ID: (_L.PLAFOND,),
     L_MISSION_FORBIDDEN: (_L.PLAFOND,),
+    # 04/11 (lot A) : sources audio (critique), process détaché hors cgroup (question), retrait du marqueur
+    # (critique ; là où il décide, `guard=True` et la catégorie « code qui décide », `_brain_mark`).
+    L_AUDIO: (_L.ADMINISTRATION,), L_DETACH: (_L.DOUTES,), L_BRAIN_MARK: (_L.ADMINISTRATION,),
 }
 _INCONNUE = "inconnue"  # absente du catalogue : `limites.decide` la demande toujours
 # Outils natifs (`NATIVE_POLICY`) et outils MCP nommés.
@@ -3197,6 +3435,8 @@ def _raw_code(text: str, out: list) -> None:
     for pattern, label in _RAW_CODE:
         if pattern.search(text):
             _add(out, label)
+    if BRAIN_VAR in text:  # 04/11 (lot A) : `os.environ.pop("ASTREL_BRAIN")`, `env=…` sans le marqueur
+        _brain_mark(out)
 
 
 def _analyze(text: str, ctx: _Ctx, out: list) -> None:
@@ -3342,6 +3582,8 @@ def _eval_cmd(words: list, redirs: list, ctx: _Ctx, out: list, feed) -> tuple[bo
         i += 1
     for name, val in assigns:
         x = _expand(val, ctx)
+        if name == BRAIN_VAR:  # 04/11 (lot A) : « ASTREL_BRAIN= prog », réaffectation (variable déjà exportée)
+            _brain_mark(out)
         if name in _CODE_VARS:
             _analyze(x.src.lstrip("|"), _deeper(ctx), out)
         if words[i:] or _launch_var(name):  # « F=…; grep x "$F" » : non exportée, simple valeur
@@ -3551,11 +3793,64 @@ _PREFIXES: dict[str, tuple[str, set, int]] = {
 }
 
 
+# 04/11 (lot A, audit 3 H3) : marqueur d'environnement du cerveau (même nom que `platform.proc.BRAIN_VAR`,
+# vérifié par les tests ; pas d'import : le garde-fou ne dépend que de `config` et `limites`).
+BRAIN_VAR = "ASTREL_BRAIN"
+_CGROUP: list[bool] = []
+
+
+def _brain_mark(out: list) -> None:
+    """Le marqueur du cerveau retiré, vidé ou remplacé : un process ainsi lancé passerait pour l'utilisateur là où
+    la descendance et le marqueur font foi (`state.from_claude`). Toujours critique ; action sur le garde-fou
+    (plafond) là où le marqueur DÉCIDE (Linux hors service, macOS). En service sous Linux, le cgroup décide :
+    critique autorisable (rejeu du corpus : `env -u … -u ASTREL_BRAIN` pour lancer les tests du dépôt public)."""
+    if _marqueur_compte():
+        _add(out, L_BRAIN_MARK, guard=True, cat=_L.CODE_IDENTITE)
+    else:
+        _add(out, L_BRAIN_MARK)
+
+
+def _marqueur_compte() -> bool:
+    """04/11 : `state.from_claude` consulte-t-il le marqueur ? Non sous Windows (Job Object du cerveau, qui tient
+    même environnement vidé) ni sous Linux en service (cgroup) ; oui ailleurs."""
+    if os.name == "nt":
+        return False
+    if not sys.platform.startswith("linux"):
+        return True
+    return not _cgroup_fiable()
+
+
+def _cgroup_fiable() -> bool:
+    """04/11 (lot A) : un process DÉTACHÉ (setsid, nohup, disown) reste-t-il reconnu comme venant de Claude ?
+    Oui sous Linux quand le cœur tourne en service (le hook, son descendant, est dans le cgroup du service :
+    `state.from_claude` le lit), sous Windows (Job Object du cerveau) et sous macOS (le marqueur `ASTREL_BRAIN`
+    survit au détachement ; le retirer est jugé à part). Non sous Linux hors service (`./run.sh` d'un
+    terminal) : seule la descendance compte. Lu une fois par process (le hook en est un par appel)."""
+    if not _CGROUP:
+        if not sys.platform.startswith("linux"):
+            _CGROUP.append(True)
+        else:
+            unit = os.environ.get("ASTREL_SERVICE_UNIT", "astrel.service")
+            _CGROUP.append(bool(unit) and unit in _own_cgroup().split("/"))
+    return _CGROUP[0]
+
+
+def _own_cgroup() -> str:
+    """Cgroup v2 du process (« /user.slice/…/astrel.service »), vide si illisible."""
+    try:
+        lines = Path("/proc/self/cgroup").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    return next((ln[3:].strip() for ln in lines if ln.startswith("0::")), "")
+
+
 def _prefix(prog: str, args: list, ctx: _Ctx, out: list):
     """Rend (arguments du programme lancé, contexte) ou None s'il n'en lance pas."""
     short_arg, long_arg, extra = _PREFIXES[prog]
     if prog in ("sudo", "doas", "pkexec", "run0"):
         _add(out, L_ADMIN)
+    if prog in ("setsid", "nohup") and not _cgroup_fiable():
+        _add(out, L_DETACH)  # 04/11 (lot A) : hors cgroup du service, il ne descend plus de Claude
     i = 0
     while i < len(args):
         x = args[i]
@@ -3563,6 +3858,10 @@ def _prefix(prog: str, args: list, ctx: _Ctx, out: list):
         if t == "--":
             i += 1
             break
+        if prog == "env" and t == "-" and not x.dyn:  # « env - prog » = env -i (avant : pris pour le programme)
+            _brain_mark(out)
+            i += 1
+            continue
         if not t.startswith("-") or len(t) < 2 or x.dyn:
             break
         name, val = t, None
@@ -3578,6 +3877,8 @@ def _prefix(prog: str, args: list, ctx: _Ctx, out: list):
             if prog == "command" and set(body) & {"v", "V"}:
                 return None  # command -v : cherche, ne lance rien
             k = next((k for k, ch in enumerate(body) if ch in short_arg), None)
+            if (prog == "env" and "i" in body[:k]) or (prog == "exec" and "c" in body[:k]):
+                _brain_mark(out)  # 04/11 (lot A) : env -i, exec -c : environnement vidé, marqueur compris
             if k is not None:
                 name = "-" + body[k]
                 if body[k + 1:]:
@@ -3586,6 +3887,10 @@ def _prefix(prog: str, args: list, ctx: _Ctx, out: list):
                     val = args[i + 1] if i + 1 < len(args) else _lit("")
                     i += 1
         i += 1
+        if prog == "env" and name == "--ignore-environment":
+            _brain_mark(out)
+        if prog == "env" and name in ("-u", "--unset") and val is not None and (val.dyn or BRAIN_VAR in val.cands):
+            _brain_mark(out)  # 04/11 (lot A) : env -u ASTREL_BRAIN, ou un nom calculé
         if val is None:
             continue
         if (prog in ("sudo", "run0") and name in ("-D", "--chdir")) or (prog == "env" and name in ("-C", "--chdir")):
@@ -3605,6 +3910,8 @@ def _prefix(prog: str, args: list, ctx: _Ctx, out: list):
         elif prog == "ionice" and name in ("-p", "--pid"):
             return None
     while i < len(args) and (m := re.match(r"([A-Za-z_]\w*)=", args[i].text)):
+        if m.group(1) == BRAIN_VAR:  # 04/11 (lot A) : env ASTREL_BRAIN=autre prog
+            _brain_mark(out)
         if _launch_var(m.group(1)):  # sudo/env NOM=valeur programme
             ctx = ctx.child(launch=True)
         if m.group(1) in _CODE_VARS:
@@ -3893,6 +4200,10 @@ def _program(prog: str, w0: _X, args: list, ctx: _Ctx, out: list, stdin) -> tupl
         ctx.cwds = list(dict.fromkeys(ctx.seen)) or ctx.cwds
         return True, None
     if prog in ("export", "local", "declare", "typeset", "readonly"):
+        # 04/11 (lot A) : `export ASTREL_BRAIN=`, `export -n ASTREL_BRAIN`, `local ASTREL_BRAIN` (une locale
+        # sans -x masque la variable exportée pour les programmes lancés ensuite) : le marqueur change.
+        if any(re.match(re.escape(BRAIN_VAR) + r"(?!\w)", c) for x in args for c in x.cands):
+            _brain_mark(out)
         for x in args:
             m = re.match(r"([A-Za-z_]\w*)\+?=", x.text)
             if m:
@@ -3907,8 +4218,13 @@ def _program(prog: str, w0: _X, args: list, ctx: _Ctx, out: list, stdin) -> tupl
     elif prog == "printf" and any(t.startswith("-v") for t in a):
         ctx.env_unknown = True  # printf -v NOM : une variable posée sans affectation visible
     elif prog == "unset":
+        if BRAIN_VAR in a or any(x.dyn for x in args):  # 04/11 (lot A) : unset ASTREL_BRAIN, ou un nom calculé
+            _brain_mark(out)
         for t in a:
             ctx.env.pop(t, None)
+    elif prog == "disown":
+        if not _cgroup_fiable():
+            _add(out, L_DETACH)  # 04/11 (lot A) : hors cgroup du service, le job ne descend plus de Claude
     elif prog == "read":
         for t in _operands(a, {"-p", "-d", "-n", "-N", "-t", "-u", "-a", "-i"}):
             ctx.env[t] = None
@@ -4123,6 +4439,38 @@ def _labels(prog: str, args: list, a: list[str], ctx: _Ctx, out: list) -> None:
             _add(out, L_DOCKER, SENSITIVE)
     if prog in ("ssh", "scp", "rsync", "sftp") and any("@" in t for t in a):
         _add(out, L_REMOTE, SENSITIVE)
+    if _audio_source(prog, a):
+        _add(out, L_AUDIO)
+
+
+# 04/11 (lot A, audit 3 H1) : créer, charger ou choisir une source audio, ou y brancher un autre flux, change
+# ce que le micro d'Astrel entend (la voix de l'utilisateur confirme, active Total). Lister reste libre.
+_PACTL_SOURCE = {"load-module", "set-default-source", "move-source-output", "set-source-port"}
+_PW_CLI_SOURCE = {"create-node", "cn", "load-module", "lm", "create-link", "cl", "set-param", "s"}
+_PW_LINK_READ = {"-o", "--output", "-i", "--input", "-l", "--links", "-m", "--monitor", "-I", "--id", "-v",
+                 "--verbose", "-h", "--help", "--version"}
+_AUDIO_LOOPBACKS = {"pw-loopback", "pa-loopback"}
+
+
+def _audio_source(prog: str, a: list[str]) -> bool:
+    if "--help" in a or "-h" in a:
+        return False
+    if prog in ("pactl", "pacmd"):
+        ops = _operands(a, {"-s", "--server", "-n", "--client-name", "-f", "--format"})
+        return bool(ops) and ops[0] in _PACTL_SOURCE
+    if prog in _AUDIO_LOOPBACKS:
+        return True
+    if prog == "pw-cli":
+        ops = _operands(a, {"-r", "--remote", "-n", "--name"})
+        return bool(ops) and ops[0] in _PW_CLI_SOURCE
+    if prog == "pw-link":
+        return not all(t in _PW_LINK_READ for t in a)  # relier ou délier des ports
+    if prog == "pw-metadata":
+        return any("audio.source" in t for t in a) and len(_operands(a, {"-r", "--remote", "-n", "--name"})) >= 3
+    if prog == "wpctl":
+        ops = _operands(a)
+        return bool(ops) and ops[0] in ("set-default", "set-profile", "set-route")
+    return False
 
 
 _GIT_CODE_KEYS = re.compile(r"(core\.(fsmonitor|sshcommand|pager|editor|askpass)|diff\.external|sequence\.editor"
@@ -4794,7 +5142,7 @@ def _cited_hits(texts: list[str], ctx: _Ctx, in_cwd: bool = False, strip: bool =
         words += [w.rsplit(":", 1)[1] for w in words if ":" in w and "://" not in w]
         for w in words:
             # Dans un dossier protégé (`cd hud/src`), « main.js », « . », « * » y désignent un fichier.
-            if not any(n in w for n in _CODE_NAMES) and not (
+            if not _cites_code_name(w) and not (
                     prot_cwd and _PATHISH.search(w) and not w.startswith("-") and "://" not in w):
                 continue
             head, _sep, base = w.rpartition("/")
@@ -4803,7 +5151,7 @@ def _cited_hits(texts: list[str], ctx: _Ctx, in_cwd: bool = False, strip: bool =
                 continue
             if _DYN in w:
                 if _DYN in head:  # « $D/server.py » : dossier inconnu
-                    if any(n in base for n in _CODE_NAMES):
+                    if _cites_code_name(base) and base not in _GENERIC_CODE_NAMES:
                         yield base.replace(_DYN, "…"), None
                     continue
                 w = head + _sep + "x"  # « src/$f » : un fichier quelconque de ce dossier connu
@@ -5498,6 +5846,8 @@ def classify(tool_name: str, tool_input: dict, cwd: str | None = None) -> Verdic
 def _classify(tool_name: str, tool_input: dict) -> Verdict:
     if tool_name in ("Read", "Grep", "NotebookRead"):
         target = str(tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path") or "")
+        if _win_douteux(target):  # 04/11 (lot A) : `\\?\Volume{…}\…` peut être un secret
+            return _single(True, L_SECRET, "", CRITICAL, guard=True, cats=(_L.PLAFOND, _L.SECRETS))
         if target and (_under(_resolve(target), SECRET_PATHS) or _resolve(target) in [p.parent for p in SECRET_PATHS]):
             # 24/10 (P29 lot B) : le secret lui-même, ou une recherche dans le dossier qui le contient.
             wide = not _under(_resolve(target), SECRET_PATHS)
@@ -5512,6 +5862,8 @@ def _classify(tool_name: str, tool_input: dict) -> Verdict:
 
     if tool_name in WRITE_TOOLS:
         target = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
+        if _win_douteux(target):  # 04/11 (lot A) : forme Windows qui ne se ramène à aucun lecteur connu
+            return _single(True, D_WRITE, "", CRITICAL, guard=True, cats=(_L.PLAFOND, _L.DOUTES))
         if _protected(target) or _protected_code(target):
             p = _resolve(target)
             label = ("une modification du garde-fou d'Astrel" if _protected(target)
@@ -5621,10 +5973,14 @@ def _classify(tool_name: str, tool_input: dict) -> Verdict:
         parts = tool_name.split("__", 2)
         server, tool = (parts[1], parts[2]) if len(parts) == 3 else ("", tool_name)
         pretty = server.replace("claude_ai_", "")
-        if server in MCP_POLICY:
-            level = MCP_POLICY[server].get(tool)
+        if tool in REFUSED_MCP_TOOLS:  # 04/11 (lot A) : refusé d'office par le hook (`refused`) ; ici, au plafond
+            return _single(True, f"l'action {tool.replace('_', ' ')} sur {pretty}", "", CRITICAL, guard=True)
+        table = _mcp_table(server)
+        if table is not None and tool in table:
+            level = table[tool] or None
         else:
-            level = _mcp_level(tool)
+            level = _mcp_level(tool)  # 04/11 (lot A) : absent d'un serveur connu = jugé sur son nom
+        level = _mcp_input_level(server, tool, tool_input, level)
         # 20/10 (plan P12, lot 6) : le fichier de politique règle un outil ; jamais sous CRITIQUE.
         wanted = _policy_level(server, tool)
         if wanted is not None and level != CRITICAL:
@@ -5705,6 +6061,11 @@ def _policy_level(server: str, tool: str) -> str | None:
 
 def refused(tool_name: str) -> str:
     """Raison du refus d'office si `tool_name` est dans « refuser » ; sinon vide."""
+    if tool_name.startswith("mcp__") and tool_name.rsplit("__", 1)[-1] in REFUSED_MCP_TOOLS:
+        # 04/11 (lot A, audit 2 T44-A) : en dur, quel que soit le fichier de politique (remplacé par un test,
+        # illisible, ou d'une autre version) et quel que soit le serveur (`playwright`, `playwright2..4`…).
+        return (f"l'outil {tool_name} exécute du code dans le serveur MCP lui-même : refusé d'office par le "
+                "garde-fou d'Astrel. N'insiste pas, propose une autre voie.")
     for pattern in _tool_policy().get("refuser", ()):
         if tool_name == pattern or (pattern.endswith("*") and tool_name.startswith(pattern[:-1])):
             return (f"l'outil {tool_name} est refusé par la politique d'outils d'Astrel "

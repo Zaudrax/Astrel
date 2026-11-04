@@ -221,11 +221,15 @@ def test_outils_mcp(boite):
 
 
 def test_outils_hors_politique_du_garde_fou():
+    """04/11 (lot A) : un outil absent de `MCP_POLICY` n'est plus libre (jugé sur son nom) ; les outils du
+    courrier y sont donc écrits LIBRES ("") : déposer ou lire un message ne demande rien, dans aucun mode."""
     from astrel import guard
 
     policy = guard.MCP_POLICY  # {serveur: {outil: niveau}}
     assert "astrel" in policy
-    assert not any("courrier" in str(tool) for tools in policy.values() for tool in tools)
+    assert policy["astrel"]["courrier_ecrire"] == "" and policy["astrel"]["courrier_lire"] == ""
+    for tool in ("mcp__astrel__courrier_ecrire", "mcp__astrel__courrier_lire"):
+        assert not guard.assess(tool, {}, mode="prudent").needs_confirm
 
 
 def test_passation_inchangee(boite):

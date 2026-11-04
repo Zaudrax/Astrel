@@ -569,7 +569,8 @@ def test_route_media_du_hud(med, monkeypatch, tmp_path):
         srv.stop()
     status, headers, body = got["img"]
     assert status == 200 and body == png and headers["Content-Type"] == "image/png"
-    assert headers["Content-Security-Policy"] == "default-src 'none'; sandbox"
+    # 04/11 (lot B, M4) : le serveur ajoute `frame-ancestors 'none'` à toute CSP (jamais dans un cadre).
+    assert headers["Content-Security-Policy"] == "default-src 'none'; sandbox; frame-ancestors 'none'"
     assert headers["X-Content-Type-Options"] == "nosniff" and headers["Content-Disposition"] == "inline"
     assert got["thumb"][0] == 200 and got["thumb"][1]["Content-Type"] == "image/webp"
     assert got["page"][0] == 200 and got["page"][2][:8] == PNG_HEAD

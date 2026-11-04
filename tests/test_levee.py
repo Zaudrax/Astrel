@@ -292,16 +292,26 @@ def test_le_hook_transmet_lift(monkeypatch):
 
 
 def test_socket_transmet_lift_et_ancien_hook_sur(monkeypatch, tmp_path):
+    """04/11 (lot B, T43.5-A) : `lift` est RECALCULÉ par le cœur depuis l'entrée de l'outil ; ce que le
+    client en dit est ignoré, et une demande à l'ancien format (sans entrée) est refusée sans carte."""
     monkeypatch.setattr(config, "CONFIRM_SOCKET", tmp_path / "confirm.sock")
+    monkeypatch.setattr(guard, "MODE_FILE", tmp_path / "autonomy.json")
+    monkeypatch.setattr(guard, "GRANTS_FILE", tmp_path / "grants.json")
     calls = []
     srv = confirm.ConfirmServer(lambda *a, **kw: calls.append(kw) or True)
     srv.start()
+    edit = {"file_path": str(R / "hud" / "src" / "main.js")}
     try:
-        assert confirm.request("Edit", "d", "hud/src/main.js", guard=True, lift=True) is True
-        assert confirm.request("Edit", "d", "hud/src/main.js", guard=True) is True  # sans lift : faux
+        # le client dit « non levable » : le cœur recalcule, c'est levable (écriture de hud/src)
+        assert confirm.request("Edit", "d", "hud/src/main.js", guard=True, lift=False, tool_input=edit) is True
+        assert confirm.request("Edit", "d", "hud/src/main.js", guard=True, lift=True) is False  # ancien format
+        # le client dit « levable » pour un push : le cœur recalcule, non
+        assert confirm.request("Bash", "d", "git push", guard=True, lift=True,
+                               tool_input={"command": "git push"}) is True
     finally:
         srv.stop()
-    assert calls[0]["lift"] is True and calls[1]["lift"] is False
+    assert [c["lift"] for c in calls] == [True, False]
+    assert calls[0]["guard"] is True and calls[1]["guard"] is False
 
 
 def test_reglage_jamais_ecrit_dans_le_fichier(lj):

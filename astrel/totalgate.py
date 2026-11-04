@@ -19,13 +19,118 @@ empêche de retoucher la décision elle-même, pas de la contourner après relan
 24/10 (P29 lot B) : `confirmation_free` (cases de confirmation de Réglages › Garde-fou : toutes
 les catégories décochées = pas de carte ; tout décoché = aucune carte, sauf ESTOP) et
 `may_change_confirmations` (même règle que les limites : HUD non-Claude seulement).
+
+04/11 (lot de sécurité B, H2, accord explicite de l'utilisateur) : EMPREINTE DU CŒUR. Les appels qui
+refusent à Claude vivent dans du code libre (`core.py`, mixins…), chargé à la relance suivante.
+`./run.sh doctor --accept` (l'utilisateur, son terminal) retient aussi l'empreinte de ce code (`CORE_FILES`,
+clé `coeur` de `hooks/empreinte.json`, protégé). Au démarrage (`verifier_coeur`), l'empreinte du code
+CHARGÉ est relevée ; tant qu'elle diffère de la référence (relue à chaque besoin), ou que celle-ci manque ou
+est illisible : Total, levée et validation automatique des plans REFUSÉS (le cœur les demande ici, et
+`total_grants`/`lift_grants` n'accordent plus rien) ; le reste marche. Limite : un
+cœur réécrit peut cesser d'appeler ce fichier ; la manœuvre demande alors de réécrire aussi ses appels,
+et `./run.sh doctor` la montre (ligne « empreinte du cœur »).
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import unicodedata
+from pathlib import Path
 
 from . import limites
+
+# 04/11 (H2) : chemins pris depuis CE fichier (pas `config.py`, libre) ; `hooks/` est protégé.
+_ROOT = Path(__file__).resolve().parent.parent
+EMPREINTE = _ROOT / "hooks" / "empreinte.json"
+# Le code qui décide côté cœur (refus à Claude, droits, hooks déclarés, ce qui part au CLI) :
+# - core.py et coeur/*.py : `_on_command`, confirmations, réglages, plans, mission, tâches ;
+# - confirm.py (verdict recalculé), plans.py, mission.py, preuve.py (fin de mission = fin de la barrière),
+#   levee.py (surveillance de la levée), attente.py (messages rejoués au nom de l'utilisateur, signature) ;
+# - totalgate.py, state.py, server.py : qui est Claude, qui desserre (déjà protégés, comptés aussi ici) ;
+# - fournisseurs.py, cle_api.py : variables retirées du cerveau, clé donnée au CLI ;
+# - medias.py : ce que le cœur ouvre et montre (sources permises, secrets) ;
+# - cli.py : `--send`, `doctor`, ouverture du HUD ; brain.py : hooks et réglages écrits pour le CLI ;
+# - events.py : routage des commandes ; mcp_config.py : serveurs MCP déclarés ; config.py : chemins des
+#   hooks, de l'ESTOP, des sockets (un chemin changé là change ce que tout le reste protège).
+CORE_FILES = (
+    "astrel/core.py", "astrel/coeur/*.py", "astrel/confirm.py", "astrel/plans.py", "astrel/mission.py",
+    "astrel/preuve.py", "astrel/levee.py", "astrel/attente.py", "astrel/totalgate.py", "astrel/state.py",
+    "astrel/server.py", "astrel/fournisseurs.py", "astrel/cle_api.py", "astrel/medias.py", "astrel/cli.py",
+    "astrel/brain.py", "astrel/events.py", "astrel/mcp_config.py", "astrel/config.py",
+)
+REFUS_COEUR = "code du cœur modifié depuis la dernière validation : ./run.sh doctor --accept dans ton terminal"
+
+
+def core_files() -> list[Path]:
+    """Fichiers de `CORE_FILES` (motifs développés, triés) : un module ajouté dans coeur/ compte aussi."""
+    out: list[Path] = []
+    for rel in CORE_FILES:
+        if "*" in rel:
+            out.extend(sorted(_ROOT.glob(rel)))
+        else:
+            out.append(_ROOT / rel)
+    return out
+
+
+def core_fingerprint() -> dict[str, str]:
+    """sha256 de chaque fichier du cœur, par chemin relatif en « / » (« absent » s'il manque)."""
+    out: dict[str, str] = {}
+    for path in core_files():
+        rel = path.relative_to(_ROOT).as_posix()
+        try:
+            out[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            out[rel] = "absent"
+    return out
+
+
+def core_changes(known=None) -> list[str] | None:
+    """Fichiers du cœur différents de l'empreinte validée (`known`, sinon celle de `EMPREINTE`) ;
+    None : aucune empreinte du cœur validée, ou illisible."""
+    if known is None:
+        try:
+            known = json.loads(EMPREINTE.read_text(encoding="utf-8")).get("coeur")
+        except (OSError, ValueError, AttributeError):
+            return None
+    if not isinstance(known, dict) or not known:
+        return None
+    now = core_fingerprint()
+    return sorted(f for f in set(now) | set(known) if now.get(f) != known.get(f))
+
+
+# Empreinte du code CHARGÉ (le disque au démarrage du cœur) ; None : pas encore relevée (relevée au premier
+# besoin : un cœur qui n'appellerait pas `verifier_coeur` n'y échappe pas).
+_au_demarrage: dict[str, str] | None = None
+# Raison imposée (tests : "" = cœur tenu pour validé) ; None : calculée à chaque fois.
+_coeur: str | None = None
+
+
+def verifier_coeur() -> str:
+    """Au démarrage du cœur : relève l'empreinte du code chargé, et la compare à celle validée."""
+    global _au_demarrage
+    try:
+        _au_demarrage = core_fingerprint()
+    except Exception:  # noqa: BLE001 — dans le doute, refuser
+        _au_demarrage = {}
+    return coeur_refus()
+
+
+def coeur_refus() -> str:
+    """Vide si le code chargé est celui validé par l'utilisateur, sinon la raison (Total, levée et plans
+    automatiques refusés). La référence est RELUE à chaque fois : un `doctor --accept` fait sans rien changer
+    au disque depuis le démarrage vaut tout de suite, sans relance ; le code chargé, lui, reste celui du
+    démarrage (un fichier modifié depuis n'est pas ce qui tourne)."""
+    global _au_demarrage
+    if _coeur is not None:
+        return _coeur
+    try:
+        if _au_demarrage is None:
+            _au_demarrage = core_fingerprint()
+        known = json.loads(EMPREINTE.read_text(encoding="utf-8")).get("coeur")
+    except Exception:  # noqa: BLE001 — illisible : refuser
+        return REFUS_COEUR
+    return "" if isinstance(known, dict) and known and known == _au_demarrage else REFUS_COEUR
 
 ON_WORDS = ("on", "oui", "1", "true", "actif", "active", "activer")
 OFF_WORDS = ("off", "non", "0", "false", "inactif", "desactive", "désactive", "desactiver", "désactiver")
@@ -64,6 +169,21 @@ def refused_to_claude(name: str, cmd: dict) -> bool:
     """La commande vient de Claude (marquée par le canal de contrôle ou le HUD)
     ET desserrerait le garde-fou : le cœur doit la refuser."""
     return cmd.get("_from_claude") is True and loosens_guard(name, cmd)
+
+
+REFUS_SANS_CONFINEMENT = ("sans service (cgroup ou Job Object), ce qui desserre le garde-fou ne passe que par le HUD : "
+                          "réponds ou agis dans le HUD")
+
+
+def refused_unconfined(name: str, cmd: dict) -> bool:
+    """04/11 (lot de sécurité B, H3, accord de l'utilisateur) : sur le canal de contrôle (`_via` « socket »), sans
+    confinement de l'arbre de Claude (`_confine`, écrit par `state.ControlServer` : cgroup du service sous
+    Linux, Job Object sous Windows), un process détaché de Claude passe pour l'utilisateur. Ce qui desserrerait
+    le garde-fou (`loosens_guard`) n'y passe donc plus : le HUD non-Claude seulement. Un « non » à une
+    confirmation resserre : permis (la lecture de `allow` est celle du cœur, `bool`)."""
+    if cmd.get("_via") != "socket" or cmd.get("_confine") is True or not loosens_guard(name, cmd):
+        return False
+    return not (name == "confirm" and not bool(cmd.get("allow")))
 
 
 def estop_wanted(cmd: dict) -> bool:
@@ -112,8 +232,9 @@ def total_grants(total: bool, guard: bool, estop: bool, cats=None, choix=None, n
     (`Verdict.guard`). Sinon (plan P29) : seulement si TOUTES les catégories sont cochées dans
     la colonne Total (`choix`, défauts si None) ; le plafond et le code du garde-fou jamais.
     Une action « garde-fou » dont aucune catégorie n'est une famille de fichiers : incohérent,
-    demandé."""
-    if not total or estop or non_claude:
+    demandé.
+    04/11 (H2) : jamais si le code du cœur n'est pas celui validé (`coeur_refus`)."""
+    if not total or estop or non_claude or coeur_refus():
         return False
     if cats is None:
         return not guard
@@ -148,8 +269,8 @@ def lift_grants(active: bool, lift: bool, estop: bool, cats=None, choix=None, no
     faux hors mode autonome), et jamais pendant un arrêt d'urgence.
     23/10 (plan P29) : ET, si `cats` est donné, toutes ses catégories cochées dans la colonne
     levée (`choix`, défauts si None) : les cases ne peuvent que resserrer la levée ; jamais
-    avec un fournisseur non-Claude."""
-    if not (active is True and lift is True and not estop) or non_claude:
+    avec un fournisseur non-Claude. 04/11 (H2) : jamais si le code du cœur n'est pas celui validé."""
+    if not (active is True and lift is True and not estop) or non_claude or coeur_refus():
         return False
     if cats is None:
         return True

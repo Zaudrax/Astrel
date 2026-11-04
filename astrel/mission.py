@@ -43,6 +43,12 @@ tour, l'utilisateur décide (revérifier, remettre au travail, accepter SANS pre
 arrêter). Chaque transition fait avancer `generation` : un résultat arrivé après une pause, un arrêt,
 un redémarrage ou une autre tentative est jeté. Le critère vient de `spec["verification"]` ; son
 ORIGINE est fixée par le cœur (bouton du HUD ou outil `mission_start`), jamais lue dans la spec.
+
+04/11 (demande : une mission d'essai finie le 02/11 restait dans le panneau après relance) : une
+mission TERMINÉE se FERME (× du HUD, commande `mission_close`, l'utilisateur seul) : champ `closed_at`
+ajouté, rien d'effacé. Finie depuis plus de 24 h, elle est close à l'affichage sans rien écrire.
+Une mission close est publiée comme absente (`vue_publiee`). Jamais pour une mission active ou en
+pause : la barrière du hook ne lit pas ce champ.
 """
 from __future__ import annotations
 
@@ -73,6 +79,8 @@ ENDED = (DONE, BLOCKED, STOPPED, BUDGET, ACCEPTED, VERIF_FAILED)
 # hors de la phase « travail » (`take_prompt`).
 TRAVAIL, VERIFICATION, VERIF_BLOCKED = "travail", "verification", "verification_blocked"
 SCHEMA = 2
+# 04/11 : une mission finie depuis plus longtemps est close à l'affichage (aucune écriture).
+FERMETURE_AUTO_S = 24 * 3600
 # Lot C (03/11) : outils qui n'écrivent rien. Tout AUTRE outil (Bash, Write, Edit, MCP…) lancé après la
 # commande observée la rend « périmée » : dans le doute, une écriture. Les outils d'un sous-agent
 # arrivent dans le même flux et comptent aussi.
@@ -151,6 +159,7 @@ class Mission:
         self.awaiting = False       # un tour de mission est parti, sa fin n'est pas encore lue
         self.next_prompt = ""       # relance prête, envoyée dès que tout est calme
         self.quota = 0.0            # fenêtre de 5 h, 0..1
+        self._vue_close: bool | None = None  # 04/11 : dernière vue publiée close ? (None : jamais publiée)
 
     # --- état ---
 
@@ -232,7 +241,25 @@ class Mission:
         elapsed = (d.get("ended_at") or time.time()) - float(d.get("started_at") or time.time())
         d["elapsed_min"] = round(max(0.0, elapsed) / 60.0, 1)
         d["approuve"] = _approuve(d)
+        d["closed"] = est_close(d)
         return d
+
+    def vue_publiee(self) -> dict[str, Any]:
+        """04/11 : ce que publie l'évènement `mission` (HUD, bulle). Une mission CLOSE (× du HUD, ou
+        finie depuis plus de 24 h) est publiée comme absente : aucun écran ne la remontre."""
+        with self.lock:
+            d = self.describe()
+            self._vue_close = bool(d.get("closed"))
+        if d.get("closed"):
+            return {"status": "", "closed": True, "id": str(d.get("id") or ""),
+                    "closed_at": float(d.get("closed_at") or 0.0)}
+        return d
+
+    def fermeture_a_publier(self) -> bool:
+        """04/11 : la mission vient de passer les 24 h après sa fin alors que la dernière vue publiée
+        la montrait encore : à republier (le HUD la retire sans attendre une autre transition)."""
+        with self.lock:
+            return self._vue_close is False and est_close(self.data)
 
     # --- commandes de l'utilisateur ---
 
@@ -352,6 +379,28 @@ class Mission:
             self.awaiting, self.next_prompt = False, ""
         self._save()
         log.info("mission finie (%s) : %s", status, reason)
+        return {"ok": True, "mission": self.describe()}
+
+    def close(self, mission_id: str = "") -> dict[str, Any]:
+        """04/11 : FERMER une mission terminée (× du panneau) : `closed_at` ajouté, rien d'effacé
+        (objectif, preuve, historique restent dans le fichier). Refusé pour une mission active ou en
+        pause : la barrière du hook (`status`, `in_turn`) ne dépend jamais de ce champ. `mission_id`
+        vide (terminal) : la mission du fichier ; donné et différent : refusé (une autre l'a remplacée)."""
+        with self.lock:
+            d = self.data
+            if not d:
+                return {"ok": False, "error": "aucune mission à fermer"}
+            if mission_id and mission_id != d.get("id"):
+                return {"ok": False, "error": "ce n'est plus la mission affichée : une autre l'a remplacée"}
+            if d.get("status") not in ENDED:
+                return {"ok": False, "error": "mission en cours ou en pause : arrête-la d'abord"}
+            neuve = not d.get("closed_at")
+            if neuve:
+                d["closed_at"] = time.time()
+                self._bump()
+        if neuve:
+            self._save()
+            log.info("mission fermée : %s", d.get("objective", ""))
         return {"ok": True, "mission": self.describe()}
 
     # --- décisions de l'utilisateur sur une vérification (P43 ; refusées à Claude par `totalgate`) ---
@@ -707,6 +756,20 @@ def _completer(d: dict[str, Any]) -> None:
                        else "utilisateur"), ("approbation", None), ("ancrage", {}), ("verif_en_cours", None),
                        ("verifs_ratees", 0), ("bloquees", 0), ("observations", _observations_vides()), ("declaration", None), ("preuve", None), ("historique_preuves", [])):
         d.setdefault(key, value)
+
+
+def est_close(d: Any, now: float | None = None) -> bool:
+    """04/11 : mission TERMINÉE et fermée par l'utilisateur (`closed_at`), ou finie depuis plus de
+    `FERMETURE_AUTO_S`. Jamais vrai pour une mission active ou en pause."""
+    if not isinstance(d, dict) or d.get("status") not in ENDED:
+        return False
+    if d.get("closed_at"):
+        return True
+    try:
+        fin = float(d.get("ended_at") or d.get("started_at") or 0)
+    except (TypeError, ValueError):
+        return False
+    return fin > 0 and (time.time() if now is None else now) - fin >= FERMETURE_AUTO_S
 
 
 def _observations_vides() -> dict[str, Any]:

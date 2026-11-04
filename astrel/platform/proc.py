@@ -124,6 +124,7 @@ def rattacher_au_cerveau(p) -> bool:
     """Windows : place le process du cerveau (`subprocess.Popen`) dans le Job Object du cœur.
     Ailleurs : rien (le cgroup ou le marqueur suffisent). Un échec est journalisé, jamais fatal :
     le marqueur reste."""
+    global _rattache
     if SYSTEM != "windows":
         return False
     try:
@@ -131,10 +132,21 @@ def rattacher_au_cerveau(p) -> bool:
 
         if not _kernel32().AssignProcessToJobObject(_job(), int(p._handle)):
             raise OSError(ctypes.get_last_error(), "AssignProcessToJobObject")
+        _rattache = True
         return True
     except (OSError, AttributeError) as exc:
+        _rattache = False
         log.warning("cerveau hors du Job Object (%s) : seul le marqueur le reconnaîtra", exc)
         return False
+
+
+_rattache = False  # 04/11 (lot B, H3) : le DERNIER cerveau lancé est-il dans le Job Object ?
+
+
+def job_actif() -> bool:
+    """04/11 (lot B, H3) : Windows, le cerveau en cours est rattaché au Job Object (un process détaché de
+    Claude reste reconnu) ; faux ailleurs, ou si le rattachement a échoué."""
+    return SYSTEM == "windows" and _job_handle is not None and _rattache
 
 
 def in_brain_job(pid: int) -> bool | None:

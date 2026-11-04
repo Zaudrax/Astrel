@@ -180,6 +180,24 @@ def open_hud() -> int:
             if pages:
                 _close_older_huds(opened_at)
             return 0
+    from . import platform as plateforme
+
+    if plateforme.SYSTEM in ("windows", "macos"):
+        # 04/11 (lot B, H5) : Chrome, Edge ou Chromium à leur emplacement habituel, dans le profil DÉDIÉ du HUD
+        # (jamais le profil de tous les jours, ses extensions et ses sessions), comme sous Linux.
+        from .platform import navigateur
+
+        exe = navigateur.trouver()
+        if exe:
+            opened_at, pages = time.time(), _hud_pages(replaceable=True)
+            subprocess.Popen(navigateur.commande(exe, url, config.HUD_PROFILE_DIR), stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                             **({"start_new_session": True} if plateforme.SYSTEM != "windows" else {}))
+            if pages:
+                _close_older_huds(opened_at)
+            return 0
+        _avertir("HUD ouvert dans le navigateur par défaut, avec son profil de tous les jours (extensions, "
+                 "sessions) : aucun Chrome, Edge ni Chromium trouvé pour un profil dédié. Installe l'un d'eux.")
     if shutil.which("xdg-open"):
         subprocess.Popen(["xdg-open", url], start_new_session=True)
     else:
@@ -187,6 +205,16 @@ def open_hud() -> int:
         import webbrowser
         webbrowser.open(url)
     return 0
+
+
+def _avertir(message: str) -> None:
+    """04/11 (H5) : avertissement au journal d'Astrel (`logs/astrel.log`), même lancé par `./hud.sh`."""
+    if not logging.getLogger().handlers:
+        try:
+            setup_logging(False)
+        except OSError:
+            pass
+    logging.getLogger("astrel.cli").warning(message)
 
 
 # 19/10 (demande : « HUD » sur la bulle, ou Ctrl+Alt+H, ouvrait une DEUXIÈME fenêtre

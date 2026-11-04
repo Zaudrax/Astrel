@@ -39,6 +39,9 @@ class ConfirmationsCoeur:
             if on and self._non_claude():
                 return {"ok": False, "error": "jamais le mode Sans confirmation avec un fournisseur autre que Claude : "
                                               "repasse d'abord sur Claude (Réglages › Fournisseur)"}
+            if on and totalgate.coeur_refus():  # 04/11 (lot B, H2) : code du cœur non validé par l'utilisateur
+                log.warning("mode Sans confirmation refusé : %s", totalgate.coeur_refus())
+                return {"ok": False, "error": totalgate.REFUS_COEUR}
             changed = on != self._total
             self._total = on
             self._total_since = time.time() if on else 0.0
@@ -94,6 +97,9 @@ class ConfirmationsCoeur:
         if on and self._non_claude():
             return {"ok": False, "error": "jamais de levée du garde-fou avec un fournisseur autre que Claude : repasse "
                                           "d'abord sur Claude (Réglages › Fournisseur)."}
+        if on and totalgate.coeur_refus():  # 04/11 (lot B, H2) : code du cœur non validé par l'utilisateur
+            log.warning("levée du garde-fou refusée : %s", totalgate.coeur_refus())
+            return {"ok": False, "error": totalgate.REFUS_COEUR}
         if on == self._lift:
             self._publish_lift()
             return {"ok": True, "lift": on}
@@ -166,6 +172,8 @@ class ConfirmationsCoeur:
                              "demander. Un bandeau orange reste affiché tant que c'est levé."}
         if config.ESTOP_FILE.exists():
             action.update(disabled=True, reason="arrêt d'urgence en cours : « Reprendre tout » d'abord.")
+        elif totalgate.coeur_refus():  # 04/11 (lot B, H2)
+            action.update(disabled=True, reason=totalgate.REFUS_COEUR)
         return {"value": {"lines": lines}, "actions": [action]}
 
     def _cases_get(self, gid: str) -> dict:
@@ -361,7 +369,9 @@ class ConfirmationsCoeur:
             cid = uuid.uuid4().hex[:10]
             answered = threading.Event()
             # `tag` : étiquette de la question dite (`speaker.cancel`), pour la faire taire seule.
-            box: dict[str, Any] = {"allow": None, "by": "", "always": False, "tag": f"confirm-{cid}"}
+            # 04/11 (lot B, H1) : `guard` et `desc` pour la voix : une action sur le garde-fou ne se valide qu'à l'écran.
+            box: dict[str, Any] = {"allow": None, "by": "", "always": False, "tag": f"confirm-{cid}",
+                                   "guard": bool(guard), "desc": desc}
             question = f"Attention, {desc}. Je continue ?"
             self._pending_confirm = {"id": cid, "event": answered, "box": box, "question": question,
                                      "guard": guard, "lift": lift, "cats": cats}
@@ -495,6 +505,18 @@ class ConfirmationsCoeur:
         self.speaker.wait_idle(20.0)
         if answered.is_set():
             return  # répondu à l'écran pendant l'attente : rien à dire
+        if box.get("guard"):
+            # 04/11 (lot B, H1, accord de l'utilisateur) : action sur le garde-fou (`Verdict.guard`) : jamais validée à
+            # la voix (un son joué, une source audio ajoutée passeraient pour l'utilisateur). Dite, mais sans écoute :
+            # la voix dit pourquoi, la réponse se donne à l'écran (HUD, bulle).
+            desc = str(box.get("desc") or "")
+            question = f"Attention, {desc}. Cette action touche à mon garde-fou : réponds à l'écran."
+            if not self.voice_out:
+                print(f"\n⚠️  {question}\n", flush=True)
+            else:
+                self._chime("confirm")
+                self.say_and_wait(question, tag=tag, stop=answered)
+            return
         if not self.voice_out:
             print(f"\n⚠️  {question}\n", flush=True)
         else:
@@ -539,6 +561,12 @@ class ConfirmationsCoeur:
         decision = guard.decision_from_speech(text, english=langue.anglais())
         if decision is None or pending["box"]["allow"] is not None:
             return False
+        if decision and pending.get("guard"):
+            # 04/11 (lot B, H1) : un « oui » dit ne valide jamais une action sur le garde-fou (« non » : oui).
+            # Pris quand même (il ne part pas chez Claude) ; la question reste à l'écran.
+            log.info("confirmation %s : « oui » dit refusé, action sur le garde-fou (écran seulement)", pending.get("id"))
+            self.say("Pour mon garde-fou, réponds à l'écran.", raw=True, live=True)
+            return True
         pending["box"].update(allow=decision, by="oral", always=decision and _wants_30(text))
         pending["event"].set()
         log.info("confirmation %s répondue à voix haute : %r", pending.get("id"), text)

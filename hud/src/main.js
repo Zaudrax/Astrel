@@ -2683,8 +2683,10 @@ addEventListener("click", (e) => {
 // un programme ouvert par Claude). Pause et arrêt : toujours. Écrire hors du
 // périmètre pendant la mission est demandé par le garde-fou ; « Stop tout » l'arrête.
 let mission = { status: "" };
-// started_at d'une mission finie masquée (bouton Masquer). 03/11 (demande : « elle réapparaît ») : retenu par le
+// started_at d'une mission finie masquée (bouton ×). 03/11 (demande : « elle réapparaît ») : retenu par le
 // navigateur, sinon un rechargement du HUD (nouvelle version, reconnexion) la faisait revenir.
+// 04/11 : le × FERME la mission côté cœur (`mission_close`) ; ce souvenir n'est plus qu'un REPLI, écrit
+// seulement si le cœur refuse ou ne connaît pas la commande (cœur ancien).
 const MISSION_MASQUEE = "astrel-mission-masquee";
 let missionHidden = (() => {
   try { return Number(localStorage.getItem(MISSION_MASQUEE)) || 0; } catch { return 0; }
@@ -2871,10 +2873,15 @@ function renderMission() {
 
 on("mission", (ev) => { mission = ev; renderMission(); });
 setInterval(() => { if (mission.status === "active") renderMission(); }, 5000); // temps restant
-$("#mission-hide").onclick = () => {
-  missionHidden = mission.started_at;
-  try { localStorage.setItem(MISSION_MASQUEE, String(missionHidden)); } catch { /* navigation privée */ }
+// 04/11 (demande : une mission d'essai finie revenait après relance, dans un autre navigateur) : masquée
+// tout de suite, puis FERMÉE par le cœur (publiée ensuite comme absente, pour tous les écrans).
+$("#mission-hide").onclick = async () => {
+  const m = mission;
+  missionHidden = m.started_at;
   renderMission();
+  const r = await command("mission_close", { mission_id: m.id || "" });
+  if (r.ok) return;
+  try { localStorage.setItem(MISSION_MASQUEE, String(m.started_at)); } catch { /* navigation privée */ }
 };
 
 async function missionAction(action) {

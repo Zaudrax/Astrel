@@ -266,10 +266,17 @@ def decider(payload, cli: str, mode: str) -> tuple[str, str]:
         verdict = guard.assess(tool, inp, cwd=cwd or None)
         if not verdict.needs_confirm:
             continue
+        # 04/11 (lot B, T43.5-A) : le cœur recalcule le verdict depuis l'ENTRÉE (bornée sans changer le
+        # verdict) ; impossible à borner : refus. Les champs d'avant partent aussi (cœur pas encore relancé).
+        borne = confirm.entree_bornee(tool, inp, cwd)
+        if borne is None:
+            return "deny", f"{verdict.desc} : entrée de l'outil illisible ou trop grande pour être confirmée. " \
+                           "Action bloquée."
         answer = confirm.request(tool, verdict.desc, guard.short_command(tool, inp), verdict.key,
                                  keys=verdict.keys, guard=verdict.guard, cwd=cwd,
                                  lift=bool(getattr(verdict, "lift", False)),
-                                 cats=list(getattr(verdict, "cats", ()) or ()))  # 23/10 (plan P29)
+                                 cats=list(getattr(verdict, "cats", ()) or ()),  # 23/10 (plan P29)
+                                 tool_input=borne)
         if answer is None:
             return "deny", f"Astrel injoignable pour confirmer : {verdict.desc}. Action bloquée."
         if not answer:
