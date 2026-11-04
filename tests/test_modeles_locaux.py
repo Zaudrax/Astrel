@@ -213,7 +213,7 @@ def test_ollama_absent_lien_et_commande_rien_installe(monkeypatch):
 
 def test_reglages_modele_local_par_la_page(ollama):
     d = {i["key"]: i for g in reglages.describe()["groups"] if g["id"] == "modele_local" for i in g["items"]}
-    assert set(d) == {"local.mode", "local.materiel", "local.modeles"}
+    assert set(d) == {"moteur_mode", "local.mode", "local.materiel", "local.modeles"}  # 04/11 : « Qui répond »
     assert d["local.mode"]["locked"]  # sans le cœur : « Réglable quand Astrel tourne »
     res = reglages.action("local.modeles", "pull:qwen3.5:4b")
     assert res["ok"] and wait(lambda: "qwen3.5:4b" in ollama.installed)

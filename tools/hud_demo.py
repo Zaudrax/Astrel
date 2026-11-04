@@ -216,7 +216,7 @@ Et http://pas-https.example reste du texte."""
 # dans un bloc ```, ni une date, une fraction, « et/ou » ou une adresse.
 PATHS_DEMO = r"""Voici les fichiers :
 - le script /home/user/Projets/exemple/run.sh, à relancer ;
-- ta note ~/Documents/Notes/courses.md (et C:\Users\l'utilisateur\Bureau\devis.pdf sous Windows).
+- ta note ~/Documents/Notes/courses.md (et C:\Users\Lea\Bureau\devis.pdf sous Windows).
 - en code : `/data/Mes documents/Note de frais.pdf` et `python3 /tmp/astrel-demo/a.py`
 - pas des chemins : le 04/11/2026, et/ou, 1/2, https://example.org/a/b
 

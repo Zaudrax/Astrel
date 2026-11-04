@@ -249,6 +249,10 @@ D_STDIN = "l'exécution d'un code produit par une autre commande"
 L_AUDIO = "une modification des sources audio du micro"
 L_BRAIN_MARK = "un retrait du marqueur qui reconnaît les process de Claude"
 L_DETACH = "le lancement d'un process détaché de Claude (setsid, nohup, disown)"
+# 04/11 (lot 3b du moteur local, autorisation de l'utilisateur) : ce que Claude lit part chez Anthropic. Une lecture
+# (Read, Grep, Glob, une commande qui cite le chemin) dans une ZONE CONFIDENTIELLE de l'utilisateur (Réglages ›
+# Confidentialité, `zones_confidentielles` de runtime/settings.json, écrit par le cœur seul) est demandée.
+L_ZONE = "une lecture dans une zone confidentielle"
 
 # Code d'un AUTRE langage (python -c, heredoc lu par python, awk…) : illisible pour
 # l'analyse du shell, on y cherche seulement ces motifs-là. Un `sudo` caché dans un
@@ -1385,6 +1389,78 @@ def mission_fence() -> tuple[list[Path], list[Path]] | None:
     if scope:
         scope += [t.resolve() for t in TEMP_ROOTS]
     return (scope, forbidden) if scope or forbidden else None
+
+
+def zones_confidentielles() -> list[Path]:
+    """04/11 (lot 3b) : zones confidentielles de l'utilisateur (réglage `zones_confidentielles` de
+    runtime/settings.json, dossiers absolus séparés par « ; », écrit par le cœur seul), chemins résolus.
+    Fichier illisible ou réglage vide : aucune zone (rien ne change par rapport à avant ce réglage)."""
+    try:
+        data = json.loads(config.ASTREL_SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    values = data.get("values") if isinstance(data, dict) else None
+    raw = values.get("zones_confidentielles") if isinstance(values, dict) else None
+    out: list[Path] = []
+    for part in str(raw or "").split(";"):
+        p = Path(part.strip()).expanduser()
+        if part.strip() and p.is_absolute():
+            try:
+                out.append(p.resolve())
+            except (OSError, RuntimeError):
+                continue
+    return out
+
+
+# Programmes qui parcourent un dossier entier : cités sur un dossier qui CONTIENT une zone, ils la lisent.
+_PARCOURT = {"grep", "egrep", "fgrep", "rg", "ag", "ack", "find", "fd", "fdfind", "tar", "zip", "7z", "rsync",
+             "cp", "scp", "du", "tree", "locate", "git"}
+
+
+def _zone_lue(tool_name: str, tool_input: dict) -> Verdict | None:
+    """Lecture par Claude dans une zone confidentielle (04/11, lot 3b) : verdict à demander, sinon None.
+    Durcissement seulement : sans zone déclarée, rien ne change."""
+    zs = zones_confidentielles()
+    if not zs:
+        return None
+
+    def touche(p: Path, recursif: bool) -> bool:
+        return _under(p, zs) or (recursif and any(_under(z, [p]) for z in zs))
+
+    cibles: list[tuple[str, bool]] = []
+    if tool_name in ("Read", "NotebookRead"):
+        cibles.append((str(tool_input.get("file_path") or tool_input.get("notebook_path") or ""), False))
+    elif tool_name in ("Grep", "Glob", "LS"):
+        base = str(tool_input.get("path") or "") or str(_base())
+        cibles.append((base, True))
+        pattern = str(tool_input.get("pattern") or "") if tool_name == "Glob" else ""
+        if pattern.startswith(("/", "~")):
+            cibles.append((pattern.split("*", 1)[0] or "/", True))
+    elif tool_name == "Bash":
+        cmd = str(tool_input.get("command", ""))
+        try:
+            mots = shlex.split(cmd, posix=True)
+        except ValueError:
+            mots = cmd.split()
+        recursif = any(Path(m).name in _PARCOURT for m in mots) or bool(re.search(r"(?:^|\s)-[a-zA-Z]*[rR]", cmd))
+        if _under(_base(), zs):
+            cibles.append((str(_base()), False))
+        for m in mots:
+            for morceau in m.split("=")[-1:] if m.startswith("-") else [m]:
+                if morceau.startswith(("/", "~", "./", "../")) or "/" in morceau:
+                    cibles.append((morceau.split("*", 1)[0] or morceau, recursif))
+    else:
+        return None
+    for brut, recursif in cibles:
+        if not brut:
+            continue
+        try:
+            p = _resolve(brut)
+        except (OSError, ValueError, RuntimeError):
+            continue
+        if touche(p, recursif):
+            return _single(True, L_ZONE, "zone:lecture", CRITICAL, cats=(_L.PLAFOND, _L.SECRETS))
+    return None
 
 
 def _judge_fence(p: Path, out: list, pattern: str | None = None, contains: bool = True) -> None:
@@ -3282,6 +3358,8 @@ CATS: dict[str, tuple[str, ...]] = {
     # 04/11 (lot A) : sources audio (critique), process détaché hors cgroup (question), retrait du marqueur
     # (critique ; là où il décide, `guard=True` et la catégorie « code qui décide », `_brain_mark`).
     L_AUDIO: (_L.ADMINISTRATION,), L_DETACH: (_L.DOUTES,), L_BRAIN_MARK: (_L.ADMINISTRATION,),
+    # 04/11 (lot 3b) : zone confidentielle = un secret déclaré par l'utilisateur (case « secrets » seule, jamais Total).
+    L_ZONE: (_L.PLAFOND,),
 }
 _INCONNUE = "inconnue"  # absente du catalogue : `limites.decide` la demande toujours
 # Outils natifs (`NATIVE_POLICY`) et outils MCP nommés.
@@ -5906,6 +5984,9 @@ def classify(tool_name: str, tool_input: dict, cwd: str | None = None) -> Verdic
             w = _classify(tool_name, {**tool_input, "command": autre})
             if _rang(w) > _rang(v):
                 v = w
+        z = _zone_lue(tool_name, tool_input)  # 04/11 (lot 3b) : zone confidentielle, le plus strict l'emporte
+        if z is not None and _rang(z) > _rang(v):
+            v = z
         return v
     finally:
         _MISSION.reset(fence)

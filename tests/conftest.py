@@ -164,6 +164,8 @@ def _economie_isolee(tmp_path, monkeypatch):
     monkeypatch.setattr(agents, "ROUTE_LOG", tmp_path / "route.jsonl")
     from astrel.coeur import taches as taches_coeur  # 04/11 (T50) : coût par agent, jamais le vrai journal
     monkeypatch.setattr(taches_coeur, "COUTS_LOG", tmp_path / "agents-couts.jsonl")
+    from astrel.coeur import routage as routage_coeur  # 04/11 (lot 3 du moteur local) : jamais le vrai journal
+    monkeypatch.setattr(routage_coeur, "ROUTAGE_LOG", tmp_path / "routage.jsonl")
     # Plan P28 : effort par métier choisi par l'utilisateur, et ce que le CLI en marche a reçu.
     monkeypatch.setattr(agents, "EFFORT_FILE", tmp_path / "agent-effort.json")
     monkeypatch.setattr(agents, "_written", None)

@@ -16,10 +16,10 @@ from test_reports import ch, astrel, of, published  # noqa: F401  (fixtures)
 # (grisés sans lui), ou sortie du son par pactl.
 LIVE = {"audio.mic", "audio.voice", "audio.wake", "audio.output", "audio.followup", "audio.followup_s", "systeme.autostart", "systeme.bubble",
         "systeme.hotkeys"}
-CONTRACT_KEYS = {"compte", "demarrage", "diagnostic", *LIVE, "audio.test", "stt_language",
+CONTRACT_KEYS = {"moteur_mode", "compte", "demarrage", "diagnostic", *LIVE, "audio.test", "stt_language",
                  "audio.calibrage",  # 02/11 : assistant de calibrage du micro (bouton du HUD)
                  "conversation_language",  # 02/11 : conversation anglaise (astrel/langue.py)
-                 "hors_ligne", "confidentialite", "history_keep_days", "donnees", "maj", "whatsapp", "browser.main_visible", "browser.extra_visible", "browser.extra_count",
+                 "hors_ligne", "zones_confidentielles", "confidentialite", "history_keep_days", "donnees", "maj", "whatsapp", "browser.main_visible", "browser.extra_visible", "browser.extra_count",
                  "images_mode", "images_ordre", "images_manuel", "video_choix", "connectors", "skills",
                  "plugins", "agent_alert_tokens", "agent_alert_s", "session_idle_reset_s",
                  "context_relief_tokens", "quota_alert_pct", "brain_effort", "plan_mode", "rappel",

@@ -34,6 +34,7 @@ from . import sources
 from . import gel
 from . import routeur  # 04/11 : moteur demandé expressément (local ou Claude)
 from . import hors_ligne  # 04/11 : mode « rien ne sort »
+from . import sensible  # 04/11 : données sensibles (lot 3 du moteur local)
 from . import langue  # 02/11 : langue de la conversation (fr, en)
 from .attente import attente
 from . import images_ia
@@ -504,6 +505,7 @@ from .coeur.cycle import CycleCoeur  # 04/11 (T46) : cerveau qui tombe propremen
 from .coeur.propositions import PROPOSITIONS_COMMANDS, PropositionsCoeur  # 04/11 (T49) : mémoire à valider
 from .coeur.local_tour import TourLocalCoeur  # 04/11 : moteur local (Qwen), demande forcée en local
 from .coeur.hors_ligne import HorsLigneCoeur  # 04/11 : mode « rien ne sort » (lot 2 du moteur local)
+from .coeur.routage import RoutageCoeur  # 04/11 : routage des demandes, barrière des données sensibles (lot 3)
 
 
 def _erreur_auth(ev: "BrainEvent") -> bool:
@@ -535,7 +537,7 @@ def _table_commandes(*paires: tuple[Any, str]) -> dict[str, str]:
 
 class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, ConfirmationsCoeur, TachesCoeur, QuotaCoeur,
              FiabiliteCoeur, CalibrageCoeur, LangueCoeur, CycleCoeur, PropositionsCoeur, TourLocalCoeur,
-             HorsLigneCoeur):
+             HorsLigneCoeur, RoutageCoeur):
     # 04/11 (T58, pas 2a) : l'état du tour en cours vit dans `self.tour` (`astrel/tour.py`, champs commentés
     # là-bas) ; les anciens noms (`_turn_active`, `_hushed`, `_splitter`…) en sont des descripteurs.
     _turn_active = DuTour("active")
@@ -1955,9 +1957,15 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             return {"ok": False, "error": "réponse réservée à l'utilisateur (HUD), refusée à Claude"}
         raw_id = cmd.get("id")  # le HUD écrase « id » par celui de sa requête : « choice_id » d'abord
         cid = str(cmd.get("choice_id") or (raw_id if isinstance(raw_id, str) else "") or "")
+        refus = self._routage_refus(cmd, cid)  # 04/11 (lot 3) : carte de routage, HUD de l'utilisateur seulement
+        if refus:
+            log.warning("réponse à une carte de routage refusée : %s", refus)
+            return {"ok": False, "error": refus}
         result = choices.answer(cid, cmd.get("value"))
         if not result.get("ok"):
             return result
+        if result.get("kind") == "routage":
+            return self._routage_reponse(result)
         if result.get("kind") == "offre":
             return self._offer_answer(result)  # carte du cœur (plan P8) : jamais envoyée à Claude
         if result.get("kind") == "initiative" and self._initiative_answer(result):
@@ -2565,7 +2573,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
 
     def handle(self, text: str, source: str = "voix", channel: str = "", shown: str | None = None,
                joined: "attachments.Prepared | None" = None, held_mid: str = "",
-               prefix: str = "") -> None:
+               prefix: str = "", route: str = "") -> None:
         """Envoie une demande à Claude SANS attendre la réponse : c'est `_pump`
         qui la dit au fil de l'eau. Une demande faite en plein travail est
         intégrée par le CLI au tour en cours (mesuré le 26/09).
@@ -2578,7 +2586,9 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         `shown` : ce que le fil du HUD affiche à la place du texte (tour de mission).
         `joined` : pièces jointes déjà enregistrées (images en blocs, fichiers en notes).
         `held_mid` : message gardé pendant une relève (plan P9), déjà affiché et rangé sous cet id ;
-        `prefix` : texte mis devant le message pour Claude seulement (liste des agents à relancer)."""
+        `prefix` : texte mis devant le message pour Claude seulement (liste des agents à relancer).
+        `route` : « claude » quand l'utilisateur a déjà choisi Claude sur une carte de routage (lot 3) : pas de
+        second routage."""
         # 04/11 (lot 2) : « passe hors ligne » / « repasse en ligne », dit ou tapé par l'utilisateur (jamais Claude :
         # sa commande `say` devient une source « fond »).
         bascule = hors_ligne.commande(text) if source in ("voix", "clavier") and not held_mid else ""
@@ -2596,12 +2606,11 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             else:
                 self._local_freeze(text, source, channel, shown, pourquoi="Mode « rien ne sort »")
             return
-        if source in _UTILISATEUR and not held_mid:
-            # 04/11 (moteur local, lot 1) : « en local : … » ou canal Local : traité par Qwen sur la machine,
-            # jamais envoyé à Claude (le cœur décide, `routeur.forced_engine`).
-            moteur, demande = self._moteur_force(text, channel)
-            if moteur == routeur.LOCAL:
-                self._tour_local(text, demande, source, channel, shown, joined)
+        if source in _UTILISATEUR and not held_mid and route != routeur.CLAUDE:
+            # 04/11 (moteur local, lots 1 et 3) : « en local : … », canal Local, cybersécurité, données
+            # sensibles : le cœur décide (`routeur.decider`) ; retenu derrière une carte avant tout envoi à
+            # Claude d'une donnée sensible, ou quand le local ne sait pas faire.
+            if self._routage(text, source, channel, shown, joined):
                 return
         if self._local_active() and source in _LOCAL_FROZEN:
             self._local_freeze(text, source, channel, shown)
@@ -3233,7 +3242,8 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                         # Passé en dictée PENDANT l'écoute : la phrase est dictée, pas envoyée.
                         self._dictate(text)
                         continue
-                if hors_ligne.actif() or self._moteur_force(text, channels.active)[0] == routeur.LOCAL:
+                if hors_ligne.actif() or self._moteur_force(text, channels.active)[0] == routeur.LOCAL \
+                        or sensible.scan(text):  # 04/11 (lot 3) : rien en clair d'une demande sensible
                     log.info("UTILISATEUR (demande locale, %d caractères)", len(text))  # 04/11 : rien en clair
                 else:
                     log.info("UTILISATEUR: %s", text)

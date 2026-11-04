@@ -5318,7 +5318,7 @@ async def check_recherche_chemins_echap(p: Page) -> None:
     paths = await p.js(f"""[...{md}.querySelectorAll('.md-path')].map(e => ({{ text: e.textContent, tag: e.tagName,
         role: e.getAttribute('role'), tab: e.tabIndex, title: e.title, desc: e.getAttribute('aria-description') || '',
         cursor: getComputedStyle(e).cursor, inPre: !!e.closest('pre') }}))""") if got else []
-    want = ["/home/user/Projets/exemple/run.sh", "~/Documents/Notes/courses.md", "C:\\Users\\l'utilisateur\\Bureau\\devis.pdf",
+    want = ["/home/user/Projets/exemple/run.sh", "~/Documents/Notes/courses.md", "C:\\Users\\Lea\\Bureau\\devis.pdf",
             "/data/Mes documents/Note de frais.pdf", "/tmp/astrel-demo/a.py"]
     check(f"chemins d'une réponse : 5 reconnus, ni date, ni « et/ou », ni adresse, ni bloc ``` ({[x['text'] for x in paths]})",
           [x["text"] for x in paths] == want and not any(x["inPre"] for x in paths))

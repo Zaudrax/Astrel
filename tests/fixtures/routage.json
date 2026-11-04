@@ -1,0 +1,442 @@
+[
+ {
+  "texte": "Explique-moi la CVE-2024-3094 dans xz",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "C'est quoi une injection SQL et comment s'en protéger ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Comment fonctionne une attaque XSS stockée ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Je prépare un CTF, explique-moi le principe d'un buffer overflow",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Quels sont les indicateurs de compromission d'un ransomware ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Écris une règle YARA pour détecter ce motif",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Comment lire un résultat de nmap -sV ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Analyse ces logs : sshd[2211]: Failed password for root from 10.0.0.5",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Explique le durcissement d'un serveur SSH",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Quelle différence entre iptables et nftables ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Comment marche l'escalade de privilèges sous Linux ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "C'est quoi un reverse shell ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Explique les vulnérabilités du TOP 10 OWASP",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Comment configurer fail2ban contre le bruteforce ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Qu'est-ce qu'une règle Sigma ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Explain how a CSRF attack works",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "What is privilege escalation on Windows?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Explain CVE-2021-44228 (Log4Shell)",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "How do I read a Wireshark capture of a TLS handshake?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "What are indicators of compromise for persistence on Linux?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Explique-moi l'analyse forensique d'une image disque",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Comment fonctionne mimikatz, d'un point de vue défensif ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Quels réglages AppArmor pour un service web ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Explique ce qu'est une faille de sécurité de type SSRF",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Comment détecter une attaque par force brute dans journalctl ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Explique-moi le principe du pentest d'une application web",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "What is a sql injection, with a safe example?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Comment marche hashcat pour tester la solidité de mes mots de passe ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Explique la réponse à incident en 5 étapes",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "What is threat hunting?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Scanne mon réseau avec nmap",
+  "moteur": "local",
+  "carte": "capacite"
+ },
+ {
+  "texte": "Lance un scan des ports de mon routeur",
+  "moteur": "local",
+  "carte": "capacite"
+ },
+ {
+  "texte": "Cherche sur internet les exploits pour la CVE-2024-1086",
+  "moteur": "local",
+  "carte": "capacite"
+ },
+ {
+  "texte": "Corrige la vulnérabilité du garde-fou d'Astrel",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Fais un audit de sécurité du HUD",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Ajoute un test pour la faille XSS dans le repo",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Corrige le bug dans core.py",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Écris une fonction Python qui trie une liste",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Refactorise ce module en deux classes",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Quelle heure est-il ?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Rédige un mail pour remercier mon ami",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Quel temps fera-t-il demain à Paris ?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Explique-moi la photosynthèse",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Mets un rappel demain à 9 h",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Ouvre le dossier Projets",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Raconte-moi une blague",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Traduis cette phrase en anglais : bonjour à tous",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Le token de mon API GitHub a expiré, comment le renouveler ?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "J'ai oublié mon mot de passe Gmail, que faire ?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Combien de tokens consomme un agent ?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Donne-moi une recette de crêpes",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Write a bash script that renames files",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "What's the capital of Australia?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Summarize this article for me",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Fix the failing pytest in the repo",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "How many tokens does the context use?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Reset my password reminder for tomorrow",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Comment installer Node 22 ?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Prépare le planning de la semaine",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Explique-moi le fonctionnement de git rebase",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Quelle est la différence entre une liste et un tuple ?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Peux-tu relire mon CV ?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Fais un résumé de mes mails",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Lance les tests du projet",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "C'est quoi la sécurité sociale ?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Le port 8080 est déjà pris, pourquoi ?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Explique la cuisson des pâtes",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Quel est le meilleur IDE pour Python ?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Combien coûte un abonnement Claude Max ?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "Joue de la musique",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "en local : explique-moi le RGPD",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Astrel, en local : résume ce texte",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "traite cette demande en local s'il te plaît",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Analyse ce code sans rien envoyer",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "locally: explain the CAP theorem",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "use the local model to explain DNS",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "avec Claude : explique-moi une injection SQL",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "utilise Claude pour expliquer le pentest",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "with Claude: what is XSS?",
+  "moteur": "claude",
+  "carte": ""
+ },
+ {
+  "texte": "ne le fais pas en local, explique XSS",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Ma clé est sk-ant-abcdefghijklmnopqrstuvwxyz0123456789, pourquoi elle ne marche pas ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Voici mon IBAN FR76 3000 6000 0112 3456 7890 189, vérifie-le",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Ma carte 4970 1012 3456 7893 a été refusée",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Mon numéro de sécu 1 85 05 78 006 084 91",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "avec Claude : ma clé sk-ant-abcdefghijklmnopqrstuvwxyz0123456789 ne marche plus",
+  "moteur": "claude",
+  "carte": "sensible"
+ },
+ {
+  "texte": "Cherche sur internet pourquoi ma clé sk-ant-abcdefghijklmnopqrstuvwxyz0123456789 est refusée",
+  "moteur": "local",
+  "carte": "sensible"
+ },
+ {
+  "texte": "password: Hunter2Hunter2Hunter22 c'est solide ?",
+  "moteur": "local",
+  "carte": ""
+ },
+ {
+  "texte": "Envoie mon IBAN FR76 3000 6000 0112 3456 7890 189 à mon comptable",
+  "moteur": "local",
+  "carte": "sensible"
+ }
+]

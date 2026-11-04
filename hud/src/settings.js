@@ -60,6 +60,7 @@ const ITEM_ICONS = {
   "audio.followup": "message", "audio.followup_s": "timer", // 20/10 : écoute prolongée après une réponse
   stt_language: "languages", confidentialite: "eye", history_keep_days: "history", donnees: "database", maj: "download",
   hors_ligne: "shield-check", // 04/11 : mode « rien ne sort »
+  zones_confidentielles: "lock", moteur_mode: "orbit", // 04/11 (lot 3 du moteur local) : zones, qui répond
   "systeme.autostart": "power", "systeme.bubble": "message", "systeme.hotkeys": "keyboard", whatsapp: "smartphone",
   "browser.main_visible": "monitor", "browser.extra_visible": "eye", "browser.extra_count": "layers",
   connectors: "plug", skills: "sparkles", plugins: "puzzle",

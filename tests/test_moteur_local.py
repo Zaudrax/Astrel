@@ -348,11 +348,13 @@ def test_journal_de_la_voix_sans_le_texte_local(j, faux, caplog, monkeypatch):
 
 
 def test_demande_ordinaire_part_chez_claude(j, monkeypatch):
-    """Sans choix explicite, rien ne change : le tour local n'est pas appelé."""
+    """Sans choix explicite et hors cybersécurité, rien ne change : le tour local n'est pas appelé.
+    04/11 (lot 3) : « explique une injection SQL » va maintenant au local en mode automatique
+    (tests/test_routage.py) ; une demande ordinaire part toujours chez Claude."""
     appels = []
     monkeypatch.setattr(core.Astrel, "_tour_local", lambda self, *a, **k: appels.append(a))
     monkeypatch.setattr(core.Astrel, "_cycle_garder", lambda self, *a, **k: True)  # s'arrête juste après
-    j.handle("explique une injection SQL", source="clavier", channel="astrel")
+    j.handle("explique la photosynthèse", source="clavier", channel="astrel")
     assert appels == []
 
 

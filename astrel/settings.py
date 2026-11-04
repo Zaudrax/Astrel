@@ -277,6 +277,7 @@ LEGACY_WRITE = {"theme": "premium"}
 ASSISTANT_NAME_MAX = 32
 # 25/10 (plan P36) : variantes du nom qui réveillent (`eveil.noms`), séparées par des virgules.
 WAKE_NAMES_MAX = 160
+ZONES_MAX = 2000  # 04/11 : zones confidentielles (lot 3b du moteur local)
 
 
 def _needs_core(key: str) -> Callable[[], str]:
@@ -625,6 +626,13 @@ ITEMS: dict[str, Item] = {i.key: i for i in (
          "qu'une tâche de Claude tourne (« Stop tout » d'abord). Dis aussi « passe hors ligne » ou « repasse en "
          "ligne ».",
          "bool", "hot", lambda: _hors_ligne_impose(), env="ASTREL_HORS_LIGNE"),
+    # 04/11 (lot 3b du moteur local) : dossiers dont rien ne part chez Claude sans ta carte (le routeur garde
+    # une demande qui les cite ; le garde-fou demande avant que Claude y lise). Lu par `guard.zones_confidentielles`.
+    Item("zones_confidentielles", "confidentialite", "Zones confidentielles",
+         "Dossiers (chemins absolus séparés par « ; ») dont rien ne part chez Claude sans ton accord : une "
+         "demande qui les cite va au modèle local ou te demande à l'écran, et Claude ne peut y lire sans une "
+         "question. Vide : aucune zone.",
+         "text", "hot", lambda: "", max=ZONES_MAX),
     Item("confidentialite", "confidentialite", "Ce qui part de cette machine",
          "Ce qu'Astrel envoie, à qui, et ce qui reste ici.",
          "info", "hot", lambda: None, view=_module_call("confidentialite", "view")),
@@ -775,6 +783,15 @@ ITEMS: dict[str, Item] = {i.key: i for i in (
          "choice", "hot", lambda: str(config.RAPPEL_MODE), env="ASTREL_RAPPEL",
          choices=(("extraits", "Noms et extraits"), ("noms", "Noms seuls"), ("off", "Coupé"))),
     # 19/10 (plan P8) : modèle local de secours (Ollama). Le cœur branche « Mode léger » (`reglages.bind`).
+    # 04/11 (lot 3 du moteur local, docs/chantiers/HYBRIDE-QWEN.md) : qui répond à tes demandes (`routeur.decider`).
+    Item("moteur_mode", "modele_local", "Qui répond",
+         "Automatique : la cybersécurité et les données sensibles au modèle local, le reste à Claude. Local : le "
+         "modèle local, Claude proposé quand il faut des outils. Claude : Claude, avec une carte avant d'envoyer "
+         "une donnée sensible. Hybride : le modèle local d'abord, Claude proposé pour le code et les actions. "
+         "« en local : » ou « avec Claude : » en tête d'une demande l'emporte toujours.",
+         "choice", "hot", lambda: "auto", env="ASTREL_MOTEUR_MODE",
+         choices=(("auto", "Automatique"), ("local", "Modèle local"), ("claude", "Claude"),
+                  ("hybride", "Hybride (local d'abord)"))),
     Item("local.mode", "modele_local", "Mode léger",
          "Astrel discute avec le modèle local, SANS aucun outil (ni fichiers, ni mémoire, ni agents) ; la "
          "conversation repart à neuf. Retour sur Claude automatique quand la limite se lève.",
@@ -955,7 +972,12 @@ def validate(key: str, raw: Any, current: Any = None) -> Any:
     if item.kind == "choice":
         return _choice(item, raw)
     if item.kind == "text":
-        return _text(item, raw)
+        value = _text(item, raw)
+        if key == "zones_confidentielles" and value:  # 04/11 : des dossiers absolus, rien d'autre
+            for part in value.split(";"):
+                if part.strip() and not os.path.isabs(os.path.expanduser(part.strip())):
+                    raise SettingError(key, f"chemin absolu attendu : {part.strip()}")
+        return value
     return _mapping(item, raw, current if isinstance(current, dict) else item.default())
 
 

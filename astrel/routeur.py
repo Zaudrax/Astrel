@@ -1,12 +1,19 @@
-"""Routeur des moteurs (04/11/2026, lot 1 du moteur local, docs/chantiers/HYBRIDE-QWEN.md).
+"""Routeur des moteurs (04/11/2026, moteur local, docs/chantiers/HYBRIDE-QWEN.md).
 
-Lot 1 : seul le CHOIX EXPLICITE de l'utilisateur compte (« en local : … », « traite en local », canal Local) ;
-tout le reste va à Claude, comme avant. Fonction PURE, sans import du paquet : le cœur décide, jamais un
-modèle. Le routage automatique (domaines, données sensibles) viendra au lot 3."""
+Lot 1 : `forced_engine`, le CHOIX EXPLICITE de l'utilisateur (« en local : … », « traite en local », canal Local).
+Lot 3 : `decider`, le routage complet, dans cet ordre (décisions du 04/11) :
+1. mode « rien ne sort » → local ; 2. local explicite → local ; 3. données sensibles (`sensible.scan`) ;
+4. Claude explicite → Claude, avec CARTE si sensible ; 5. réglage `moteur_mode` (auto, local, claude, hybride) ;
+6. auto : sensible → local, cybersécurité hors du projet → local, sinon → CLAUDE (ce qui n'est classé nulle
+part va à Claude) ; 7. le local n'a pas la capacité (outils, web, envoi, pièces jointes) → carte PROPOSÉE.
+Jamais de bascule seule vers Claude, jamais d'envoi d'une donnée sensible sans carte ; un refus de Claude ne
+renvoie rien au local. Fonctions PURES, sans modèle : le cœur décide (`coeur/routage.py`)."""
 from __future__ import annotations
 
 import re
 import unicodedata
+from dataclasses import dataclass, field
+from typing import Callable, Iterable
 
 LOCAL, CLAUDE = "local", "claude"
 
@@ -26,7 +33,7 @@ _PREFIXE_CLAUDE = re.compile(r"^\s*(?:avec\s+claude|claude|with\s+claude)\s*[:,;
 # Demande locale exprimée dans la phrase. Étroit exprès : « fais tourner le serveur en local » ou « rédige
 # le mail sans l'envoyer » parlent d'autre chose et vont à Claude ; un faux positif part chez Qwen, badge
 # « Local » visible, et « avec Claude : … » le renvoie.
-_FIN = r"\s*(?:[.,;:!?]|$)"
+_FIN = r"\s*(?:[.,;:!?]|$|s'il te pla[iî]t\b|s'il vous pla[iî]t\b|stp\b|svp\b|please\b)"  # 04/11 : formule de politesse
 _DEHORS = r"(?:a\s+l'exterieur|dehors|sur\s+internet|en\s+ligne|a\s+claude|nulle\s+part)"
 _PHRASES_LOCAL = re.compile(
     r"\b(?:"
@@ -77,3 +84,126 @@ def _apres(original: str, n_plie: int) -> str:
             return original[i:].strip()
         vu += len(_plier(c))
     return ""
+
+
+# --- lot 3 : routage automatique (04/11)
+
+MODES = ("auto", "local", "claude", "hybride")
+CARTE_SENSIBLE, CARTE_CAPACITE = "sensible", "capacite"
+
+# Cybersécurité : des motifs PRÉCIS (outils, notions du métier), jamais un mot banal isolé.
+_CYBER = re.compile(
+    r"\bcve-\d{4}-\d{3,}\b|\bcwe-\d+\b|\bctf\b|\bcapture the flag\b|\bpentest\w*|\btests? d'intrusion\b"
+    r"|\bpenetration test\w*|\b(?:nmap|metasploit|msfconsole|burp\s?suite|wireshark|tcpdump|yara|snort|suricata"
+    r"|hashcat|john the ripper|sqlmap|gobuster|ffuf|nikto|volatility|ghidra|radare2|bloodhound|mimikatz|hydra"
+    r"|zeek|osquery|wazuh|crowdsec|lynis|openvas|nessus)\b"
+    r"|\bregles? sigma\b|\bsigma rules?\b|\bvulnerabilit\w*|\bvulnerab\w*|\bfailles? de securite\b"
+    r"|\b(?:injection sql|sql injection|sqli|xss|csrf|ssrf|xxe|lfi|rfi|idor)\b|\bexecution de code a distance\b"
+    r"|\bremote code execution\b|\bescalade de privileges?\b|\bprivilege escalation\b|\bbuffer overflow\b"
+    r"|\bdepassement de tampon\b|\breverse shell\b|\bshellcode\b|\bmalwares?\b|\bransomware\b|\brancongiciel"
+    r"|\bindicateurs? de compromission\b|\bindicators? of compromise\b|\biocs?\b|\bthreat hunting\b"
+    r"|\bforensi\w*|\breponse a (?:un )?incident\b|\bincident response\b|\bcybersecurit\w*|\bsecurite informatique\b"
+    r"|\b(?:force brute|brute.?force|bruteforce|scan(?:s)? (?:de|des) ports?|port ?scan\w*|ports? ouverts?|open ports?)\b"
+    r"|\bdurcissement\b|\bhardening\b|\b(?:iptables|nftables|ufw|fail2ban|selinux|apparmor)\b"
+    r"|\b(?:analyse|lis|explique|regarde|decortique|analy[sz]e|read|explain)\w*\b[^.?!]{0,40}"
+    r"\b(?:journaux|logs?|syslog|journalctl|auth\.log|dmesg|pcap)\b"
+    r"|\b(?:sshd|sudo|kernel|systemd|audit)\[\d+\]:|\bfailed password for\b|\bsshd_config\b")
+# Le projet d'Astrel ou un dépôt : du développement, même sur un sujet de sécurité (le local ne lit pas le code).
+_PROJET = re.compile(r"\b(?:astrel|jarvis|garde-fou|hud|le projet|ce projet|mon projet|le depot|ce depot|repo"
+                     r"|repository|codebase|pull request)\b")
+# Développement et tâches lourdes : proposés à Claude en mode hybride.
+_DEV = re.compile(r"\b(?:code|coder|fonction|classe|refactor\w*|refacto\w*|bug|debug\w*|commit|git|pytest|tests?"
+                  r" unitaires?|python|javascript|typescript|node|npm|api|compile\w*|build|deploi\w*|deploy\w*"
+                  r"|script|programme|implement\w*)\b")
+# Ce que le moteur local NE SAIT PAS faire (pas d'outils au lot 3) : chercher en ligne, agir, envoyer, lire un
+# fichier de la machine.
+_CAPACITE = re.compile(
+    r"\b(?:cherche|recherche|trouve|regarde)\w*\b[^.?!]{0,30}\b(?:sur (?:internet|le web|google)|en ligne)\b"
+    r"|\b(?:search|look up|browse)\b[^.?!]{0,20}\b(?:web|online|internet)\b"
+    r"|\benvoie\w*\b|\bsend\b|\bpublie\w*\b|\brappelle-moi\b|\bremind me\b|\bmets? un rappel\b"
+    r"|\b(?:ouvre|lance|execute|installe|supprime|cree|modifie|ecris|lis|scanne)\w*\b[^.?!]{0,30}"
+    r"\b(?:fichier|dossier|programme|commande|script|application|appli|page|mail|message|agenda|reseau|port)s?\b"
+    r"|\b(?:open|run|execute|install|delete|create|edit|write|read|scan)\b[^.?!]{0,30}"
+    r"\b(?:file|folder|program|command|script|app|email|calendar|network|port)s?\b"
+    r"|\b(?:agent|agents|sous-agent|mission)\b")
+
+
+@dataclass(frozen=True)
+class Decision:
+    """Moteur choisi par le cœur. `carte` : « sensible » (données sensibles vers Claude) ou « capacite » (le
+    local ne sait pas faire) : le message est RETENU et l'utilisateur choisit à l'écran ; `recommande` : moteur du
+    premier bouton. `texte` : ce que le moteur reçoit (préfixe explicite retiré)."""
+    moteur: str
+    categorie: str
+    texte: str
+    raisons: tuple[str, ...] = ()
+    carte: str = ""
+    recommande: str = ""
+    explicite: bool = False
+
+
+@dataclass
+class Etat:
+    """Ce que le cœur sait au moment du message (tout est donné : `decider` ne lit rien)."""
+    hors_ligne: bool = False
+    canaux_locaux: frozenset = frozenset()
+    projet: bool = False          # canal relié à un dossier de projet
+    source: str = "clavier"
+    scan: Callable[[str, Iterable[str]], list[str]] | None = None
+
+
+def mode_valide(mode: object) -> str:
+    m = str(mode or "auto")
+    return m if m in MODES else "auto"
+
+
+def decider(texte: str, canal: str = "", pieces: Iterable[str] = (), reglages: dict | None = None,
+            etat: Etat | None = None) -> Decision:
+    """Moteur d'une demande de l'utilisateur (voir l'en-tête du module pour l'ordre)."""
+    etat = etat or Etat()
+    pieces = [str(p) for p in pieces or ()]
+    mode = mode_valide((reglages or {}).get("moteur_mode"))
+    moteur, demande = forced_engine(texte, canal, etat.canaux_locaux)
+    if etat.hors_ligne:
+        return Decision(LOCAL, "hors_ligne", demande, explicite=moteur == LOCAL)
+    if moteur == LOCAL:
+        return Decision(LOCAL, "explicite", demande, explicite=True)
+    scan = etat.scan
+    if scan is None:
+        from . import sensible
+        scan = sensible.scan
+    raisons = tuple(scan(texte, pieces))
+    if pieces:  # le moteur local ne lit pas encore les pièces jointes
+        manque = ("pièces jointes",)
+    else:
+        manque = ("outils",) if _CAPACITE.search(_plier(demande)) else ()
+    if moteur == CLAUDE:
+        if raisons:
+            return Decision(CLAUDE, "explicite", demande, raisons, CARTE_SENSIBLE, CLAUDE, explicite=True)
+        return Decision(CLAUDE, "explicite", demande, explicite=True)
+    plie = _plier(texte)
+    whatsapp = etat.source == "whatsapp"  # la réponse locale ne repart pas par WhatsApp (lot 1)
+    if mode == "claude" or whatsapp:
+        if raisons:
+            return Decision(CLAUDE, "sensible", demande, raisons, CARTE_SENSIBLE,
+                            CLAUDE if whatsapp else LOCAL)
+        return Decision(CLAUDE, "reglage" if mode == "claude" else "whatsapp", demande)
+    if raisons:
+        if manque:
+            return Decision(LOCAL, "sensible", demande, raisons + manque, CARTE_SENSIBLE, LOCAL)
+        return Decision(LOCAL, "sensible", demande, raisons)
+    if mode == "local":
+        if manque:
+            return Decision(LOCAL, "reglage", demande, manque, CARTE_CAPACITE, CLAUDE)
+        return Decision(LOCAL, "reglage", demande)
+    projet = etat.projet or bool(_PROJET.search(plie))
+    cyber = bool(_CYBER.search(plie)) and not projet
+    if mode == "hybride":
+        if manque or projet or _DEV.search(plie):
+            return Decision(LOCAL, "hybride", demande, manque or ("développement",), CARTE_CAPACITE, CLAUDE)
+        return Decision(LOCAL, "hybride", demande)
+    if cyber:  # auto
+        if manque:
+            return Decision(LOCAL, "cybersecurite", demande, manque, CARTE_CAPACITE, LOCAL)
+        return Decision(LOCAL, "cybersecurite", demande)
+    return Decision(CLAUDE, "projet" if projet else "defaut", demande)

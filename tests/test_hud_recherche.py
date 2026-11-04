@@ -50,6 +50,8 @@ def count_fil(db):
     con = sqlite3.connect(db)
     try:
         return con.execute("SELECT count(*) FROM fil").fetchone()[0]
+    except sqlite3.OperationalError:  # 04/11 (CI Windows) : fichier créé, table pas encore : on réessaie
+        return 0
     finally:
         con.close()
 
