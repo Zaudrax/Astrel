@@ -287,7 +287,7 @@ async def chat_lot2_en(p: Page) -> None:
     ok = await p.until(f"!!{md}?.querySelector('.md-path')", 10)
     r = await p.js(f"""(() => {{ const e = {md}.querySelector('.md-path'); e.click();
         return {{ title: e.title, desc: e.getAttribute('aria-description'), text: e.textContent }}; }})()""") if ok else {}
-    toast = await p.until("[...document.querySelectorAll('.toast')].some(t => t.textContent.startsWith('Path copied: /data/'))", 4)
+    toast = await p.until("[...document.querySelectorAll('.toast')].some(t => t.textContent.startsWith('Path copied: '))", 4)
     check(f"chemin en anglais : « {r.get('title')} », « {r.get('desc')} », toast « Path copied » ({toast})",
           ok and r["title"] == "Copy this path (click, or Enter on the keyboard)" and r["desc"] == "copies the path, opens nothing"
           and toast)

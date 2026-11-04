@@ -113,7 +113,10 @@ def test_inventaire_sorties_designent_des_modules_coupes():
                 continue
             path = ROOT / "astrel" / (mod.replace(".", "/") + ".py")
             assert path.is_file(), (titre, mod)
-            assert "hors_ligne" in path.read_text(encoding="utf-8"), (titre, mod)
+            texte = path.read_text(encoding="utf-8")
+            if "absent de ce dépôt" in texte.split("\n", 1)[0]:  # 04/11 : interface vide du dépôt public (Grok)
+                continue
+            assert "hors_ligne" in texte, (titre, mod)
 
 
 def test_page_confidentialite_tiree_de_l_inventaire(hl):
@@ -175,8 +178,9 @@ def test_compte_xai_checks_voix_cerveau(hl, monkeypatch):
     assert compte.compte.login()["ok"] is False
     monkeypatch.setattr(compte.threading, "Thread", lambda *a, **k: pytest.fail("sonde lancée"))
     compte.compte.refresh()
-    with pytest.raises(xai_oauth.ErreurReseau, match="rien ne part"):
-        xai_oauth._requete("GET", "https://auth.x.ai/.well-known/openid-configuration")
+    if hasattr(xai_oauth, "_requete"):  # 04/11 : absent du dépôt public (interface vide, rien ne sort)
+        with pytest.raises(xai_oauth.ErreurReseau, match="rien ne part"):
+            xai_oauth._requete("GET", "https://auth.x.ai/.well-known/openid-configuration")
     with pytest.raises(hors_ligne.HorsLigne):  # le réflexe la prend comme une erreur : rien n'est déclenché
         checks.run({"kind": "url", "url": "https://example.org/"})
     with pytest.raises(hors_ligne.HorsLigne):
