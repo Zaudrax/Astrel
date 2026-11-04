@@ -31,7 +31,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-from . import config
+from . import config, hors_ligne
 
 log = logging.getLogger("astrel.quota")
 
@@ -221,6 +221,8 @@ def relever(connu: dict | None = None, lanceur: Lanceur = subprocess.run, now: f
     `sonde` faux (24/10, plan P34 : relevé rapide pendant que des agents tournent) : `/usage` SEUL,
     jamais de sonde, qui coûterait des jetons à chaque relevé.
     Rend {ok, info, source ("usage"|"sonde"), jetons} ou {ok: False, error}."""
+    if hors_ligne.actif():  # 04/11 : `claude -p` parlerait à Anthropic
+        return {"ok": False, "error": f"relevé du quota : {hors_ligne.REFUS}"}
     try:
         sortie = _lancer(commande_usage(), lanceur)
         try:

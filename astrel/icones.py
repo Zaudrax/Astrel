@@ -39,7 +39,7 @@ import zlib
 from pathlib import Path
 from typing import Iterable
 
-from . import config
+from . import config, hors_ligne
 
 log = logging.getLogger("astrel.icones")
 
@@ -182,6 +182,8 @@ def for_name(name: str) -> dict:
 def _download(url: str, max_bytes: int) -> bytes | None:
     """GET HTTPS vers un hôte de `ALLOWED_HOSTS` seulement, sans redirection, délai court,
     `max_bytes` au plus (décompressé). None sur tout échec (journalisé)."""
+    if hors_ligne.actif():  # 04/11 : l'icône par défaut reste
+        return None
     parts = urllib.parse.urlsplit(url)
     if (parts.scheme != "https" or parts.hostname not in ALLOWED_HOSTS or parts.port not in (None, 443)
             or parts.username or parts.password):

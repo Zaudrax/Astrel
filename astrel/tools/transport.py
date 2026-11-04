@@ -20,6 +20,7 @@ from datetime import datetime
 import httpx
 
 from . import connector
+from .. import hors_ligne
 
 NAME = "Transports Navitia"
 DEFAULT_BASE = "https://api.sncf.com/v1"
@@ -28,6 +29,7 @@ _NAVITIA_ID = re.compile(r"^(stop_area|stop_point|admin|address|poi):|^-?\d+(\.\
 
 
 def _get(path: str, params: list[tuple[str, str]] | None = None) -> dict:
+    hors_ligne.verifier("transports (SNCF, Navitia)")  # 04/11
     cfg = connector.settings(NAME)
     base = (cfg["NAVITIA_BASE_URL"] or DEFAULT_BASE).rstrip("/")
     coverage = cfg["NAVITIA_COVERAGE"] or DEFAULT_COVERAGE

@@ -241,7 +241,7 @@ GUIDE_TOPICS = {
     "audio.mic": "micro", "audio.test": "micro", "audio.calibrage": "micro", "audio.output": "voix", "audio.voice": "voix",
     "audio.wake": "parler", "wake_legacy": "parler", "wake_names": "parler", "audio.followup": "parler", "audio.followup_s": "parler", "stt_language": "langue",
     "conversation_language": "langue",
-    "confidentialite": "memoire", "history_keep_days": "memoire", "donnees": "memoire",
+    "confidentialite": "memoire", "history_keep_days": "memoire", "donnees": "memoire", "hors_ligne": "memoire",
     "systeme.autostart": "demarrage-auto", "systeme.bubble": "bulle", "systeme.hotkeys": "parler",
     "whatsapp": "whatsapp", "browser.main_visible": "agents", "browser.extra_visible": "agents",
     "browser.extra_count": "agents", "connectors": "connecteurs",
@@ -474,6 +474,11 @@ def _reports_put(value: str) -> dict:
     return reports.set_mode(value)
 
 
+def _hors_ligne_impose() -> bool:
+    from . import hors_ligne
+    return hors_ligne.impose()
+
+
 def _hud_action(action_id: str, label: str, hud: str, danger: bool = False) -> Callable[[], dict]:
     """Ligne dont le bouton est exécuté par le HUD LUI-MÊME (`hud` : nom de la fonction branchée par
     hud/src/main.js, `onHudAction`), qui envoie sa commande habituelle (`mission start`, `quit`) avec ses
@@ -612,6 +617,14 @@ ITEMS: dict[str, Item] = {i.key: i for i in (
          "Nom affiché dans le HUD, la bulle et les messages d'écran ; c'est aussi le mot d'éveil, dit au début "
          "d'une phrase. Vide : le nom par défaut.",
          "text", "hot", lambda: config.ASSISTANT_NAME, env="ASTREL_ASSISTANT_NAME", max=ASSISTANT_NAME_MAX),
+    # 04/11 (lot 2 du moteur local) : mode « rien ne sort ». Changé par le cœur seulement
+    # (`_hors_ligne_switch` : refusé pendant une tâche de Claude et à Claude), jamais écrit directement.
+    Item("hors_ligne", "confidentialite", "Rien ne sort (hors ligne)",
+         "Claude est arrêté et tes demandes vont au modèle local (Ollama, sur la machine) ; la voix passe par "
+         "Piper ; WhatsApp, images et vidéos IA, veille, mises à jour et connecteurs sont coupés. Refusé tant "
+         "qu'une tâche de Claude tourne (« Stop tout » d'abord). Dis aussi « passe hors ligne » ou « repasse en "
+         "ligne ».",
+         "bool", "hot", lambda: _hors_ligne_impose(), env="ASTREL_HORS_LIGNE"),
     Item("confidentialite", "confidentialite", "Ce qui part de cette machine",
          "Ce qu'Astrel envoie, à qui, et ce qui reste ici.",
          "info", "hot", lambda: None, view=_module_call("confidentialite", "view")),

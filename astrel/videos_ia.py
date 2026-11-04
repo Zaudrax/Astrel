@@ -68,7 +68,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from . import attachments, config, ia_web, medias
+from . import attachments, config, hors_ligne, ia_web, medias
 from .ia_web import Etat
 
 log = logging.getLogger("astrel.videos")
@@ -431,6 +431,8 @@ class Videos:
         modele = str(model or "").strip().lower()
         if config.ESTOP_FILE.exists():
             return {"ok": False, "error": "arrêt d'urgence en cours : pas de vidéo"}
+        if hors_ligne.actif():  # 04/11 : Chrome vers Google Flow, Dreamina
+            return {"ok": False, "error": f"pas de vidéo : {hors_ligne.REFUS}"}
         if not prompt:
             return {"ok": False, "error": "prompt vide : décris la vidéo voulue"}
         if len(prompt) > PROMPT_MAX:

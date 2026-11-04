@@ -137,6 +137,13 @@ class CycleCerveau:
             self.etat = ARRET
             self.generation += 1
 
+    def rouvrir(self) -> None:
+        """Sortie du mode « rien ne sort » (04/11) : l'arrêt du cerveau n'était pas celui d'Astrel."""
+        with self.lock:
+            if self.etat == ARRET:
+                self.etat = OK
+            self.generation += 1
+
     def bloque(self) -> bool:
         """Un message envoyé maintenant ne partirait pas (relance en attente, compte déconnecté, CLI absent)."""
         with self.lock:

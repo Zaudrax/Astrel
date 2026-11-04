@@ -49,7 +49,7 @@ from datetime import datetime, time, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
-from . import config
+from . import config, hors_ligne
 from .platform import systeme
 
 OUT_DIR = config.RUNTIME / "veille-secu"
@@ -107,6 +107,8 @@ class NetError(Exception):
 
 def _get(url: str, data: bytes | None = None, timeout: float = TIMEOUT_S) -> bytes:
     """GET (ou POST JSON si `data`). Aucun jeton, aucun cookie : sources publiques seulement."""
+    if hors_ligne.actif():  # 04/11 : rien ne part (la veille est sautée, comme une source injoignable)
+        raise NetError(f"{_host(url)} : {hors_ligne.REFUS}")
     headers = {"User-Agent": USER_AGENT, "Accept": "*/*"}
     if data is not None:
         headers["Content-Type"] = "application/json"

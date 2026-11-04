@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from . import connector
+from .. import hors_ligne
 
 NAME = "Agenda CalDAV"
 DAV, CAL = "DAV:", "urn:ietf:params:xml:ns:caldav"
@@ -39,6 +40,7 @@ _cache: dict[tuple, dict] = {}   # réglages → calendrier trouvé (le serveur 
 # --- HTTP / WebDAV ---
 
 def _client(cfg: dict) -> httpx.Client:
+    hors_ligne.verifier("agenda")  # 04/11 : le brief du matin omet la ligne, l'outil MCP rend l'erreur
     return httpx.Client(auth=(cfg["CALDAV_USERNAME"], cfg["CALDAV_PASSWORD"]), timeout=connector.TIMEOUT_S,
                         follow_redirects=True, headers={"User-Agent": "Astrel/1.0"})
 

@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 
-from . import agents, config, fournisseurs
+from . import agents, config, fournisseurs, hors_ligne
 from . import passerelle as passerelle_mod
 from . import xai_oauth
 from .platform import enfants, proc
@@ -906,6 +906,9 @@ class Brain:
         session si elle est assez récente (relance après modif du code, plantage).
         Mode léger (`self.local`) : toujours une session neuve, et celle de Claude
         (`runtime/session.json`) reste intacte pour le retour."""
+        # 04/11 : mode « rien ne sort » : aucun CLI lancé (Claude, passerelle, context7, connecteurs) ; le cœur
+        # ne demande pas de démarrage (`coeur/hors_ligne.py`), ceci est le dernier verrou.
+        hors_ligne.verifier("démarrage du cerveau Claude")
         from . import langue as langue_mod
 
         # 02/11 : langue des consignes de CETTE session (Claude seulement ; None = consignes propres au

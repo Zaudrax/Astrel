@@ -5,7 +5,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { linkPieces, linkifyText, parseBlocks, parseInline, renderMarkdown, safeHref } from "../src/markdown.js";
+import {
+  linkPieces, linkifyText, parseBlocks, parseInline, pathPieces, renderMarkdown, safeHref, wholePath,
+} from "../src/markdown.js";
 
 class FakeNode {
   constructor(tag) { this.tag = tag; this.children = []; this.props = {}; }
@@ -374,4 +376,93 @@ test("PERFORMANCE : linkPieces sur des messages hostiles de 100 000 caractères 
     const ms = performance.now() - t0;
     assert.ok(ms < 100 * LENTEUR, `${name} : ${ms.toFixed(0)} ms (lenteur ${LENTEUR.toFixed(1)})`);
   }
+});
+
+// ------------------------------------------------------------------ chemins de fichiers (04/11)
+// Demande de l'utilisateur : un chemin d'une réponse se copie d'un clic (main.js) ; jamais dans un bloc ```, ni
+// dans le texte d'un lien ; seulement avec `{ paths: true }` (le fil), le reste du rendu ne change pas.
+
+const pathsOf = (frag) => {
+  const out = [];
+  (function walk(n) {
+    if (n.props?.className === "md-path") out.push({ tag: n.tag, text: text(n), role: n.props.role, tab: n.props.tabindex,
+      title: n.props.title, desc: n.props["aria-description"] });
+    (n.children || []).forEach(walk);
+  })(frag);
+  return out;
+};
+
+test("chemins : reconnus dans le texte, ponctuation finale exclue, rôle bouton et nom au clavier", () => {
+  const frag = renderMarkdown("Voir /home/user/Projets/x.py, puis ~/Documents/a.txt (et C:\\Users\\b\\note.txt).",
+    fakeDoc(), { paths: true });
+  const p = pathsOf(frag);
+  assert.deepEqual(p.map((x) => x.text), ["/home/user/Projets/x.py", "~/Documents/a.txt", "C:\\Users\\b\\note.txt"]);
+  for (const x of p) {
+    assert.equal(x.tag, "span");
+    assert.equal(x.role, "button");
+    assert.equal(x.tab, "0");
+    assert.ok(x.title && x.desc);
+  }
+  // le texte du DOM reste celui de la réponse (sélection à la main, lecteur d'écran)
+  assert.equal(text(frag), "Voir /home/user/Projets/x.py, puis ~/Documents/a.txt (et C:\\Users\\b\\note.txt).");
+});
+
+test("chemins : dates, fractions, « et/ou », URL, jokers, variables et // ne sont pas des chemins", () => {
+  for (const s of ["le 04/11/2026", "et/ou", "1/2 km/h", "https://x.fr/a/b", "file:///etc/hosts", "/etc", "/2.5",
+    "/data/*.py", "$HOME/x/y", "// commentaire", "a//b/c", "~/", "/help"]) {
+    assert.deepEqual(pathsOf(renderMarkdown(s, fakeDoc(), { paths: true })), [], s);
+  }
+  // un chemin collé à « :12 » (numéro de ligne) : le chemin seul
+  assert.deepEqual(pathsOf(renderMarkdown("/etc/hosts:12", fakeDoc(), { paths: true })).map((x) => x.text), ["/etc/hosts"]);
+});
+
+test("chemins : jamais dans un bloc ``` ni dans le texte d'un lien ; dans un `code`, le code entier s'il n'est qu'un chemin", () => {
+  const md = "```\ncat /data/secret/x.py\n```\n\n[voir /data/a/b.md](https://ex.fr/doc)\n\n"
+    + "`/data/Mes documents/Note de frais.pdf` et `/usr/bin/python3 -m pytest`";
+  const frag = renderMarkdown(md, fakeDoc(), { paths: true });
+  const p = pathsOf(frag);
+  assert.deepEqual(p.map((x) => [x.tag, x.text]), [["code", "/data/Mes documents/Note de frais.pdf"], ["span", "/usr/bin/python3"]]);
+  assert.match(text(frag), /cat \/data\/secret\/x\.py/);
+  assert.equal(linksOf(frag)[0].text, "voir /data/a/b.md");
+});
+
+test("chemins : sans l'option (Guide, Plans), le rendu est exactement celui d'avant", () => {
+  const md = "Le fichier /data/a/b.py et `~/x/y.txt`, **/tmp/z.log**";
+  const avant = render(md).out;
+  assert.equal(avant, "<p>Le fichier /data/a/b.py et <code>~/x/y.txt</code>, <strong>/tmp/z.log</strong></p>");
+  const doc = fakeDoc();
+  const avec = html(renderMarkdown(md, doc, { paths: true }));
+  assert.match(avec, /<strong><span className="md-path" role="button" tabindex="0" title="[^"]+" aria-description="[^"]+">\/tmp\/z\.log<\/span><\/strong>/);
+  assert.ok(!doc.created.includes("script"));
+});
+
+test("chemins : ATTAQUE, un « chemin » hostile reste du texte (aucune balise ni attribut ne vient du texte)", () => {
+  const doc = fakeDoc();
+  const frag = renderMarkdown('/data/x"onmouseover=alert(1)/y.py et /tmp/<img src=x>.png', doc, { paths: true });
+  for (const x of pathsOf(frag)) assert.ok(!/[<>"]/.test(x.text), x.text);
+  assert.ok(doc.created.every((tag) => ["p", "span", "code"].includes(tag)), doc.created.join(","));
+});
+
+test("PERFORMANCE : chemins sur des messages hostiles de 100 000 caractères en moins de 100 ms", () => {
+  const N = 100_000;
+  const rep = (u) => u.repeat(Math.ceil(N / u.length)).slice(0, N);
+  for (const [name, s] of Object.entries({
+    "/a": rep("/a"), "/ ": rep("/ "), "~/": rep("~/"), "C:\\": rep("C:\\a"), "long": "/" + "a".repeat(N - 1),
+    "mélange": rep("/data/x.py, ~/a et/ou 04/11 "), "segments": rep("/ab/cd/ef/gh "),
+  })) {
+    const t0 = performance.now();
+    pathPieces(s);
+    renderMarkdown(s.slice(0, 20_000), fakeDoc(), { paths: true });
+    const ms = performance.now() - t0;
+    assert.ok(ms < 100 * LENTEUR, `${name} : ${ms.toFixed(0)} ms (lenteur ${LENTEUR.toFixed(1)})`);
+  }
+});
+
+test("wholePath : un chemin entier, jamais une commande, une URL ou un joker", () => {
+  assert.equal(wholePath("/data/Mes documents/a.pdf"), "/data/Mes documents/a.pdf");
+  assert.equal(wholePath("~/x"), "~/x");
+  assert.equal(wholePath("C:\\Users\\b"), "C:\\Users\\b");
+  assert.equal(wholePath("/data/a/"), "/data/a/");
+  for (const s of ["/usr/bin/python3 -m pytest", "/opt/run.sh start", "/a/b /c/d", "https://a.fr/x", "/etc", "/data/*.py",
+    " /data/a", "/data//a", "/data/a\nb", "$HOME/x", "/a/b:3"]) assert.equal(wholePath(s), "", s);
 });

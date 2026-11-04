@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from . import config
+from . import config, hors_ligne
 from .platform import systeme
 from .platform import enfants
 
@@ -941,6 +941,8 @@ def executer_worker(argv: list[str], entree: dict, ligne: Callable[[dict], None]
     d'étape à `ligne` et rend la dernière {t: fini|echec}. Une garde regarde chaque seconde le délai
     (`delai_s`) et `arreter_si()` (annulation, arrêt d'urgence) : le worker est alors arrêté AVEC son
     Chrome (`arreter`), et la sortie se termine d'elle-même."""
+    if hors_ligne.actif():  # 04/11 : le worker pilote Chrome vers des sites en ligne
+        return {"t": "echec", "code": "hors_ligne", "message": hors_ligne.REFUS}
     # 01/11 : le worker ferme son entrée tout de suite (la fin du tube ne le prévient pas) : il meurt
     # avec le cœur (Linux, `platform.enfants`), et Playwright ferme alors son Chrome (SIGTERM).
     proc = enfants.popen(argv, cwd=str(config.IMAGES_WORKER_DIR), stdin=subprocess.PIPE,

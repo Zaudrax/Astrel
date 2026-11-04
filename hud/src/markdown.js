@@ -24,6 +24,14 @@
 // l'adresse entière (sélection et copie à la main donnent l'adresse complète). `linkifyText` :
 // le message de l'utilisateur, texte brut, où seules les adresses https:// nues deviennent des liens
 // (jamais dans un bloc ``` ni un `code`). Le clic est pris par main.js (navigateur du système).
+//
+// 04/11 (demande : chemins de fichiers cliquables) : dans une réponse du FIL (`renderMarkdown(…, { paths:
+// true })`), un chemin absolu (/data/x.py, ~/Documents/a, C:\Users\b) devient un <span class="md-path">
+// (rôle bouton, au clavier aussi) ; dans un `code` d'une ligne aussi, c'est souvent là qu'ils sont (le
+// <code> entier quand tout le code est un chemin) ; jamais dans un bloc ```, ni dans le texte d'un lien.
+// Un clic COPIE le chemin (main.js, comme les chemins des comptes rendus), rien ne s'ouvre. Détection
+// prudente : `pathPieces` (dates, fractions, « et/ou », URL : jamais). Le texte du DOM reste celui de la
+// réponse : la sélection à la main et « Copier » du message (m.raw) ne changent pas.
 
 import { icon, stripEmoji } from "./icons.js";
 import { t } from "./i18n.js";
@@ -284,6 +292,107 @@ const LOOKS_LIKE_URL = /^(?:[a-z][a-z0-9+.-]{0,20}:\/\/|www\.)|^[\w-]{1,63}(?:\.
 
 const isWord = (ch) => !!ch && /\w/.test(ch);
 
+// ------------------------------------------------------------------ chemins de fichiers (04/11)
+
+const PATH_MAX = 1024;
+// Caractère d'un nom de fichier ou de dossier : ni espace, ni « : », ni joker, ni guillemet, ni barre.
+const PATH_CH = /[\p{L}\p{M}\p{N}._+\-@%,=~#]/u;
+// Ce qui peut précéder un chemin : début, espace, ouverture. Jamais une lettre, un chiffre, « / » ou « : »
+// (« et/ou », « 1/2 », « 04/11/2026 », « https://x.fr/a », « file:///etc »).
+const PATH_BEFORE = new Set([..." \t\n\r([{«\"'“‘<"]);
+// Ponctuation finale laissée hors du chemin (comme les liens) ; « / » final gardé (un dossier).
+const PATH_TRAILING = new Set([...".,;:!?…»\"')]>”’"]);
+// Juste après le chemin : un joker ou une variable, c'est un motif (« /data/*.py », « $HOME/x »), pas un chemin.
+const PATH_PATTERN = /[*?$[\]{}|<\\]/;
+const HAS_EXT = /\.[\p{L}\p{N}]{1,10}$/u;
+const DIGITS = /^[\d.,]+$/;
+
+// Chemin qui commence en i : { path, end } s'il est reconnu, { end } sinon (le texte jusqu'à `end` est
+// déjà lu : pas de second essai dedans, temps linéaire), null si rien ne commence ici.
+function pathAt(s, i, n) {
+  if (i > 0 && !PATH_BEFORE.has(s[i - 1])) return null;
+  let kind, sep, k;
+  if (s[i] === "/") { kind = "unix"; sep = "/"; k = i; }
+  else if (s[i] === "~" && s[i + 1] === "/") { kind = "home"; sep = "/"; k = i + 1; }
+  else if (/[A-Za-z]/.test(s[i] || "") && s[i + 1] === ":" && s[i + 2] === "\\") { kind = "win"; sep = "\\"; k = i + 2; }
+  else return null;
+  const limit = Math.min(n, i + PATH_MAX);
+  const segs = [];
+  while (k < limit && s[k] === sep) {
+    let j = k + 1;
+    while (j < limit && PATH_CH.test(s[j])) j++;
+    if (j === k + 1) { // nom vide : « // » (commentaire, URL) refusé, « / » final gardé
+      if (s[j] === sep || !segs.length) return { end: j };
+      k = j;
+      break;
+    }
+    segs.push(s.slice(k + 1, j));
+    k = j;
+  }
+  if (k >= limit && limit < n) return { end: k }; // trop long : texte
+  if (k < n && PATH_PATTERN.test(s[k]) && s[k] !== sep) return { end: k };
+  let end = k;
+  while (end > i && PATH_TRAILING.has(s[end - 1])) end--;
+  const path = s.slice(i, end);
+  // noms après la coupe de la ponctuation finale
+  const names = path.slice(kind === "win" ? 3 : kind === "home" ? 2 : 1).split(sep).filter(Boolean);
+  if (!names.length || names.every((x) => DIGITS.test(x))) return { end: k };
+  if (kind === "unix" && names.length < 2 && !HAS_EXT.test(names[0])) return { end: k };
+  if (kind === "unix" && names.length === 1 && DIGITS.test(names[0].replace(HAS_EXT, ""))) return { end: k };
+  return { path, end };
+}
+
+/** Morceaux d'un texte : texte, et chemins de fichiers reconnus ({ t: "path", v }). Une passe. */
+export function pathPieces(src) {
+  const s = String(src ?? "");
+  const n = s.length;
+  if (!/[/\\]/.test(s) || n > MAX_TEXT) return s ? [{ t: "text", v: s }] : [];
+  const out = [];
+  let buf = "";
+  let i = 0;
+  while (i < n) {
+    const c = s[i];
+    const hit = c === "/" || c === "~" || (s[i + 1] === ":" && s[i + 2] === "\\") ? pathAt(s, i, n) : null;
+    if (hit) {
+      if (hit.path) {
+        if (buf) { out.push({ t: "text", v: buf }); buf = ""; }
+        out.push({ t: "path", v: hit.path });
+        i = hit.end;
+      } else {
+        buf += s.slice(i, hit.end);
+        i = hit.end;
+      }
+      continue;
+    }
+    buf += c;
+    i++;
+  }
+  if (buf) out.push({ t: "text", v: buf });
+  return out;
+}
+
+/** Un `code` d'une ligne qui n'est QU'un chemin (espaces permis : « /data/Mes documents/a.pdf ») :
+ *  le chemin, sinon "". Même départ que `pathAt`, jamais d'URL, de joker ni de variable. */
+export function wholePath(code) {
+  const v = String(code ?? "");
+  if (!v || v.length > PATH_MAX || v !== v.trim() || /[\n\r\t\u0000-\u001f*?$<>|"`]/.test(v) || v.includes("://")) return "";
+  const win = /^[A-Za-z]:\\/.test(v);
+  if (!win && !v.startsWith("/") && !v.startsWith("~/")) return "";
+  const sep = win ? "\\" : "/";
+  const names = v.slice(win ? 3 : v.startsWith("~/") ? 2 : 1).split(sep);
+  if (names.slice(0, -1).some((x) => !x.trim()) || !names.some(Boolean)) return "";
+  if (!win && v.includes(":")) return "";
+  // Une commande n'est pas un chemin : « /usr/bin/python3 -m pytest », « /a/b /c/d », « /opt/run.sh start »
+  // (le chemin qu'elle contient reste copiable, `pathPieces`). Espaces permis dans un nom de dossier, et dans
+  // le dernier nom s'il finit par une extension (« /data/Mes documents/Note de frais.pdf »).
+  if (/\s[-/~]|\s\s/.test(v)) return "";
+  const lastName = names[names.length - 1];
+  if (/\s/.test(lastName) && !HAS_EXT.test(lastName)) return "";
+  if (names.filter(Boolean).every((x) => DIGITS.test(x))) return "";
+  if (!win && !v.startsWith("~/") && names.filter(Boolean).length < 2 && !HAS_EXT.test(names[0])) return "";
+  return v;
+}
+
 // Adresse https:// nue qui commence en i : { url, href, end } si elle est cliquable (url = le texte
 // montré, ponctuation finale exclue, parenthèses équilibrées), { end } si elle ne l'est pas (trop
 // longue, invalide : le texte jusqu'à `end` reste inerte), null si rien ne commence ici.
@@ -503,14 +612,44 @@ function linkNode(doc, it, fill) {
   return a;
 }
 
-function inlineTo(doc, parent, items) {
+// 04/11 : chemin cliquable (copié par main.js) : rôle bouton, au clavier aussi, nom = le chemin lui-même.
+function markPath(e) {
+  e.setAttribute("role", "button");
+  e.setAttribute("tabindex", "0");
+  e.title = t("md.path_title");
+  e.setAttribute("aria-description", t("md.path_copies"));
+  return e;
+}
+function pathNode(doc, v) {
+  const e = node(doc, "span", "md-path");
+  e.textContent = v; // texte tel quel (ni émoji retiré : c'est ce qui est copié)
+  return markPath(e);
+}
+
+// `paths` (04/11) : chemins de fichiers cliquables (le fil seulement, jamais dans le texte d'un lien).
+function inlineTo(doc, parent, items, paths = false) {
   for (const it of items) {
-    if (it.t === "text") appendText(doc, parent, it.v);
-    else if (it.t === "code") { const e = node(doc, "code"); e.textContent = it.v; parent.append(e); }
-    else if (it.t === "a") parent.append(linkNode(doc, it, (label) => inlineTo(doc, label, it.c)));
+    if (it.t === "text") {
+      if (!paths) { appendText(doc, parent, it.v); continue; }
+      for (const piece of pathPieces(it.v)) {
+        if (piece.t === "path") parent.append(pathNode(doc, piece.v));
+        else appendText(doc, parent, piece.v);
+      }
+    } else if (it.t === "code") {
+      const whole = paths ? wholePath(it.v) : "";
+      const e = node(doc, "code", whole ? "md-path" : "");
+      if (whole) { e.textContent = it.v; markPath(e); }
+      else if (!paths) e.textContent = it.v;
+      else {
+        for (const piece of pathPieces(it.v)) {
+          e.append(piece.t === "path" ? pathNode(doc, piece.v) : doc.createTextNode(piece.v));
+        }
+      }
+      parent.append(e);
+    } else if (it.t === "a") parent.append(linkNode(doc, it, (label) => inlineTo(doc, label, it.c)));
     else {
       const e = node(doc, it.t);
-      inlineTo(doc, e, it.c);
+      inlineTo(doc, e, it.c, paths);
       parent.append(e);
     }
   }
@@ -534,16 +673,16 @@ function copyButton(doc, text) {
   return btn;
 }
 
-function blocksTo(doc, parent, blocks) {
+function blocksTo(doc, parent, blocks, paths = false) {
   for (const b of blocks) {
     if (b.type === "p") {
       const p = node(doc, "p");
-      inlineTo(doc, p, parseInline(b.text));
+      inlineTo(doc, p, parseInline(b.text), paths);
       parent.append(p);
     } else if (b.type === "heading") {
       // intertitres discrets : # et ## en h3, ### en h4, le reste en h5
       const h = node(doc, b.level <= 2 ? "h3" : b.level === 3 ? "h4" : "h5");
-      inlineTo(doc, h, parseInline(b.text));
+      inlineTo(doc, h, parseInline(b.text), paths);
       parent.append(h);
     } else if (b.type === "hr") {
       parent.append(node(doc, "hr"));
@@ -563,7 +702,7 @@ function blocksTo(doc, parent, blocks) {
         const tr = node(doc, "tr");
         cells.forEach((c, k) => {
           const cell = node(doc, tag, b.aligns[k] ? `al-${b.aligns[k]}` : "");
-          inlineTo(doc, cell, parseInline(c));
+          inlineTo(doc, cell, parseInline(c), paths);
           tr.append(cell);
         });
         return tr;
@@ -580,15 +719,15 @@ function blocksTo(doc, parent, blocks) {
       parent.append(wrap);
     } else if (b.type === "quote") {
       const q = node(doc, "blockquote");
-      blocksTo(doc, q, b.blocks);
+      blocksTo(doc, q, b.blocks, paths);
       parent.append(q);
     } else if (b.type === "ul" || b.type === "ol") {
       const l = node(doc, b.type);
       if (b.type === "ol" && b.start !== 1) l.start = b.start;
       for (const it of b.items) {
         const li = node(doc, "li");
-        inlineTo(doc, li, parseInline(it.text));
-        blocksTo(doc, li, it.children);
+        inlineTo(doc, li, parseInline(it.text), paths);
+        blocksTo(doc, li, it.children, paths);
         l.append(li);
       }
       parent.append(l);
@@ -596,8 +735,9 @@ function blocksTo(doc, parent, blocks) {
   }
 }
 
-/** Fragment DOM du texte rendu. `doc` : le document (remplaçable dans les tests). */
-export function renderMarkdown(text, doc = globalThis.document) {
+/** Fragment DOM du texte rendu. `doc` : le document (remplaçable dans les tests). `paths` (04/11) :
+ *  chemins de fichiers cliquables (fil du HUD ; ni le Guide ni les Plans, dans une fenêtre). */
+export function renderMarkdown(text, doc = globalThis.document, { paths = false } = {}) {
   const frag = doc.createDocumentFragment();
   const src = String(text ?? "");
   if (src.length > MAX_TEXT) {
@@ -606,7 +746,7 @@ export function renderMarkdown(text, doc = globalThis.document) {
     frag.append(p);
     return frag;
   }
-  blocksTo(doc, frag, parseBlocks(src));
+  blocksTo(doc, frag, parseBlocks(src), paths);
   return frag;
 }
 

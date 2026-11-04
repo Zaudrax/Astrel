@@ -63,7 +63,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from .. import config, guard
+from .. import config, guard, hors_ligne
 
 DEFAULT_EVERY_S = 60.0
 MAX_TIMEOUT_S = 60.0
@@ -189,6 +189,7 @@ def _file_changed(check: dict, _q) -> tuple[bool, dict]:
 
 
 def _url(check: dict, _q) -> tuple[bool, dict]:
+    hors_ligne.verifier("vérification d'une adresse web")  # 04/11 : le réflexe est sauté (erreur, rien déclenché)
     import httpx
 
     timeout = min(float(check.get("timeout", 15)), MAX_TIMEOUT_S)

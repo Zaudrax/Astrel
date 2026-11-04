@@ -33,6 +33,7 @@ from . import courrier
 from . import sources
 from . import gel
 from . import routeur  # 04/11 : moteur demandé expressément (local ou Claude)
+from . import hors_ligne  # 04/11 : mode « rien ne sort »
 from . import langue  # 02/11 : langue de la conversation (fr, en)
 from .attente import attente
 from . import images_ia
@@ -502,6 +503,7 @@ from .coeur.langue import LangueCoeur  # 02/11 : conversation anglaise
 from .coeur.cycle import CycleCoeur  # 04/11 (T46) : cerveau qui tombe proprement
 from .coeur.propositions import PROPOSITIONS_COMMANDS, PropositionsCoeur  # 04/11 (T49) : mémoire à valider
 from .coeur.local_tour import TourLocalCoeur  # 04/11 : moteur local (Qwen), demande forcée en local
+from .coeur.hors_ligne import HorsLigneCoeur  # 04/11 : mode « rien ne sort » (lot 2 du moteur local)
 
 
 def _erreur_auth(ev: "BrainEvent") -> bool:
@@ -532,7 +534,8 @@ def _table_commandes(*paires: tuple[Any, str]) -> dict[str, str]:
     return out
 
 class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, ConfirmationsCoeur, TachesCoeur, QuotaCoeur,
-             FiabiliteCoeur, CalibrageCoeur, LangueCoeur, CycleCoeur, PropositionsCoeur, TourLocalCoeur):
+             FiabiliteCoeur, CalibrageCoeur, LangueCoeur, CycleCoeur, PropositionsCoeur, TourLocalCoeur,
+             HorsLigneCoeur):
     # 04/11 (T58, pas 2a) : l'état du tour en cours vit dans `self.tour` (`astrel/tour.py`, champs commentés
     # là-bas) ; les anciens noms (`_turn_active`, `_hushed`, `_splitter`…) en sont des descripteurs.
     _turn_active = DuTour("active")
@@ -1351,11 +1354,15 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         if arg and fold(arg) not in ("status", "etat") and cmd.get("_from_claude") is True:
             log.warning("commande whatsapp %r refusée : elle vient de Claude", arg)
             return {"ok": False, "error": "réglage WhatsApp réservé à l'utilisateur (HUD ou terminal), refusé à Claude"}
+        if arg and fold(arg) not in ("status", "etat") and hors_ligne.actif():  # 04/11 : pont arrêté hors ligne
+            return {"ok": False, "error": f"WhatsApp : {hors_ligne.REFUS}"}
         return self.whatsapp.command(arg)
 
     def _cmd_whatsapp_file(self, name: str, cmd: dict) -> Any:
         # 17/10, outil MCP `whatsapp_send_file` : un fichier de SES dossiers, vers SON chat
         # à soi seulement (aucun destinataire ici) ; chemin vérifié par `whatsapp.file_refusal`.
+        if hors_ligne.actif():  # 04/11
+            return {"ok": False, "error": f"WhatsApp : {hors_ligne.REFUS}"}
         return self.whatsapp.send_file(str(cmd.get("path") or ""), str(cmd.get("caption") or ""))
 
     def _cmd_whatsapp_file_status(self, name: str, cmd: dict) -> Any:
@@ -1420,6 +1427,13 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         if cmd.get("_from_claude") is True:
             return {"ok": False, "error": "hud_only"}
         return {"ok": True, **memoire.top(), "memory": getattr(self, "_mem_view", None)}
+
+    def _cmd_history_query(self, name: str, cmd: dict) -> Any:
+        # 04/11 : recherche dans tous les canaux (HUD, Ctrl+K). Réservée au HUD de l'utilisateur, refusée à Claude
+        # (il a l'outil MCP history_search) ; contrôle, bornes et requête nettoyée dans `history.commande_hud`.
+        from . import history
+
+        return history.commande_hud(cmd)
 
     def _cmd_read_report(self, name: str, cmd: dict) -> Any:
         if cmd.get("_from_claude") is True:
@@ -2565,6 +2579,23 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         `joined` : pièces jointes déjà enregistrées (images en blocs, fichiers en notes).
         `held_mid` : message gardé pendant une relève (plan P9), déjà affiché et rangé sous cet id ;
         `prefix` : texte mis devant le message pour Claude seulement (liste des agents à relancer)."""
+        # 04/11 (lot 2) : « passe hors ligne » / « repasse en ligne », dit ou tapé par l'utilisateur (jamais Claude :
+        # sa commande `say` devient une source « fond »).
+        bascule = hors_ligne.commande(text) if source in ("voix", "clavier") and not held_mid else ""
+        if bascule:
+            self._hors_ligne_dit(bascule, text, source, channel)
+            return
+        if hors_ligne.actif():
+            # Mode « rien ne sort » : Claude est arrêté ; l'utilisateur parle au moteur local, le reste attend.
+            if source in _UTILISATEUR and not held_mid:
+                moteur, demande = self._moteur_force(text, channel)
+                if moteur == routeur.CLAUDE:
+                    bus.publish("notice", level="info", channel=channel,
+                                text="Mode « rien ne sort » : Claude est arrêté, je réponds avec le modèle local.")
+                self._tour_local(text, demande, source, channel, shown, joined)
+            else:
+                self._local_freeze(text, source, channel, shown, pourquoi="Mode « rien ne sort »")
+            return
         if source in _UTILISATEUR and not held_mid:
             # 04/11 (moteur local, lot 1) : « en local : … » ou canal Local : traité par Qwen sur la machine,
             # jamais envoyé à Claude (le cœur décide, `routeur.forced_engine`).
@@ -3202,7 +3233,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                         # Passé en dictée PENDANT l'écoute : la phrase est dictée, pas envoyée.
                         self._dictate(text)
                         continue
-                if self._moteur_force(text, channels.active)[0] == routeur.LOCAL:
+                if hors_ligne.actif() or self._moteur_force(text, channels.active)[0] == routeur.LOCAL:
                     log.info("UTILISATEUR (demande locale, %d caractères)", len(text))  # 04/11 : rien en clair
                 else:
                     log.info("UTILISATEUR: %s", text)
@@ -3315,6 +3346,9 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                         ", ".join(totalgate.core_changes() or ["aucune empreinte du cœur validée"])[:300])
         memory.ensure_vault()
         threading.Thread(target=self._bases_privees, name="bases-privees", daemon=True).start()
+        from . import history  # 04/11 : messages du fil indexés pour la recherche du HUD (canaux Local exclus)
+
+        history.fil.brancher(bus, exclus=channels.local_ids)
         mcp_config.write()
         reglages.publish()  # page « Réglages » du HUD (instantané pour les HUD qui se connectent)
         try:
@@ -3365,7 +3399,8 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                              "garde-fou et validation automatique des plans refusés. ./run.sh doctor --accept dans "
                              "ton terminal.")
         try:
-            self.whatsapp.start()  # plan P1 : pont lancé seulement si relié et actif
+            if not hors_ligne.actif():  # 04/11 : mode « rien ne sort » : pont relancé à la sortie du mode
+                self.whatsapp.start()  # plan P1 : pont lancé seulement si relié et actif
         except Exception:
             log.exception("WhatsApp indisponible")
         if self.speaker.paused:
@@ -3430,6 +3465,8 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         (`BOOT_FRESH_TOKENS`) → session neuve, l'amorce de la relève part avec le message suivant
         (`relief.boot_decision`) ; sinon reprise (`--resume`) comme avant. Sous `_send_lock` : un
         message arrivé pendant le démarrage attend, et part ensuite avec l'amorce."""
+        if self._hors_ligne_boot():  # 04/11 : mode « rien ne sort » retenu : aucun CLI lancé
+            return
         local = bool(self.brain.local)
         sid = "" if local else self.brain._recent_session()
         context = None
@@ -3662,6 +3699,7 @@ Astrel._COMMANDES = _table_commandes(
     (("choice_answer",), "_cmd_choice_answer"),
     (("stop_task", "task_stop"), "_cmd_stop_task"),
     (("task_detail",), "_cmd_task_detail"),
+    (("history_query",), "_cmd_history_query"),  # 04/11 : recherche du HUD, l'utilisateur seul
     (("agent_effort",), "_cmd_agent_effort"),
     (("memory_top",), "_cmd_memory_top"),
     (("read_report", "lire"), "_cmd_read_report"),

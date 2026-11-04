@@ -59,6 +59,7 @@ const ITEM_ICONS = {
   wake_legacy: "history", wake_names: "pen", // 25/10 (plan P36) : ancien mot d'éveil (alias), variantes du nom
   "audio.followup": "message", "audio.followup_s": "timer", // 20/10 : écoute prolongée après une réponse
   stt_language: "languages", confidentialite: "eye", history_keep_days: "history", donnees: "database", maj: "download",
+  hors_ligne: "shield-check", // 04/11 : mode « rien ne sort »
   "systeme.autostart": "power", "systeme.bubble": "message", "systeme.hotkeys": "keyboard", whatsapp: "smartphone",
   "browser.main_visible": "monitor", "browser.extra_visible": "eye", "browser.extra_count": "layers",
   connectors: "plug", skills: "sparkles", plugins: "puzzle",
@@ -249,6 +250,7 @@ async function send(key, value) {
   if (r?.ok === false) {
     if (!r.setting_error) { errors.set(key, tx(r.error) || t("settings.refused")); render(); }
     refresh(); // resynchroniser : la valeur optimiste n'a pas été prise
+    if (r.stop_tout) offerStopAll(r.error);
   } else if (Array.isArray(r?.groups)) {
     last = { ...r, type: "settings" };
     syncTheme(last);
@@ -271,6 +273,18 @@ function change(key, value) {
 // La page Réglages se referme d'abord.
 const hudActions = new Map();
 export function onHudAction(name, fn) { hudActions.set(String(name), fn); }
+
+// 04/11 : un réglage refusé parce qu'une tâche de Claude tourne (`stop_tout` : mode « rien ne sort ») propose
+// le VRAI « Tout arrêter » (action `estop` de main.js), puis on réactive le réglage soi-même.
+async function offerStopAll(error) {
+  const fn = hudActions.get("estop");
+  if (!fn) return;
+  const yes = await openModal({
+    title: t("settings.stop_all_title"), text: tx(error) || "", note: t("settings.stop_all_text"),
+    ok: t("estop.confirm_ok"), danger: true,
+  });
+  if (yes && (await fn())) refresh();
+}
 
 // 28/10 (plan P40 lot A5) : lignes PROPRES au HUD ajoutées au bas d'une section (Réglages › Images :
 // comptes et plafonds, dessinés par images.js d'après l'évènement `ia_etat`, pas d'après `settings`).

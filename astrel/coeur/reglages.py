@@ -13,6 +13,7 @@ import threading
 from .. import audio
 from .. import config
 from .. import fournisseurs
+from .. import hors_ligne  # 04/11 : mode « rien ne sort »
 from .. import limites
 from .. import mcp_config
 from .. import micprofile
@@ -20,7 +21,7 @@ from .. import totalgate
 from ..events import bus
 from ..plans import plans
 from ..sensors import sensors
-from ..settings import SettingError, reglages
+from ..settings import SettingError, reglages, validate
 from ..voice import available_voices
 from ..core import _mic_probe, _settings_on_sensor, _speaks, log  # aides du cœur (le paquet charge core d'abord)
 
@@ -157,6 +158,8 @@ class ReglagesCoeur:
 
     def _whatsapp_action(self, action: str, cmd: dict) -> dict:
         wa = self.whatsapp
+        if hors_ligne.actif():  # 04/11 : relier, activer, préparer parlent aux serveurs de WhatsApp
+            return {"ok": False, "error": f"WhatsApp : {hors_ligne.REFUS}"}
         if action == "prepare":
             return self._whatsapp_prepare()
         if action in ("link", "link_phone"):
@@ -328,6 +331,14 @@ class ReglagesCoeur:
                     why = fournisseurs.refus_choix(str(value or ""), self._total, self._lift)
                     if why:
                         raise SettingError(key, why)
+                if key == hors_ligne.CLE:
+                    # 04/11 (lot 2) : jamais écrit directement : le cœur vérifie (aucune tâche de Claude) et
+                    # arrête ou relance le cerveau (`coeur/hors_ligne.py`).
+                    res = self._hors_ligne_switch(bool(validate(key, value)),
+                                                  by="HUD" if cmd.get("_via") == "hud" else "terminal")
+                    if not res.get("ok"):
+                        raise SettingError(key, str(res.get("error") or "refusé"))
+                    return {**res, **reglages.publish()}
                 if key == "brain_effort" and self._effort_reason() == "ext":
                     # Plan P28 : comme `_set_model`, l'effort n'existe que pour Claude.
                     raise SettingError(key, "l'effort de réflexion ne s'applique qu'à Claude ; le cerveau "

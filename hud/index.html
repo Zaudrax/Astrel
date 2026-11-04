@@ -46,6 +46,7 @@
         <button class="chip toggle total" id="total-chip" role="switch" aria-checked="false" title="Sans confirmation : NON. Cliquer pour qu'Astrel ne te demande plus rien du tout (sauf les actions sur le garde-fou). Retombe à NON à chaque relance d'Astrel." data-i18n-title="top.total_title_off"><span class="sw"></span><i data-icon="unlock"></i><span data-i18n="top.total">Sans confirmation</span> <b class="val" data-i18n="common.no_caps">NON</b></button>
         <!-- 18/10 (plan P7) : garde-fou levé ; visible seulement tant qu'il l'est, clic = rétablir -->
         <button class="chip lift" id="lift-chip" hidden title="Garde-fou levé : Claude modifie sans question le code d'Astrel. Cliquer pour le rétablir." data-i18n-title="top.lift_title"><i data-icon="lock"></i><span data-i18n="top.lift">Garde-fou levé</span></button>
+        <button class="chip offline" id="offline-chip" hidden title="Rien ne sort : Claude est arrêté, le modèle local répond. Cliquer pour ouvrir le réglage." data-i18n-title="top.offline_title"><i data-icon="shield"></i><span data-i18n="top.offline">Hors ligne</span></button>
       </div>
       <!-- Guide (créé par guide.js) et Réglages en icône seule -->
       <div class="tgroup" role="group" aria-label="Outils" data-i18n-aria="top.tools">
@@ -145,6 +146,9 @@
   <section id="dialog">
     <div id="chat-grip" title="Tirer pour agrandir ou réduire la conversation (double-clic : taille par défaut)" data-i18n-title="chat.grip"></div>
     <nav id="channels" class="channels hidden" aria-label="Canaux" data-i18n-aria="channels.aria"></nav>
+    <!-- 04/11 : recherche dans tous les canaux (hud/src/recherche.js), au bout de la rangée des onglets ; Ctrl+K
+         l'ouvre aussi (Ctrl+F reste la recherche de Chrome dans la page). Caché en Simple. -->
+    <button id="search-btn" class="round" type="button" aria-keyshortcuts="Control+K" title="Rechercher dans tous les canaux (Ctrl+K)" aria-label="Rechercher dans les conversations" data-i18n-title="search.btn_title" data-i18n-aria="search.btn_aria"><i data-icon="search"></i></button>
     <div id="transcript"></div>
     <button id="jump-btn" class="round hidden" title="Aller en bas (derniers messages)" aria-label="Aller en bas" data-i18n-title="chat.jump_title" data-i18n-aria="chat.jump"><i data-icon="arrow-down"></i></button>
     <!-- Confirmation : une carte au-dessus de la barre, qui NE PREND PAS le clavier (14/10) -->
@@ -195,9 +199,12 @@
         </div>
         <div class="composer-actions">
           <button id="pause-btn" class="round" title="Mettre la voix en pause (Ctrl+Alt+P) : le travail continue, je reprendrai où j'en étais" aria-label="Mettre la voix en pause" data-i18n-title="pause.pause_title" data-i18n-aria="pause.pause"><i data-icon="pause"></i></button>
-          <button id="stop-btn" class="round" title="Arrêter : coupe la voix et interrompt la réponse en cours (les tâches de fond continuent : « Stop tout » pour elles)" aria-label="Arrêter" data-i18n-title="stop.title" data-i18n-aria="stop.aria"><i data-icon="stop"></i></button>
+          <!-- 04/11 : Échap fait la même chose quand aucune carte n'est affichée (main.js) -->
+          <button id="stop-btn" class="round" aria-keyshortcuts="Escape" title="Arrêter (Échap) : coupe la voix et interrompt la réponse en cours (les tâches de fond continuent : « Stop tout » pour elles)" aria-label="Arrêter" data-i18n-title="stop.title" data-i18n-aria="stop.aria"><i data-icon="stop"></i></button>
           <button id="reset-btn" class="round" title="Nouvelle conversation" aria-label="Nouvelle conversation" data-i18n-title="reset.title" data-i18n-aria="reset.title"><i data-icon="new-chat"></i></button>
           <button id="log-btn" class="round" title="Activité" aria-label="Activité" data-i18n-title="activity.title" data-i18n-aria="activity.title"><i data-icon="activity"></i></button>
+          <!-- 04/11 (« comme ChatGPT ») : Envoyer = même chemin qu'Entrée (main.js sendAsk) ; grisé si rien à envoyer -->
+          <button id="send-btn" class="round" type="button" disabled aria-keyshortcuts="Enter" title="Envoyer (Entrée)" aria-label="Envoyer (Entrée)" data-i18n-title="send.title" data-i18n-aria="send.title"><i data-icon="arrow-up"></i></button>
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 """T58 pas 1 (04/11) : `_on_command` en table nom → méthode. Ce test FIGE, avant et après le déplacement du
-code, les noms traités (146 avec open_link, 04/11) et les refus faits à Claude (message exact)."""
+code, les noms traités (147 avec history_query, 04/11) et les refus faits à Claude (message exact)."""
 from __future__ import annotations
 
 import ast
@@ -15,7 +15,7 @@ NOMS = {
     "autorisations", "calibrage_cancel", "calibrage_save", "calibrage_start", "canal", "canaux", "capacites_get",
     "channel", "channel_create", "channel_delete", "channel_edit", "channel_move", "channel_rename",
     "channel_reorder", "channels", "choice_answer", "chut", "confirm", "couper_tout", "dictation", "dictee",
-    "end_listen", "endlisten", "estop", "followup", "grants", "graph", "guide_get", "guide_mark", "hud_here",
+    "end_listen", "endlisten", "estop", "followup", "grants", "graph", "guide_get", "guide_mark", "history_query", "hud_here",
     "hud_pages", "hud_replace", "hush", "image_compte_ajouter", "image_compte_connecter", "image_compte_ordre",
     "image_compte_renommer", "image_compte_retirer", "image_generate", "image_piece", "image_retry", "image_status",
     "initiative", "interrupt", "lire", "local", "local_off", "local_on", "media_open", "media_playing", "open_link",
@@ -54,6 +54,7 @@ REFUS = {
     "audit_get": "journal d'audit réservé à l'utilisateur (HUD ou terminal), refusé à Claude",
     "guide_mark": "guide réservé à la personne devant l'écran, refusé à Claude",
     "capacites_get": "page des capacités réservée à la personne devant l'écran, refusée à Claude",
+    "history_query": "history_query est réservé au HUD de l'utilisateur",  # 04/11 : recherche du HUD
 }
 
 

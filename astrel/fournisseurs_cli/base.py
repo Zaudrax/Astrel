@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 
-from .. import config
+from .. import config, hors_ligne
 from ..platform import enfants, systeme
 
 log = logging.getLogger("astrel.fournisseurs_cli")
@@ -704,6 +704,9 @@ class SessionCli:
         """Un process. Faux seulement si une REPRISE échoue avant toute sortie parce que la
         conversation du CLI est introuvable (à refaire à neuf) ; toute autre panne est rendue."""
         etat = EtatTour()
+        if hors_ligne.actif():  # 04/11 : Codex, Grok Build parlent à leur service
+            self._sortir(ev_fin(etat, f"{self.f.nom} : {hors_ligne.REFUS}."), etat)
+            return True
         try:
             verifier_modele(self.modele)
             cmd = self.f.commande(prompt, cli_id, self.modele, self.mode, images)

@@ -50,6 +50,7 @@ from astrel.channels import channels  # noqa: E402
 from astrel.choices import choices  # noqa: E402
 from astrel.events import bus  # noqa: E402
 from astrel.graph import graph  # noqa: E402
+from astrel import history  # noqa: E402  (04/11 : recherche dans tous les canaux, index jetable)
 from astrel.icones import for_name as icon_for  # noqa: E402
 from astrel.reports import reports  # noqa: E402
 from astrel.sensors import sensors  # noqa: E402
@@ -210,6 +211,18 @@ LINKS_DEMO = """Voici les liens :
 https://bloc.example/jamais
 ```
 Et http://pas-https.example reste du texte."""
+
+# 04/11 (demande : chemins de fichiers cliquables) : « démo chemins » ; un clic COPIE, rien ne s'ouvre ; jamais
+# dans un bloc ```, ni une date, une fraction, « et/ou » ou une adresse.
+PATHS_DEMO = r"""Voici les fichiers :
+- le script /home/user/Projets/exemple/run.sh, à relancer ;
+- ta note ~/Documents/Notes/courses.md (et C:\Users\l'utilisateur\Bureau\devis.pdf sous Windows).
+- en code : `/data/Mes documents/Note de frais.pdf` et `python3 /tmp/astrel-demo/a.py`
+- pas des chemins : le 04/11/2026, et/ou, 1/2, https://example.org/a/b
+
+```
+cat /etc/hosts /data/jamais/dans-un-bloc.txt
+```"""
 
 
 def stream_markdown(channel: str, reply_to: str, text: str = MARKDOWN_DEMO) -> None:
@@ -871,6 +884,8 @@ class DemoSettings:
         self.groups[voix]["items"].insert(-1, _from_core(
             "reports", "demande", choices=[{"value": v, "label": lbl} for v, lbl in _ITEMS["reports"].choices]))
         gf["items"].insert(len(gf["items"]) - 1, _from_core("mission"))
+        # 04/11 (lot 2 du moteur local) : « Rien ne sort » ; la démo n'a pas de section Confidentialité
+        gf["items"].append(_from_core("hors_ligne", False))
         app = next(i for i, g in enumerate(self.groups) if g["id"] == "apparence")
         self.groups.insert(app + 1, {"id": "systeme", "title": "Système", "items": [_from_core("systeme.eteindre")]})
         # 28/10 (plan P40 lot A5) : Réglages › Images, mêmes réglages et mêmes choix que astrel/settings.py
@@ -1118,6 +1133,12 @@ class DemoSettings:
             bus.publish("notice", level="warning", text=text, setting_error={"key": key, "message": text})
             self.publish()
             return {"ok": False, "error": text}
+        if key == "hors_ligne" and value is True:
+            # 04/11 : la démo a toujours un agent de fond qui tourne → refus avec « Tout arrêter » proposé ;
+            # même texte que astrel/coeur/hors_ligne.OCCUPE (catalogue anglais astrel/locales/en.json)
+            occupe = ("{pourquoi} : rien n'est coupé. Arrête-la d'abord (« ⛔ Stop tout » en haut du HUD), "
+                      "puis réessaie.")
+            return {"ok": False, "stop_tout": True, "error": occupe.format(pourquoi="une tâche de fond de Claude tourne")}
         if item["kind"] == "int":
             value = int(value)
         if item["kind"] == "text":
@@ -1448,6 +1469,23 @@ def main() -> int:
     media_log: list[dict] = []  # boutons des cartes de médias (jamais d'application ouverte en démo)
     link_log: list[dict] = []  # 04/11 : liens du fil cliqués (jamais de navigateur ouvert en démo)
     link_fail = {"on": False}  # tests du HUD : le cœur refuse, le HUD se replie sur son propre onglet
+    live: dict = {}  # 04/11 : réponse en cours d'écriture (`demo_answering`), close par `stop` (■, Échap)
+    stop_log: list[dict] = []  # 04/11 : commandes `stop` reçues (contrôles du HUD : Échap = ■)
+
+    def demo_recherche() -> dict:
+        """04/11 : des messages « Sirius » dans deux canaux (affichés, indexés par `history.fil` comme ceux du
+        cœur), un plus ancien qui n'est plus dans le fil du HUD (index seul), et les archives (transcriptions
+        jetables d'avant le fil, écrites au démarrage)."""
+        autre = next((c.id for c in channels.items() if c.id != channels.default), channels.default)
+        for ch, ask, answer in ((channels.default, "Quand passe la comète Sirius ?", "La comète **Sirius** passe le 12."),
+                                (autre, "Réserve le gîte près de l'observatoire Sirius", "Gîte réservé près de Sirius.")):
+            mid = uuid.uuid4().hex[:12]
+            bus.publish("transcript", who="user", text=ask, source="clavier", channel=ch, mid=mid)
+            bus.publish("reply", text=answer, usage={}, channel=ch, reply_to=mid, mid=uuid.uuid4().hex[:12])
+        # contenu d'une conversation (français voulu, pas un texte d'écran à traduire)
+        history.fil_ecrire([dict(type="reply", text="Ancienne note sur Sirius, sortie du fil affiché.", channel=autre,
+                                 mid="ancien-sirius", ts=time.time() - 86400)])
+        return {"ok": True, "autre": autre}
     staged: list[dict] = []  # pièces jointes en attente déposées par le HUD (16/10)
     last_sent: list[str] = []  # id des pièces parties avec la dernière phrase dite (`demo_voice`)
 
@@ -1630,6 +1668,9 @@ def main() -> int:
             if text.strip().lower() in ("démo liens", "demo liens"):
                 threading.Thread(target=stream_markdown, args=(channel, mid, LINKS_DEMO), daemon=True).start()
                 return {"ok": True}
+            if text.strip().lower() in ("démo chemins", "demo chemins"):  # 04/11 : chemins copiés d'un clic
+                threading.Thread(target=stream_markdown, args=(channel, mid, PATHS_DEMO), daemon=True).start()
+                return {"ok": True}
             bus.publish("reply", text=f"(démo) Reçu dans le canal {channel}.", usage={}, channel=channel,
                         reply_to=mid, mid=uuid.uuid4().hex[:12])
             return {"ok": True}
@@ -1681,6 +1722,25 @@ def main() -> int:
                 return {"ok": False, "error": f"commande inconnue : {name}"}
             ok = cmd.get("_via") == "hud" and lien_ouvrable(cmd.get("url")) is not None
             return {"ok": True} if ok else {"ok": False, "error": "lien refusé : seules les adresses https:// s'ouvrent"}
+        elif cmd.get("cmd") == "history_query":  # 04/11 : recherche (Ctrl+K), la VRAIE commande, index jetable
+            return history.commande_hud(cmd)
+        elif cmd.get("cmd") == "demo_recherche":  # tests du HUD : messages « Sirius » dans plusieurs canaux
+            return demo_recherche()
+        elif cmd.get("cmd") == "demo_answering":  # tests du HUD : une réponse en cours d'écriture (Échap = ■)
+            live["channel"] = str(cmd.get("channel") or channels.default)
+            bus.publish("state", state="thinking", text="", muted=False, detail="")
+            bus.publish("reply_delta", text="Je cherche les horaires du train… ", channel=live["channel"], reply_to="")
+            return {"ok": True}
+        elif cmd.get("cmd") == "stop":  # ■ et Échap (04/11) : comme le cœur, la réponse en cours s'arrête
+            stop_log.append({"via": cmd.get("_via"), "ts": time.time()})
+            ch = live.pop("channel", None)
+            if ch is not None:
+                bus.publish("reply", text="Je cherche les horaires du train…", usage={}, channel=ch,
+                            reply_to="", mid=uuid.uuid4().hex[:12])
+            bus.publish("state", state="sleeping", text="", muted=False, detail="")
+            return {"ok": True}
+        elif cmd.get("cmd") == "demo_stop_log":
+            return {"ok": True, "items": list(stop_log)}
         elif cmd.get("cmd") == "demo_link_log":  # tests du HUD : liens demandés, et refus simulé (`fail`)
             if "fail" in cmd:
                 link_fail["on"] = bool(cmd.get("fail"))
@@ -1867,6 +1927,17 @@ def main() -> int:
     config.REPORTS_FILE = scratch / "reports.txt"
     config.MISSION_FILE = scratch / "mission.json"  # jamais runtime/mission.json (lu par le hook)
     config.PLANS_DIR = scratch / "plans"  # jamais runtime/plans (ce que lit le codeur)
+    # 04/11 : recherche (Ctrl+K) sur un index JETABLE : jamais runtime/history.db ni les transcriptions de la
+    # machine ; archives = une transcription d'exemple d'avant le fil.
+    config.HISTORY_DB = scratch / "history.db"
+    config.TRANSCRIPTS_DIR = scratch / "transcripts"
+    config.TRANSCRIPTS_DIR.mkdir()
+    (config.TRANSCRIPTS_DIR / "demo.jsonl").write_text(json.dumps(
+        {"type": "user", "sessionId": "demo",  # deux jours avant le fil : gardé par `history_keep_days` (réglage de la machine)
+         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 2 * 86400)),
+         "message": {"role": "user", "content": "On regardera Sirius au télescope cet été."}}, ensure_ascii=False) + "\n",
+        encoding="utf-8")
+    history.fil.brancher(bus, exclus=channels.local_ids)
     bus.set_command_handler(on_command)
     srv.start()
     channels.publish()

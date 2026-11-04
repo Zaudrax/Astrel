@@ -219,6 +219,9 @@ class Speaker:
     # --- parole ---
 
     def say(self, text: str, raw: bool = False, tag: str = "", local_only: bool = False) -> None:
+        from .. import hors_ligne
+
+        local_only = local_only or hors_ligne.actif()  # 04/11 : mode « rien ne sort » : Piper pour TOUT
         payload = text.strip() if raw else clean_for_speech(text)
         if not payload or (tag and tag in self._cancelled):
             return

@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from . import config, ia_web
+from . import config, hors_ligne, ia_web
 from .platform import systeme
 
 log = logging.getLogger("astrel.ia_connexion")
@@ -208,6 +208,8 @@ def ouvrir(alias: str, *, lanceur: Callable[..., Any] = subprocess.Popen) -> dic
     """Ouvre la fenêtre de connexion du compte `alias` (déclaré dans comptes.json). Rend
     {ok, code, alias, deja?} ; codes d'échec : inconnu | occupe | absent | url | erreur."""
     alias = str(alias or "").strip().lower()
+    if hors_ligne.actif():  # 04/11 : la connexion ouvre le site du compte
+        return {"ok": False, "code": "erreur", "alias": alias, "error": hors_ligne.REFUS}
     compte = next((c for c in ia_web.comptes() if c["alias"] == alias), None)
     if compte is None:
         return {"ok": False, "code": "inconnu", "alias": alias}

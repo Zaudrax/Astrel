@@ -21,6 +21,7 @@ import uuid
 
 from .. import config
 from .. import cycle_cerveau
+from .. import hors_ligne  # 04/11 : mode « rien ne sort »
 from ..attente import attente
 from ..cycle_cerveau import ABSENT, AUTH, OK, CycleCerveau
 from ..events import bus
@@ -49,6 +50,8 @@ class CycleCoeur:
 
     def _cerveau_tombe(self, ev=None, *, annoncer: bool = True, vecu_s: float | None = None) -> None:
         """Process du cerveau mort (ou lancement raté) : relance programmée, recul croissant."""
+        if hors_ligne.actif():  # 04/11 : cerveau arrêté exprès (mode « rien ne sort ») : rien à relancer
+            return
         data = getattr(ev, "data", None) or {}
         if data.get("auth"):
             self._cerveau_auth("refusée")
@@ -80,6 +83,8 @@ class CycleCoeur:
 
     def _cerveau_lancer(self, fresh: bool = False) -> bool:
         """Relance par le cycle (minuteur, sonde) : sous le verrou d'envoi, puis les messages gardés partent."""
+        if hors_ligne.actif():  # 04/11
+            return False
         try:
             with getattr(self, "_send_lock", None) or contextlib.nullcontext():
                 self.brain.restart(fresh=fresh)
@@ -99,11 +104,15 @@ class CycleCoeur:
         """Relance MANUELLE (session neuve, modèle, effort, réglages, mode léger) : appelée sous les verrous de
         l'appelant ; périme les relances programmées. Les messages gardés partent au tic suivant."""
         self._cycle.annuler()
+        if hors_ligne.actif():  # 04/11 : modèle, effort, réglages changés hors ligne : pris au retour en ligne
+            return
         self.brain.restart(fresh=fresh)
         self._cycle.reparti()
 
     def _cerveau_demarrer(self, fresh: bool = False) -> bool:
         """Premier démarrage (`_boot_brain`, sous `_send_lock`) : un lancement raté ne casse plus le démarrage."""
+        if hors_ligne.actif():  # 04/11
+            return False
         try:
             self.brain.start(fresh=fresh)
         except FileNotFoundError:

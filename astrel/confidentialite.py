@@ -1,6 +1,6 @@
 """Confidentialité et données (17/10, plan P4, lot 6 : page « Réglages »).
 
-- Ce qui part de la machine, dit en clair (texte fixe).
+- Ce qui part de la machine, dit en clair (04/11 : tiré de l'inventaire `hors_ligne.SORTIES`).
 - Effacer l'historique : vide l'index `runtime/history.db` (`history.clear`). Les
   transcriptions de Claude Code (`~/.claude/projects`) restent : c'est à Claude Code.
 - Effacer la mémoire : TOUT le coffre (`vault/`), après un instantané
@@ -25,26 +25,28 @@ log = logging.getLogger("astrel.confidentialite")
 
 WORD = "EFFACER"
 
-WHAT_LEAVES = (
-    {"label": "Vers Claude (Anthropic)", "level": "info",
-     "text": "tes messages, dits ou tapés, et ce qu'Astrel lit pour y répondre (fichiers, pages, captures "
-             "d'écran demandées), par Claude Code, sur ton abonnement"},
-    {"label": "Vers Microsoft (voix Edge)", "level": "info",
-     "text": "le texte qu'Astrel dit à voix haute ; la voix locale de secours ne fait rien partir"},
-    {"label": "Reste sur la machine", "level": "ok",
-     "text": "le son du micro (reconnu sur place), la mémoire (vault/), l'index de l'historique "
-             "(runtime/history.db), les réglages"},
-    {"label": "Seulement si tu les branches", "level": "info",
-     "text": "connecteurs (agenda, Gmail…) et WhatsApp : chacun parle à son service"},
-    {"label": "Vers context7 (agent codeur)", "level": "info",
-     "text": "le nom d'une bibliothèque et la question de documentation du codeur (couper : « off » dans runtime/context7.txt)"},
-    {"label": "Gardé par Claude Code", "level": "warn",
-     "text": "ses propres transcriptions (~/.claude/projects) : « Effacer l'historique » n'y touche pas"},
-)
+def _lignes() -> tuple[dict, ...]:
+    """04/11 (lot 2 du moteur local) : tirées de l'inventaire `hors_ligne.SORTIES` (le test d'inventaire
+    vérifie que chaque module qui sort y est coupé) : la page ne peut plus en oublier."""
+    from . import hors_ligne
+
+    lignes = [{"label": titre, "level": "info", "text": quoi} for titre, quoi, _modules, _coupe in hors_ligne.SORTIES]
+    lignes.append({"label": "Reste sur la machine", "level": "ok", "text": hors_ligne.RESTE})
+    lignes.append({"label": "Gardé par Claude Code", "level": "warn", "text": hors_ligne.GARDE_PAR_CLAUDE})
+    return tuple(lignes)
+
+
+WHAT_LEAVES = _lignes()
 
 
 def view() -> dict:
-    return {"value": {"lines": [dict(line) for line in WHAT_LEAVES]}, "actions": []}
+    from . import hors_ligne
+
+    lignes = [dict(line) for line in WHAT_LEAVES]
+    if hors_ligne.actif():  # 04/11 : ce qui est coupé maintenant
+        lignes.insert(0, {"label": "Rien ne sort", "level": "ok",
+                          "text": "mode actif : tout ce qui suit est coupé ; le modèle local répond, la voix est Piper"})
+    return {"value": {"lines": lignes}, "actions": []}
 
 
 def data_view() -> dict:

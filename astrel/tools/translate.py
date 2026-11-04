@@ -17,6 +17,7 @@ import unicodedata
 import httpx
 
 from . import connector
+from .. import hors_ligne
 
 NAME = "Traduction DeepL"
 MAX_CHARS = 5000
@@ -61,6 +62,7 @@ def endpoint(key: str) -> str:
 
 
 def _post(path: str, payload: dict | None = None, method: str = "POST") -> dict:
+    hors_ligne.verifier("traduction (DeepL)")  # 04/11
     key = connector.settings(NAME)["DEEPL_API_KEY"]
     try:
         with httpx.Client(timeout=connector.TIMEOUT_S) as client:

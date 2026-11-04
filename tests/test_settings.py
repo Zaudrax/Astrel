@@ -19,7 +19,7 @@ LIVE = {"audio.mic", "audio.voice", "audio.wake", "audio.output", "audio.followu
 CONTRACT_KEYS = {"compte", "demarrage", "diagnostic", *LIVE, "audio.test", "stt_language",
                  "audio.calibrage",  # 02/11 : assistant de calibrage du micro (bouton du HUD)
                  "conversation_language",  # 02/11 : conversation anglaise (astrel/langue.py)
-                 "confidentialite", "history_keep_days", "donnees", "maj", "whatsapp", "browser.main_visible", "browser.extra_visible", "browser.extra_count",
+                 "hors_ligne", "confidentialite", "history_keep_days", "donnees", "maj", "whatsapp", "browser.main_visible", "browser.extra_visible", "browser.extra_count",
                  "images_mode", "images_ordre", "images_manuel", "video_choix", "connectors", "skills",
                  "plugins", "agent_alert_tokens", "agent_alert_s", "session_idle_reset_s",
                  "context_relief_tokens", "quota_alert_pct", "brain_effort", "plan_mode", "rappel",

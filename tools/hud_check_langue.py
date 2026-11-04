@@ -35,7 +35,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
-from hud_check_rendu import Page  # noqa: E402  (même pilote DevTools)
+from hud_check_rendu import ASK_DEMO_JS, Page  # noqa: E402  (même pilote DevTools)
 
 PORT = 4798
 CDP_PORT = 9338
@@ -50,6 +50,7 @@ CONTENT = ", ".join((
     ".att-name", ".report-file", ".wa-code", "#mission-banner-info", ".choice-btn",
     "pre", "code", ".setting-block",
     ".ad-data",  # 21/10 (plan P18) : détail d'agent, consigne, actions, erreurs, passation
+    ".search-extrait", ".search-group-name",  # 04/11 : recherche, extraits des messages et noms des canaux
     # 23/10 (plan P22) : page des capacités, NOMS qui sont des identifiants ou du contenu : phrases vocales
     # (françaises exprès), règles de réflexe écrites par l'utilisateur, noms d'agents et de skills.
     ".cap-group:is([data-group=voix], [data-group=reflexes], [data-group=agents], [data-group=skills]) .cap-nom",
@@ -275,6 +276,71 @@ async def liens_en(p: Page) -> None:
     await asyncio.sleep(0.2)
 
 
+async def chat_lot2_en(p: Page) -> None:
+    """04/11 (chat, lot 2) en anglais : chemin copié d'un clic (titre, toast), ■ et Échap (titre, toast), recherche
+    dans tous les canaux (bouton, fenêtre, état, groupes, archives, note d'un message sorti du fil)."""
+    ask_demo = lambda cmd, **a: p.js(f"{ASK_DEMO_JS}({json.dumps(cmd)}, {json.dumps(a)})")
+    await p.js("navigator.clipboard.writeText = async () => {}; document.querySelectorAll('.toast').forEach(t => t.remove()), true")
+    chan = await p.js("document.querySelector('.channel-tab.on')?.dataset.chan || 'general'")
+    await p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': 'say', 'text': 'démo chemins', 'channel': chan}))}), true")
+    md = "[...document.querySelectorAll('.msg.astrel:not(.live) .md')].filter(m => m.textContent.startsWith('Voici les fichiers')).at(-1)"
+    ok = await p.until(f"!!{md}?.querySelector('.md-path')", 10)
+    r = await p.js(f"""(() => {{ const e = {md}.querySelector('.md-path'); e.click();
+        return {{ title: e.title, desc: e.getAttribute('aria-description'), text: e.textContent }}; }})()""") if ok else {}
+    toast = await p.until("[...document.querySelectorAll('.toast')].some(t => t.textContent.startsWith('Path copied: /data/'))", 4)
+    check(f"chemin en anglais : « {r.get('title')} », « {r.get('desc')} », toast « Path copied » ({toast})",
+          ok and r["title"] == "Copy this path (click, or Enter on the keyboard)" and r["desc"] == "copies the path, opens nothing"
+          and toast)
+    stop = await p.js("({ title: document.querySelector('#stop-btn').title, keys: document.querySelector('#stop-btn').getAttribute('aria-keyshortcuts') })")
+    send = await p.js("({ title: document.querySelector('#send-btn').title, aria: document.querySelector('#send-btn').getAttribute('aria-label') })")
+    check(f"bouton Envoyer en anglais : « {send['title']} »", send == {"title": "Send (Enter)", "aria": "Send (Enter)"})
+    # carte de confirmation de la séquence de la démo (posée juste après sa réponse) : « Non » (Échap y vaut « Non »)
+    if await p.until("!document.querySelector('#confirm').classList.contains('hidden')", 4):
+        await click(p, "#confirm-no")
+        await p.until("document.querySelector('#confirm').classList.contains('hidden')", 3)
+    # question à choix laissée en attente par la démo : répondue dans la page seule (sinon Échap lui revient, voulu)
+    await p.js("""[...document.querySelectorAll('.msg.choice:not(.answered):not(.cancelled) .choice-question')].forEach(q =>
+        window.__ws.onmessage({ data: JSON.stringify({ type: 'choice_answered', id: q.id.replace(/^choice-q-/, ''), value: '-' }) })), true""")
+    await ask_demo("demo_answering")
+    await p.until("!!document.querySelector('.msg.astrel.live')", 4)
+    await p.js("document.activeElement?.blur(), true")
+    # panneau Activité ouvert par un contrôle précédent : Échap le fermerait d'abord (voulu, contrôlé dans hud_check_rendu)
+    await p.js("document.querySelector('#activity').classList.add('hidden'), true")
+    await p.key("Escape", vk=27)
+    esc = await p.until("[...document.querySelectorAll('.toast')].some(t => t.textContent === 'Answer stopped (Esc).')", 4)
+    check(f"■ et Échap en anglais : « {stop['title'][:30]}… », toast « Answer stopped (Esc). » ({esc})",
+          stop["title"].startswith("Stop (Esc): ") and stop["keys"] == "Escape" and esc)
+    await ask_demo("demo_recherche")
+    await asyncio.sleep(0.6)
+    btn = await p.js("({ title: document.querySelector('#search-btn').title, aria: document.querySelector('#search-btn').getAttribute('aria-label') })")
+    await click(p, "#search-btn")
+    opened = await p.until("!!document.querySelector('.modal.search-panel .search-input')", 4)
+    await p.js("document.querySelector('.search-panel .search-input').focus(), true")
+    await p.send("Input.insertText", text="sirius")
+    got = await p.until("!!document.querySelector('.search-panel .search-group.archive')", 6)
+    v = await p.js("""(() => { const m = document.querySelector('.search-panel');
+        return { title: m.querySelector('.modal-title').textContent, ph: m.querySelector('.search-input').placeholder,
+                 status: m.querySelector('.search-status').textContent,
+                 archive: m.querySelector('.search-group.archive .search-group-head').textContent,
+                 who: [...new Set([...m.querySelectorAll('.search-who')].map(e => e.textContent))],
+                 n: m.querySelector('.search-group-n')?.textContent || '' }; })()""") if got else {}
+    check(f"recherche en anglais : bouton « {btn['title']} », fenêtre « {v.get('title')} », « {v.get('status')} », "
+          f"« {v.get('archive')} », {v.get('who')}",
+          opened and got and btn["title"] == "Search all channels (Ctrl+K)" and btn["aria"] == "Search the conversations"
+          and v["title"] == "Search the conversations" and v["ph"].startswith("One or more words")
+          and v["status"].endswith("messages found") and v["archive"].startswith("Before ") and "You" in v["who"]
+          and v["n"].endswith("messages"))
+    await p.js("""[...document.querySelectorAll('.search-panel button.search-hit')]
+        .find(b => b.textContent.includes('Ancienne note'))?.click(), true""")
+    note = await p.until("[...document.querySelectorAll('.search-panel .search-note')].some(n => !n.classList.contains('hidden') "
+                         "&& n.textContent.startsWith('This message is no longer in the displayed thread'))", 3)
+    check("recherche en anglais : note d'un message sorti du fil, bouton « Open the … channel »", note and await p.js(
+        "[...document.querySelectorAll('.search-panel .search-open')].some(b => /^Open the .+ channel$/.test(b.textContent))"))
+    await scan(p, "chemins, Échap, recherche")
+    await p.shot("apres-en-recherche.png")
+    await close_panel(p)
+
+
 async def run(url: str) -> None:
     targets = json.load(urllib.request.urlopen(f"http://127.0.0.1:{CDP_PORT}/json"))
     ws_url = next(t["webSocketDebuggerUrl"] for t in targets if t["type"] == "page")
@@ -343,6 +409,7 @@ async def run(url: str) -> None:
         await scan(p, "HUD (barre, panneaux, fil)")
         await p.shot("apres-en-hud.png")
         await liens_en(p)  # 04/11 : liens du fil, Copier, bouton ↓
+        await chat_lot2_en(p)  # 04/11 : chemins copiés, Échap = ■, recherche dans tous les canaux
         await p.js("document.querySelector('#activity').classList.add('hidden')")
         # 28/10 (plan P40 lot A5) : panneau « Images » sous la barre, en Auto puis en Manuel
         await click(p, "#images-btn")

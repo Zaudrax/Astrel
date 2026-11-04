@@ -25,7 +25,7 @@ import threading
 import time
 from typing import Any, Callable
 
-from . import config
+from . import config, hors_ligne
 from .platform import systeme
 
 log = logging.getLogger("astrel.compte")
@@ -76,6 +76,8 @@ class Compte:
 
     def refresh(self, wait: bool = False) -> None:
         """Relit l'état dans un fil à part (un seul à la fois), puis prévient `on_change`."""
+        if hors_ligne.actif():  # 04/11 : `claude auth status` peut rafraîchir le jeton chez Anthropic
+            return
         with self._lock:
             if self._refreshing:
                 return
@@ -189,6 +191,8 @@ class Compte:
         return {"ok": False, "error": f"action inconnue : {action or '(vide)'}"}
 
     def login(self) -> dict:
+        if hors_ligne.actif():  # 04/11 : la connexion passe par claude.ai
+            return {"ok": False, "error": f"connexion impossible : {hors_ligne.REFUS}"}
         with self._lock:
             if self._login is not None:
                 return {"ok": False, "error": "une connexion est déjà en cours"}

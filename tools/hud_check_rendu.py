@@ -505,9 +505,11 @@ async def run(url):
         await check_plans(p)
         await check_audit(p)
         await check_propositions(p)  # 04/11 (T49)
+        await check_hors_ligne(p)  # 04/11 (lot 2 du moteur local)
         await check_barre_du_haut(p)  # 19/10
         await check_mise_en_page(p)
         await check_composer(p)  # 19/10
+        await check_bouton_envoyer(p)  # 04/11 : bouton « Envoyer » (↑), même chemin qu'Entrée
         await check_icones(p)
         await check_fil_coupures_pieces(p)
         await check_messages_non_envoyes(p)
@@ -522,6 +524,7 @@ async def run(url):
         await check_images_ia(p)  # 21/10 (plan P14)
         await check_medias(p)  # 22/10 (plan P26)
         await check_liens_et_barre(p)  # 04/11 : liens cliquables, Copier, ↑, « / », point du bouton ↓
+        await check_recherche_chemins_echap(p)  # 04/11 : chemins copiés, Échap = ■, recherche Ctrl+K
         await check_moteur_local(p)  # 04/11 : badge « Local », réponse locale à côté de celle de Claude
         await check_sans_graphe(p)  # 23/10 (plan P28) : graphe 3D, Recadrer, Orbite retirés
         await check_affichage_simple(p)  # 22/10 (plan P23, lots A et B) : recharge la page
@@ -2185,6 +2188,15 @@ async def check_affichage_simple(p: Page) -> None:
     await asyncio.sleep(0.2)
     check("P23 Simple : Alt+2 ne change pas de canal",
           await p.js("document.querySelector('.channel-tab.on')?.dataset.chan") == "general")
+    # 04/11 : recherche dans tous les canaux : ni bouton loupe ni Ctrl+K en Simple (noms de projets cachés)
+    loupe = await p.js("document.querySelector('#search-btn').getClientRects().length")
+    for kind in ("keyDown", "keyUp"):
+        await p.send("Input.dispatchKeyEvent", type=kind, key="k", code="KeyK", windowsVirtualKeyCode=75, modifiers=2)
+    await asyncio.sleep(0.3)
+    check(f"P23 Simple : ni bouton loupe ({loupe}) ni Ctrl+K pour la recherche",
+          loupe == 0 and await p.js("!document.querySelector('.modal.search-panel')"))
+    check("P23 Simple : bouton « Envoyer » visible au bout de la barre",
+          await p.js("document.querySelector('#send-btn').getClientRects().length > 0"))
     await p.js("document.querySelectorAll('.toast').forEach(t => t.remove()), true")
     for w2, h2 in ((1280, 800), (1600, 1000)):
         await p.send("Emulation.setDeviceMetricsOverride", width=w2, height=h2, deviceScaleFactor=1, mobile=False)
@@ -2308,6 +2320,53 @@ async def check_affichage_simple(p: Page) -> None:
     await demo("settings_action", key="garde_fou_levee", action="retablir")
     await demo("demo_memory", state="ok")
     await asyncio.sleep(0.3)
+
+
+async def check_hors_ligne(p: Page) -> None:
+    """04/11 (lot 2 du moteur local) : mode « rien ne sort » : pastille « Hors ligne » en haut quand le cœur
+    l'annonce (évènement `model`, `offline`), visible en Avancé ET en Simple (la sécurité n'est jamais cachée),
+    cachée au retour en ligne ; un clic ouvre le réglage."""
+    vu = """(() => { const c = document.querySelector('#offline-chip');
+        return { hidden: c.hidden, shown: c.getClientRects().length > 0, text: c.innerText.trim(),
+                 badge: document.querySelector('#model-badge').innerText.trim() }; })()"""
+    avant = await p.js(vu)
+    await fake_event(p, {"type": "model", "active": "sonnet", "label": "Hors ligne · qwen3.5:9b", "id": "qwen3.5:9b",
+                         "offline": True})
+    avance = await p.js(vu)
+    simple = await p.js("""(() => { const h = document.documentElement, was = h.dataset.affichage;
+        h.dataset.affichage = 'simple'; const c = document.querySelector('#offline-chip');
+        const r = c.getClientRects().length > 0; if (was === undefined) delete h.dataset.affichage; else h.dataset.affichage = was;
+        return r; })()""")
+    check(f"hors ligne : pastille « {avance['text']} » affichée (Avancé, Simple : {simple}), badge « {avance['badge']} »",
+          avant["hidden"] and not avance["hidden"] and avance["shown"] and simple
+          and avance["text"] == "Hors ligne" and avance["badge"].startswith("Hors ligne"))
+    await p.js("document.querySelector('#offline-chip').click(), true")
+    ouvert = await p.until("!!document.querySelector('.modal.wide .setting[data-key=\"hors_ligne\"]')", 3)
+    await p.js("document.querySelector('.modal.wide .modal-x')?.click(), true")  # fermée comme l'utilisateur (état du module)
+    await p.until("!document.querySelector('.modal-back')", 2)
+    await fake_event(p, {"type": "model", "active": "sonnet", "label": "Sonnet", "id": ""})
+    retour = await p.js(vu)
+    check(f"hors ligne : un clic ouvre le réglage ({ouvert}), pastille cachée au retour en ligne", ouvert and retour["hidden"])
+    # 04/11 : activé pendant une tâche de Claude → refus, et le VRAI « Tout arrêter » proposé (commande estop)
+    # (réglage rouvert par la pastille, comme l'utilisateur : la page s'ouvre sur la ligne « Rien ne sort »)
+    await fake_event(p, {"type": "model", "active": "sonnet", "label": "Hors ligne · qwen3.5:9b", "id": "qwen3.5:9b",
+                         "offline": True})
+    await p.js("document.querySelector('#offline-chip').click(), true")
+    await p.until("!!document.querySelector('.modal.wide [data-fkey=\"hors_ligne\"]')", 3)
+    n_estop = await p.js("window.__sent.filter(m => m.cmd === 'estop').length")
+    await p.js("(() => { const i = document.querySelector('.modal.wide [data-fkey=\"hors_ligne\"]');"
+               " i.scrollIntoView({block: 'center'}); i.click(); return true; })()")
+    offre = await p.until("[...document.querySelectorAll('.modal.danger')].some(m => "
+                          "m.querySelector('.modal-ok')?.textContent.trim() === 'Tout arrêter')", 3)
+    titre = await p.js("document.querySelector('.modal.danger h2, .modal.danger .modal-title')?.textContent.trim() || ''")
+    await p.js("document.querySelector('.modal.danger .modal-ok').click(), true")
+    envoye = await p.until(f"window.__sent.filter(m => m.cmd === 'estop' && m.mode === 'on').length > {n_estop}", 3)
+    check(f"hors ligne refusé pendant une tâche : « {titre} », bouton « Tout arrêter » ({offre}) → estop envoyé ({envoye})",
+          offre and envoye and titre == "Une tâche de Claude tourne")
+    await p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': 'estop', 'mode': 'off'}))})")  # démo remise en route
+    await asyncio.sleep(0.3)
+    await p.js("document.querySelectorAll('.modal-back .modal-x, .modal-back .modal-cancel').forEach(b => b.click()), true")  # vraie fermeture : retirer la fenêtre laisserait son écouteur clavier (Entrée, Échap bloqués)
+    await fake_event(p, {"type": "model", "active": "sonnet", "label": "Sonnet", "id": ""})
 
 
 async def fake_event(p: Page, ev: dict) -> None:
@@ -4041,7 +4100,8 @@ COMPOSER_JS = """(() => {
     const q = (s) => document.querySelector(s), comp = q('#composer'), row = q('#composer .composer-row');
     const c = box(comp), parts = [...row.querySelectorAll('.round, #usage')].map(box);
     const tools = box(q('#composer .composer-tools')), acts = box(q('#composer .composer-actions'));
-    const shown = [...q('#dialog').children].filter(e => e.id !== 'jump-btn' && getComputedStyle(e).display !== 'none'
+    // boutons flottants (↓, recherche du 04/11) : posés sur le fil exprès, hors de l'empilement mesuré
+    const shown = [...q('#dialog').children].filter(e => !['jump-btn', 'search-btn'].includes(e.id) && getComputedStyle(e).display !== 'none'
                                                     && e.getBoundingClientRect().height > 0).map(e => [e.id, box(e)]);
     let covered = 0;
     for (let i = 1; i < shown.length; i++) if (shown[i - 1][1].b > shown[i][1].t + 0.5) covered++;
@@ -4054,6 +4114,77 @@ COMPOSER_JS = """(() => {
              order: shown.map(s => s[0]).join('>'), covered,
              label: label ? getComputedStyle(label).display !== 'none' : null };
 })()"""
+
+
+async def check_bouton_envoyer(p: Page) -> None:
+    """04/11 (l'utilisateur, « comme ChatGPT ») : bouton « Envoyer » (↑) au bout de la rangée de la barre : grisé et non
+    cliquable si la barre est vide (ou d'espaces), actif avec du texte ; un clic envoie EXACTEMENT comme Entrée
+    (même commande `say`, mêmes champs, barre vidée une fois reçu) ; rien pendant une composition IME ; cible de
+    32 px au moins, dernier bouton de la rangée, dans la carte (rangée mesurée aussi par check_composer)."""
+    await p.send("Emulation.setDeviceMetricsOverride", width=1280, height=800, deviceScaleFactor=1, mobile=False)
+    await p.js("document.querySelectorAll('.modal-back .modal-x, .modal-back .modal-cancel').forEach(b => b.click()), true")
+    set_ask = lambda txt: p.js(f"""(() => {{ const a = document.querySelector('#ask'); a.value = {json.dumps(txt)};
+        a.dispatchEvent(new Event('input')); return true; }})()""")
+    state = """(() => { const b = document.querySelector('#send-btn'), r = b.getBoundingClientRect(),
+        c = document.querySelector('#composer').getBoundingClientRect(), row = [...document.querySelectorAll('#composer .composer-row .round')];
+        return { disabled: b.disabled, w: r.width, h: r.height, last: row.at(-1) === b, inside: r.left >= c.left && r.right <= c.right
+          && r.top >= c.top && r.bottom <= c.bottom, aria: b.getAttribute('aria-label'), title: b.title, icon: b.querySelector('svg')?.dataset.icon,
+          cursor: getComputedStyle(b).cursor, keys: b.getAttribute('aria-keyshortcuts') }; })()"""
+    await set_ask("")
+    await asyncio.sleep(0.1)
+    vide = await p.js(state)
+    await set_ask("   \n  ")
+    await asyncio.sleep(0.1)
+    blancs = await p.js(state)
+    says = await p.js("window.__sent.filter(m => m.cmd === 'say').length")
+    await p.js("document.querySelector('#send-btn').click(), true")
+    await asyncio.sleep(0.3)
+    check(f"Envoyer : grisé barre vide ({vide['disabled']}) ou d'espaces ({blancs['disabled']}), curseur « {vide['cursor']} », "
+          "un clic n'envoie rien",
+          vide["disabled"] and blancs["disabled"] and vide["cursor"] == "not-allowed"
+          and await p.js("window.__sent.filter(m => m.cmd === 'say').length") == says)
+    await set_ask("message par le bouton")
+    await asyncio.sleep(0.1)
+    actif = await p.js(state)
+    check(f"Envoyer : actif avec du texte, « {actif['aria']} », icône {actif['icon']}, {actif['w']:.0f}×{actif['h']:.0f} px, "
+          f"dernier de la rangée ({actif['last']}), dans la carte ({actif['inside']})",
+          not actif["disabled"] and actif["aria"] == "Envoyer (Entrée)" and actif["title"] == "Envoyer (Entrée)"
+          and actif["icon"] == "arrow-up" and actif["w"] >= 32 and actif["h"] >= 32 and actif["last"] and actif["inside"]
+          and actif["keys"] == "Enter")
+    await p.shot("envoyer-actif-1280.png")
+    # composition IME en cours : le clic n'envoie rien
+    await p.js("document.querySelector('#ask').dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })), true")
+    await p.js("document.querySelector('#send-btn').click(), true")
+    await asyncio.sleep(0.3)
+    ime = await p.js("window.__sent.filter(m => m.cmd === 'say').length") == says
+    await p.js("document.querySelector('#ask').dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })), true")
+    await asyncio.sleep(0.1)
+    check("Envoyer pendant une composition (IME) : rien n'est envoyé, le texte reste", ime
+          and await p.js("document.querySelector('#ask').value") == "message par le bouton")
+    r = await p.js("(() => { const b = document.querySelector('#send-btn').getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; })()")
+    for kind in ("mousePressed", "mouseReleased"):
+        await p.send("Input.dispatchMouseEvent", type=kind, x=r[0], y=r[1], button="left", clickCount=1)
+    await p.until(f"window.__sent.filter(m => m.cmd === 'say').length > {says}", 3)
+    par_bouton = await p.js("window.__sent.filter(m => m.cmd === 'say').pop()") or {}
+    videe = await p.until("document.querySelector('#ask').value === '' && document.querySelector('#send-btn').disabled", 4)
+    focus = await p.js("document.activeElement?.id || ''")
+    await set_ask("message par Entrée")
+    await p.js("document.querySelector('#ask').focus(), true")
+    await p.key("Enter", vk=13, text="\r")
+    await p.until(f"window.__sent.filter(m => m.cmd === 'say').length > {says + 1}", 3)
+    par_entree = await p.js("window.__sent.filter(m => m.cmd === 'say').pop()") or {}
+    diag = await p.js("({ sending: document.querySelector('#ask').dataset.sending || '', value: document.querySelector('#ask').value, "
+                      "confirm: !document.querySelector('#confirm').classList.contains('hidden'), focus: document.activeElement?.id, "
+                      "ws: window.__ws?.readyState })")
+    cles = lambda m: sorted(k for k in m if k != "id")
+    check(f"clic sur Envoyer = Entrée : même commande, mêmes champs ({cles(par_bouton)} / {cles(par_entree)} ; "
+          f"« {par_bouton.get('text')} » / « {par_entree.get('text')} », {diag}), barre vidée "
+          f"une fois reçu et bouton regrisé ({videe}), curseur rendu à la barre ({focus})",
+          par_bouton.get("text") == "message par le bouton" and par_entree.get("text") == "message par Entrée"
+          and cles(par_bouton) == cles(par_entree) and par_bouton.get("channel") == par_entree.get("channel")
+          and videe and focus == "ask")
+    await p.until("document.querySelector('#ask').value === ''", 3)
+    await p.js("document.querySelector('#ask').blur(), true")
 
 
 async def check_composer(p: Page) -> None:
@@ -5146,6 +5277,206 @@ LIENS_JS = """((md) => [...md.querySelectorAll('a')].map(a => { const ico = a.qu
   cls: a.className, icon: ico?.dataset.icon || '', hidden: ico?.getAttribute('aria-hidden') || '', w: ico ? ico.getBoundingClientRect().width : 0,
   desc: a.getAttribute('aria-description') || '', after: (a.nextSibling?.textContent || '').slice(0, 2),
   clipped: !!txt && txt.scrollWidth > txt.clientWidth + 1, cursor: getComputedStyle(a).cursor }; }))"""
+
+
+async def check_recherche_chemins_echap(p: Page) -> None:
+    """04/11 (chat, lot 2, demandes de l'utilisateur) : chemins de fichiers d'une réponse copiés d'un clic (jamais dans
+    un bloc ```, rien d'ouvert) ; Échap arrête la réponse comme ■ (commande `stop`), SEULEMENT sans carte ni
+    fenêtre à l'écran ; Ctrl+K ouvre la recherche dans tous les canaux (`history_query`, index jetable de la
+    démo), résultats groupés par canal, clic = le message dans son canal ; rien de tout cela en Simple."""
+    await p.send("Emulation.setDeviceMetricsOverride", width=1600, height=1000, deviceScaleFactor=1, mobile=False)
+    await p.until("!!window.__ws && window.__ws.readyState === 1", 10)
+    await p.js("document.querySelectorAll('.modal-back .modal-x, .modal-back .modal-cancel').forEach(b => b.click()), true")
+    await p.js("document.querySelectorAll('.menu, .toast').forEach(b => b.remove()), true")
+    ask_demo = lambda cmd, **a: p.js(f"{ASK_DEMO_JS}({json.dumps(cmd)}, {json.dumps(a)})")
+    sent = lambda cmd: p.js(f"window.__sent.filter(m => m.cmd === {json.dumps(cmd)}).length")
+    await p.js("""window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; };
+        window.__clip = null; navigator.clipboard.writeText = async (t) => { window.__clip = t; }; true""")
+    start = await p.js("document.querySelector('.channel-tab.on')?.dataset.chan || 'general'")
+    await p.js("document.querySelector('.channel-tab[data-chan=\"general\"]')?.click(), true")
+
+    async def mouse(expr):  # vrai clic (activation utilisateur, `detail` 1)
+        r = await p.js(f"(() => {{ const e = {expr}; e.scrollIntoView({{block: 'center'}}); const b = e.getBoundingClientRect();"
+                       " return [b.left + Math.min(12, b.width / 2), b.top + b.height / 2]; })()")
+        for kind in ("mousePressed", "mouseReleased"):
+            await p.send("Input.dispatchMouseEvent", type=kind, x=r[0], y=r[1], button="left", clickCount=1)
+
+    async def ctrl_k():
+        base = {"key": "k", "code": "KeyK", "windowsVirtualKeyCode": 75, "modifiers": 2}
+        await p.send("Input.dispatchKeyEvent", type="keyDown", **base)
+        await p.send("Input.dispatchKeyEvent", type="keyUp", **base)
+
+    async def esc():
+        await p.key("Escape", vk=27)
+        await asyncio.sleep(0.35)
+
+    # ---------------------------------------------------------- chemins de fichiers : copiés, jamais ouverts
+    await p.js("""(() => { const a = document.querySelector('#ask'); a.value = 'démo chemins'; a.dispatchEvent(new Event('input'));
+        a.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); })()""")
+    got = await p.until("[...document.querySelectorAll('.msg.astrel:not(.live) .md')].some(m => m.textContent.startsWith('Voici les fichiers'))", 10)
+    md = "[...document.querySelectorAll('.msg.astrel .md')].filter(m => m.textContent.startsWith('Voici les fichiers')).at(-1)"
+    paths = await p.js(f"""[...{md}.querySelectorAll('.md-path')].map(e => ({{ text: e.textContent, tag: e.tagName,
+        role: e.getAttribute('role'), tab: e.tabIndex, title: e.title, desc: e.getAttribute('aria-description') || '',
+        cursor: getComputedStyle(e).cursor, inPre: !!e.closest('pre') }}))""") if got else []
+    want = ["/home/user/Projets/exemple/run.sh", "~/Documents/Notes/courses.md", "C:\\Users\\l'utilisateur\\Bureau\\devis.pdf",
+            "/data/Mes documents/Note de frais.pdf", "/tmp/astrel-demo/a.py"]
+    check(f"chemins d'une réponse : 5 reconnus, ni date, ni « et/ou », ni adresse, ni bloc ``` ({[x['text'] for x in paths]})",
+          [x["text"] for x in paths] == want and not any(x["inPre"] for x in paths))
+    check("chemins : rôle bouton, au clavier (tabindex 0), titre et description, curseur « copier », le code entier "
+          "quand il n'est qu'un chemin",
+          paths and all(x["role"] == "button" and x["tab"] == 0 and x["title"] and x["desc"] and x["cursor"] == "copy"
+                        for x in paths) and [x["tag"] for x in paths] == ["SPAN", "SPAN", "SPAN", "CODE", "SPAN"])
+    links = await sent("open_link")
+    await mouse(f"{md}.querySelectorAll('.md-path')[0]")
+    copied = await p.until(f"window.__clip === {json.dumps(want[0])}", 3)
+    toast_ok = await p.until(f"[...document.querySelectorAll('.toast')].some(t => t.textContent.includes({json.dumps('Chemin copié : ' + want[0])}))", 3)
+    check(f"clic sur un chemin : copié ({copied}), toast « Chemin copié », rien d'ouvert (ni open_link, ni onglet)",
+          copied and toast_ok and await sent("open_link") == links and await p.js("window.__opened.length") == 0)
+    confirms = await sent("confirm")
+    await p.js(f"{md}.querySelectorAll('.md-path')[2].focus(), true")
+    await p.key("Enter", vk=13)
+    await asyncio.sleep(0.3)
+    check("au clavier (Tab puis Entrée) : le chemin Windows est copié tel quel, Entrée ne remonte pas",
+          await p.js("window.__clip") == want[2] and await sent("confirm") == confirms)
+    await p.js(f"{md}.closest('.msg').querySelector('.copy-btn').click()")
+    await asyncio.sleep(0.2)
+    clip = await p.js("window.__clip") or ""
+    check("« Copier » de la réponse : le texte brut, chemins et bloc compris",
+          clip.startswith("Voici les fichiers :") and "`/data/Mes documents/Note de frais.pdf`" in clip
+          and "cat /etc/hosts" in clip)
+    await p.shot("chemins-reponse.png")
+    await p.js("document.activeElement?.blur(), document.querySelectorAll('.toast').forEach(t => t.remove()), true")
+
+    # ---------------------------------------------------------- Échap = ■, seulement sans carte
+    # Questions à choix laissées en attente par les contrôles précédents : répondues ICI (page seule), sinon
+    # Échap leur revient (c'est voulu, contrôlé plus bas).
+    for cid in await p.js("[...document.querySelectorAll('.msg.choice:not(.answered):not(.cancelled) .choice-question')]"
+                          ".map(q => q.id.replace(/^choice-q-/, ''))"):
+        await fake_event(p, {"type": "choice_answered", "id": cid, "value": "(contrôle)"})
+    await p.js("document.querySelector('#activity').classList.remove('hidden'), true")
+    await ask_demo("demo_answering")
+    await p.until("!!document.querySelector('.msg.astrel.live')", 3)
+    stops = await sent("stop")
+    await esc()
+    check("Échap avec le panneau Activité ouvert : le panneau se ferme d'abord, aucun arrêt",
+          await p.js("document.querySelector('#activity').classList.contains('hidden')") and await sent("stop") == stops)
+    await p.js("document.querySelector('#stop-btn').click(), true")  # réponse close (même commande)
+    await p.until("!document.querySelector('.msg.astrel.live')", 3)
+    await asyncio.sleep(0.3)
+    stops = await sent("stop")
+    await esc()
+    check("Échap sans réponse en cours : rien d'envoyé", await sent("stop") == stops)
+    await ask_demo("demo_answering")
+    live = await p.until("!!document.querySelector('.msg.astrel.live')", 3)
+    await esc()
+    stopped = await p.until(f"window.__sent.filter(m => m.cmd === 'stop').length === {stops + 1}", 3)
+    tst = await p.until("[...document.querySelectorAll('.toast')].some(t => t.textContent.includes('Réponse arrêtée (Échap).'))", 3)
+    log = (await ask_demo("demo_stop_log") or {}).get("items") or []
+    check(f"Échap pendant une réponse : `stop` (comme ■), via le HUD ({log[-1:]}), toast, réponse close",
+          live and stopped and tst and log and log[-1]["via"] == "hud"
+          and await p.until("!document.querySelector('.msg.astrel.live')", 3))
+    stop_btn = await p.js("({ keys: document.querySelector('#stop-btn').getAttribute('aria-keyshortcuts'), "
+                          "title: document.querySelector('#stop-btn').title })")
+    check(f"bouton ■ : raccourci Échap annoncé ({stop_btn})",
+          stop_btn["keys"] == "Escape" and stop_btn["title"].startswith("Arrêter (Échap)"))
+    # carte de confirmation : Échap = « Non », jamais un arrêt ; une fois la carte partie, Échap arrête
+    await ask_demo("demo_answering")
+    await p.until("!!document.querySelector('.msg.astrel.live')", 3)
+    stops, confirms = await sent("stop"), await sent("confirm")
+    await ask_demo("demo_confirm")
+    await p.until("!document.querySelector('#confirm').classList.contains('hidden')", 3)
+    await esc()
+    no = await p.js("window.__sent.filter(m => m.cmd === 'confirm').pop() || {}")
+    check(f"Échap avec une carte de confirmation : « Non » à la carte ({no.get('allow')}), aucun arrêt",
+          await sent("confirm") == confirms + 1 and no.get("allow") is False and await sent("stop") == stops)
+    # question à choix visible : Échap ne l'arrête pas
+    await ask_demo("demo_choice", channel="general")
+    await p.until("!!document.querySelector('.msg.choice:not(.answered):not(.cancelled):not(.hidden)')", 3)
+    await esc()
+    check("Échap avec une question à choix à l'écran : aucun arrêt", await sent("stop") == stops)
+    for cid in await p.js("[...document.querySelectorAll('.msg.choice:not(.answered):not(.cancelled) .choice-question')]"
+                          ".map(q => q.id.replace(/^choice-q-/, ''))"):
+        await ask_demo("choice_answer", choice_id=cid, value="Attendre ton retour")
+    await p.until("!document.querySelector('.msg.choice:not(.answered):not(.cancelled):not(.hidden)')", 3)
+    # boîte ouverte (Réglages) : Échap la ferme, la réponse continue
+    await p.js("document.querySelector('#settings-chip').click(), true")
+    await p.until("!!document.querySelector('.modal-back')", 3)
+    await esc()
+    check("Échap avec une fenêtre ouverte (Réglages) : la fenêtre se ferme, aucun arrêt",
+          await p.js("!document.querySelector('.modal-back')") and await sent("stop") == stops)
+    # menu ouvert : fermé d'abord ; puis dans la barre de saisie (permise) : arrêt
+    await p.js("(() => { const m = document.createElement('div'); m.className = 'menu'; document.body.append(m); })()")
+    await esc()
+    check("Échap avec un menu ouvert : le menu se ferme d'abord, aucun arrêt",
+          await p.js("!document.querySelector('.menu')") and await sent("stop") == stops)
+    await p.js("document.querySelector('#ask').focus(), true")
+    await esc()
+    check("Échap dans la barre de saisie pendant la réponse : arrêt",
+          await p.until(f"window.__sent.filter(m => m.cmd === 'stop').length === {stops + 1}", 3))
+    await p.js("document.querySelector('#ask').blur(), document.querySelectorAll('.toast').forEach(t => t.remove()), true")
+
+    # ---------------------------------------------------------- recherche dans tous les canaux (Ctrl+K)
+    seed = await ask_demo("demo_recherche") or {}
+    autre = seed.get("autre") or ""
+    await asyncio.sleep(0.6)  # index du fil : un fil à part (history.FilIndex)
+    stops = await sent("stop")
+    await ctrl_k()
+    opened = await p.until("!!document.querySelector('.modal.search-panel') && "
+                           "document.activeElement?.classList.contains('search-input')", 3)
+    check(f"Ctrl+K : fenêtre de recherche, curseur dans le champ ({opened})", opened)
+    await p.send("Input.insertText", text="sirius")
+    res = await p.until("document.querySelectorAll('.search-panel .search-group:not(.archive)').length >= 2 "
+                        "&& !!document.querySelector('.search-panel .search-group.archive')", 5)
+    view = await p.js("""(() => { const m = document.querySelector('.search-panel');
+        return { groups: [...m.querySelectorAll('.search-group:not(.archive) .search-group-name')].map(e => e.textContent),
+          hits: m.querySelectorAll('button.search-hit').length, marks: [...m.querySelectorAll('mark')].map(e => e.textContent.toLowerCase()),
+          archive: m.querySelector('.search-group.archive .search-group-head')?.textContent || '',
+          archiveHits: m.querySelectorAll('.search-group.archive .search-hit').length,
+          status: m.querySelector('.search-status')?.textContent || '', role: m.querySelector('.search-status')?.getAttribute('role'),
+          label: m.querySelector('.search-input').getAttribute('aria-label') }; })()""")
+    q = await p.js("window.__sent.filter(m => m.cmd === 'history_query').pop() || {}")
+    check(f"recherche : `history_query` ({q.get('query')!r}), groupes par canal {view['groups']}, mots marqués, "
+          f"archives « {view['archive']} » ({view['status']})",
+          res and q.get("query") == "sirius" and "Général" in view["groups"] and len(view["groups"]) == 2
+          and view["hits"] >= 5 and view["marks"] and set(view["marks"]) == {"sirius"} and view["archiveHits"] == 1
+          and view["archive"].startswith("Avant le") and view["role"] == "status" and view["label"])
+    await p.shot("recherche-resultats.png")
+    # résultat encore dans le fil : le canal s'ouvre, le message se montre (liseré, focus)
+    hit = ("[...document.querySelectorAll('.search-panel button.search-hit')]"
+           ".find(b => b.textContent.includes('Gîte réservé'))")
+    await p.js(f"{hit}.click(), true")
+    went = await p.until(f"!document.querySelector('.modal.search-panel') && "
+                         f"document.querySelector('.channel-tab.on')?.dataset.chan === {json.dumps(autre)}", 3)
+    shown = await p.js("""(() => { const m = document.activeElement?.closest?.('.msg');
+        return { found: !!m && m.classList.contains('found'), text: m?.textContent || '' }; })()""")
+    check(f"clic sur un résultat : fenêtre fermée, canal « {autre} » ouvert, message montré et sous le focus ({shown['found']})",
+          went and shown["found"] and "Gîte réservé" in shown["text"])
+    await p.shot("recherche-message-montre.png")
+    # résultat sorti du fil affiché : l'extrait reste, note et « Ouvrir le canal »
+    await p.js("document.querySelector('#search-btn').click(), true")
+    again = await p.until("document.querySelector('.search-panel .search-input')?.value === 'sirius' "
+                          "&& document.querySelectorAll('.search-panel button.search-hit').length >= 5", 5)
+    old = ("[...document.querySelectorAll('.search-panel button.search-hit')]"
+           ".find(b => b.textContent.includes('Ancienne note'))")
+    await p.js(f"{old}.click(), true")
+    note = await p.js(f"""(() => {{ const n = {old}.parentElement.querySelector('.search-note');
+        return {{ shown: !n.classList.contains('hidden'), text: n.textContent, btn: n.querySelector('button')?.textContent || '',
+                 open: !!document.querySelector('.modal.search-panel') }}; }})()""")
+    check(f"bouton loupe : recherche rouverte telle quelle ({again}) ; message sorti du fil : la fenêtre reste, note "
+          f"et « {note['btn']} »", again and note["shown"] and note["open"] and "n'est plus dans le fil" in note["text"]
+          and note["btn"].startswith("Ouvrir le canal"))
+    await esc()
+    check("Échap ferme la recherche sans rien arrêter",
+          await p.js("!document.querySelector('.modal.search-panel')") and await sent("stop") == stops)
+    # Simple : contrôlé dans check_affichage_simple (bouton caché, Ctrl+K sans effet)
+    btn = await p.js("""(() => { const b = document.querySelector('#search-btn'); return { shown: b.getClientRects().length > 0,
+        keys: b.getAttribute('aria-keyshortcuts'), aria: b.getAttribute('aria-label') }; })()""")
+    check(f"Avancé : bouton loupe visible au bout des onglets, Ctrl+K annoncé ({btn})",
+          btn["shown"] and btn["keys"] == "Control+K" and btn["aria"] == "Rechercher dans les conversations")
+    found = await p.js(EMOJI_DOM_JS)
+    check(f"chemins, Échap, recherche : aucun émoji dans le DOM ({found[:3]})", found == [])
+    await p.js(f"document.querySelector('.channel-tab[data-chan={json.dumps(start)}]')?.click(), true")
+    await asyncio.sleep(0.3)
 
 
 async def check_moteur_local(p: Page) -> None:

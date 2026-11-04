@@ -54,7 +54,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from . import attachments, config, ia_connexion, ia_web
+from . import attachments, config, hors_ligne, ia_connexion, ia_web
 from .ia_web import Etat, reprise_apres  # noqa: F401  (réexportés : appelants et tests d'avant P40)
 
 log = logging.getLogger("astrel.images")
@@ -299,6 +299,8 @@ class Images:
         prompt = re.sub(r"\s+", " ", str(prompt or "")).strip()
         demande = str(engine or "auto").strip().lower() or "auto"
         modele = str(model or "").strip().lower()
+        if hors_ligne.actif():  # 04/11 : Chrome vers Gemini, Bing, ChatGPT
+            return {"ok": False, "error": f"pas d'image : {hors_ligne.REFUS}"}
         if not prompt:
             return {"ok": False, "error": "prompt vide : décris l'image voulue"}
         if len(prompt) > PROMPT_MAX:

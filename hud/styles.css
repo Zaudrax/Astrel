@@ -287,6 +287,21 @@ body.alert-on #dialog { max-height: calc(100vh - var(--head-h) - var(--gap) - va
   background: var(--panel-border); transition: background 0.2s;
 }
 #chat-grip:hover::before, #chat-grip.dragging::before { background: var(--accent); }
+/* 04/11 : recherche dans tous les canaux, dans la place gardée au bout de la rangée des onglets (#channels,
+   padding-right 72 px) ; ouvre la fenêtre de recherche (recherche.js) */
+#search-btn { position: absolute; top: 11px; right: 6px; z-index: 1; width: 28px; height: 28px; color: var(--muted);
+  background: var(--panel); backdrop-filter: blur(10px); }
+#search-btn .ico { width: 15px; height: 15px; }
+#search-btn:hover, #search-btn:focus-visible { color: var(--ink-hi); }
+#search-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* message montré par la recherche : liseré d'accent un instant (fondu seul si mouvement réduit) */
+.msg:focus { outline: none; }
+.msg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.msg.found { box-shadow: 0 0 0 2px var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .msg.found { animation: msg-found 2.4s var(--ease) both; }
+  @keyframes msg-found { 0%, 60% { box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: 0 0 0 2px transparent; } }
+}
 #jump-btn {
   /* 19/10 : au-dessus du bas du FIL, mesuré par main.js (--jump-b) : la barre de saisie
      grandit avec le texte et le bouton passait dessus */
@@ -301,6 +316,7 @@ body.alert-on #dialog { max-height: calc(100vh - var(--head-h) - var(--gap) - va
    jusqu'au fond de la page : survolés pendant une sélection, ils l'étendaient aussi */
 #dialog, #channels { pointer-events: none; }
 #chat-grip, .channel-tab, #transcript, #composer, #jump-btn, #confirm, #dictation, #attachments, #image-panel { pointer-events: auto; }
+#search-btn { pointer-events: auto; }  /* 04/11 : recherche, au bout des onglets */
 #dialog.selecting #chat-grip, #dialog.selecting .channel-tab { pointer-events: none; }
 .msg { padding: 9px 14px; border-radius: 12px; max-width: 85%; backdrop-filter: blur(10px); }
 .msg.user { align-self: flex-end; background: rgba(var(--rgb-accent), 0.12); border: 1px solid rgba(var(--rgb-accent), 0.25);
@@ -409,6 +425,14 @@ body.alert-on #dialog { max-height: calc(100vh - var(--head-h) - var(--gap) - va
   background: var(--accent); box-shadow: 0 0 0 2px var(--panel);
 }
 .copy-btn:hover { color: var(--ink-hi); border-color: var(--accent); }
+/* 04/11 (demande : « chemins de fichiers cliquables ») : un chemin d'une réponse (markdown.js, md-path) se copie
+   d'un clic ; soulignement pointillé discret, main au survol, contour au focus clavier. Dans un `code`, le
+   <code> entier ou le chemin qu'il contient. */
+.md .md-path { cursor: copy; border-radius: 3px; text-decoration: underline dotted; text-decoration-color: rgba(var(--rgb-accent), 0.55);
+  text-underline-offset: 3px; overflow-wrap: anywhere; }
+.md .md-path:hover { text-decoration-color: var(--accent); color: var(--ink-hi); }
+.md .md-path:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.md code.md-path, .md code .md-path { text-decoration-style: dotted; }
 .md ~ .read-btn { margin: 6px 0 0; }
 .msg .src { font-size: 10px; color: var(--muted); margin-right: 6px; }
 /* 23/10 (demande de l'utilisateur) : heure de chaque message, discrète (heure.js) ; hors sélection copiée */
@@ -663,6 +687,11 @@ textarea.choice-other { font: inherit; font-size: 13px; color: inherit; resize: 
 /* voix coupée = mode Silencieux : même ambre que sa pastille et la note du panneau de droite */
 #voice-btn.muted { color: var(--amber); border-color: rgba(var(--rgb-warn), 0.55); background: rgba(var(--rgb-warn), 0.12); }
 #wake-btn.on { color: var(--green); border-color: rgba(var(--rgb-ok), 0.6); }
+/* 04/11 (« comme ChatGPT ») : Envoyer, au bout de la rangée ; grisé et non cliquable sans rien à envoyer */
+#send-btn { color: var(--accent-ink, var(--accent)); border-color: rgba(var(--rgb-accent), 0.55); background: rgba(var(--rgb-accent), 0.16); }
+#send-btn:hover:not(:disabled) { border-color: var(--accent); background: rgba(var(--rgb-accent), 0.26); }
+#send-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#send-btn:disabled { color: var(--muted); border-color: var(--panel-border); background: rgba(var(--rgb-hi), 0.03); opacity: 0.55; cursor: not-allowed; }
 
 /* modes d'usage : trois segments, le mode actif nommé (14/10) */
 .usage { display: flex; border: 1px solid var(--panel-border); border-radius: 999px; overflow: hidden; flex: none; }
@@ -917,6 +946,9 @@ textarea.choice-other { font: inherit; font-size: 13px; color: inherit; resize: 
 .chip.lift { color: var(--ink-hi); border-color: var(--red); background: rgba(var(--rgb-danger), 0.25); cursor: pointer;
   animation: lift-pulse 2s ease-in-out infinite; }
 .chip.lift[hidden], #lift-frame[hidden] { display: none; }
+/* 04/11 (lot 2 du moteur local) : mode « rien ne sort », vert (rien ne fuit), jamais caché en Simple */
+.chip.offline { color: var(--ink-hi); border-color: var(--green); background: rgba(var(--rgb-ok), 0.18); cursor: pointer; }
+.chip.offline[hidden] { display: none; }
 @keyframes lift-pulse { 50% { box-shadow: 0 0 12px rgba(var(--rgb-danger), 0.8); } }
 #lift-banner {
   background: rgba(150, 20, 40, 0.94); border: 1px solid var(--red); box-shadow: 0 0 14px rgba(var(--rgb-danger), 0.5);
@@ -1109,6 +1141,40 @@ body.alert-on #toasts { top: calc(var(--head-h) + var(--gap) + var(--alert-h)); 
 .ad-fields dt { font-size: 11px; color: var(--muted); padding-top: 9px; }
 .ad-fields dd { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .ad-progress > div { transition: none; } }
+
+/* --- recherche dans tous les canaux (04/11, hud/src/recherche.js) : fenêtre openPanel, jetons seulement --- */
+.modal.wide.search-panel { width: min(760px, calc(100vw - 40px)); }
+.search-panel .modal-body { align-content: start; }
+.search-input {
+  width: 100%; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--panel-border); outline: none;
+  background: rgba(var(--rgb-hi), 0.04); color: inherit; font: inherit; font-size: 14px;
+}
+.search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--rgb-accent), 0.15); }
+.search-status { margin: 0; min-height: 1.2em; font-size: 12px; color: var(--muted); }
+.search-status.err { color: var(--red); }
+.search-results { display: grid; gap: 14px; }
+.search-group { display: grid; gap: 6px; }
+.search-group-head { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 650; color: var(--ink-head); }
+.search-group-head .dot { width: 7px; height: 7px; color: var(--chan, var(--accent)); background: var(--chan, var(--accent)); box-shadow: none; }
+.search-group-n { margin-left: auto; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+.search-group.archive .search-group-head { color: var(--muted); font-weight: 600; }
+.search-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.search-hit {
+  width: 100%; display: grid; gap: 3px; text-align: left; padding: 8px 10px; border-radius: 10px; color: inherit;
+  border: 1px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.02); user-select: text;
+}
+button.search-hit:hover { border-color: rgba(var(--rgb-line), 0.35); background: rgba(var(--rgb-accent), 0.05); }
+button.search-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.search-hit.archive { border-style: dashed; }
+.search-hit-head { display: flex; align-items: baseline; gap: 8px; font-size: 11px; color: var(--muted); }
+.search-who { font-weight: 600; color: var(--ink); }
+.search-who.user { color: var(--accent-ink, var(--accent)); }
+.search-when { margin-left: auto; font-variant-numeric: tabular-nums; }
+.search-extrait { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; unicode-bidi: isolate; }
+.search-extrait mark { color: var(--ink-hi); background: rgba(var(--rgb-warn), 0.28); border-radius: 3px; padding: 0 1px; }
+.search-note { margin: 2px 2px 0; font-size: 12px; color: var(--muted); }
+.search-open { margin-left: 4px; }
+.search-foot { margin-top: 2px; }
 
 /* --- pièces jointes (14/10) : miniatures avant envoi --- */
 .attachments { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
@@ -1836,6 +1902,8 @@ body.dropping #composer { border-color: var(--green); box-shadow: 0 0 18px rgba(
 :root[data-theme="premium"] .chip:hover:where(:not(.estop, .lift, .toggle.total.on)) {
   color: var(--ink-hi); border-color: transparent; background: var(--fill-2); }
 :root[data-theme="premium"] .round:hover { border-color: transparent; background: var(--fill-2); }
+:root[data-theme="premium"] #send-btn:not(:disabled) { color: var(--accent-ink); background: rgba(var(--rgb-accent), 0.2); }  /* 04/11 */
+:root[data-theme="premium"] #send-btn:not(:disabled):hover { background: rgba(var(--rgb-accent), 0.3); }
 :root[data-theme="premium"] .chip.toggle.on:where(:not(.total)) { color: var(--ink); border-color: transparent; background: var(--fill); }
 :root[data-theme="premium"] .chip.toggle.on:where(:not(.total)) .sw { background: var(--green); }
 :root[data-theme="premium"] .chip.toggle:where(:not(.total.on)) .sw::after { background: #ffffff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
@@ -1963,7 +2031,7 @@ body.dropping #composer { border-color: var(--green); box-shadow: 0 0 18px rgba(
 :root[data-affichage="simple"] .brand-name { display: inline-block; text-transform: none; letter-spacing: 0.04em; }
 :root[data-affichage="simple"] :is(.chip.toggle.total.on, .chip.lift) { animation: none; }  /* couleur gardée, sans pulsation */
 /* panneau du cerveau, badges, capteurs, abonnement, filtres ; onglets et noms de projets (proposition 9) */
-:root[data-affichage="simple"] :is(#channels, .task .chan, #right .badges, #sensors, #quota, #context, #memory, #courrier, #todo-apercu,
+:root[data-affichage="simple"] :is(#channels, #search-btn, .task .chan, #right .badges, #sensors, #quota, #context, #memory, #courrier, #todo-apercu,
   #right > .panel-title:is([data-i18n="right.sensors"], #quota-title, #courrier-title, #todo-title)) {
   display: none !important; }
 /* la conversation se centre : plus de colonne gauche (à l'écran large, marges égales des deux côtés) */

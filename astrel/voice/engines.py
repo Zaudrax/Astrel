@@ -27,7 +27,7 @@ import threading
 from dataclasses import dataclass
 from typing import Iterator
 
-from .. import config
+from .. import config, hors_ligne
 
 log = logging.getLogger("astrel.voice")
 
@@ -349,6 +349,8 @@ class EdgeEngine(Engine):
         import edge_tts  # noqa: F401
 
     def synthesize(self, text: str) -> Iterator[bytes]:
+        # 04/11 : le texte partirait chez Microsoft ; le haut-parleur passe alors sur sa voix de secours (Piper)
+        hors_ligne.verifier("voix Edge")
         import asyncio
         import queue
         import threading

@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from . import config
+from . import config, hors_ligne
 from .platform import materiel
 
 log = logging.getLogger("astrel.local")
@@ -175,6 +175,7 @@ def manifest_size(tag: str, timeout: float = 10.0) -> int:
     Lève sur une erreur réseau."""
     if not config.OLLAMA_REGISTRY:
         raise RuntimeError("registre désactivé")
+    hors_ligne.verifier("registre d'Ollama")  # 04/11
     name, _, version = tag.partition(":")
     if "/" not in name:
         name = f"library/{name}"
@@ -190,6 +191,7 @@ def manifest_size(tag: str, timeout: float = 10.0) -> int:
 
 def pull(tag: str, on_progress: Callable[[int, int, str], None], stop: threading.Event) -> bool:
     """`/api/pull` en flux. Faux si annulé (`stop`), lève sur une erreur d'Ollama."""
+    hors_ligne.verifier("téléchargement du modèle")  # 04/11 : Ollama irait le chercher sur Internet
     httpx = _http()
     totals: dict[str, int] = {}
     done: dict[str, int] = {}
@@ -334,7 +336,8 @@ class ModelesLocaux:
     def _refresh_sizes(self) -> None:
         """Tailles lues au manifeste, en fond (jamais pendant le dessin de la page)."""
         with self._lock:
-            if self._sizes_busy or not config.OLLAMA_REGISTRY or time.time() - self._sizes_at < SIZES_TTL_S:
+            if (self._sizes_busy or not config.OLLAMA_REGISTRY or time.time() - self._sizes_at < SIZES_TTL_S
+                    or hors_ligne.actif()):
                 return
             self._sizes_busy = True
 
@@ -416,6 +419,8 @@ class ModelesLocaux:
             return str(self._dl["tag"]) if self._dl and self._dl.get("status") == "en cours" else ""
 
     def download(self, tag: str) -> dict:
+        if hors_ligne.actif():  # 04/11 : refusé net, avant même de demander à Ollama
+            return {"ok": False, "error": f"pas de téléchargement : {hors_ligne.REFUS}"}
         if not ollama_version():
             return {"ok": False, "error": "Ollama ne répond pas : installe-le ou lance-le d'abord."}
         mat = materiel.detect(fresh=True)

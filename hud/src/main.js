@@ -20,6 +20,7 @@ import { initPlans } from "./plans.js";
 import { initTodo } from "./todo.js";
 import { initAudit } from "./audit.js";
 import { initPropositions } from "./propositions.js";
+import { initRecherche, openSearch } from "./recherche.js";
 import { hydrateIcons, icon, setIcon, setLabel, stripEmoji } from "./icons.js";
 import { applyI18n, assistantName, locale, t, tx } from "./i18n.js";
 import { msgTime } from "./heure.js";
@@ -141,6 +142,8 @@ on("level", (ev) => {
 
 on("model", (ev) => {
   setLabel($("#model-badge"), "brain", tx(ev.label), "lead");
+  // 04/11 (lot 2 du moteur local) : mode « rien ne sort » : pastille en haut, visible même en Simple.
+  $("#offline-chip").hidden = !ev.offline;
   // 20/10 (plan P11) : autre fournisseur que Claude (`ext`) ou clé API facturée (`cle`) : badge orange.
   $("#model-badge").classList.toggle("ext", !!ev.ext || !!ev.cle);
   const name = `${tx(ev.label)}${ev.id ? ` (${ev.id})` : ""}`;
@@ -1037,7 +1040,8 @@ function renderBody(m, force = false) {
   m.dirty = false;
   m.pending = false;
   const t0 = performance.now();
-  m.body.replaceChildren(renderMarkdown(m.raw)); // émojis retirés du texte rendu (markdown.js)
+  // émojis retirés du texte rendu (markdown.js) ; 04/11 : chemins de fichiers cliquables (copiés, voir pathClick)
+  m.body.replaceChildren(renderMarkdown(m.raw, document, { paths: true }));
   m.cost = performance.now() - t0;
 }
 
@@ -1076,6 +1080,50 @@ function linkClick(e) {
 }
 document.addEventListener("click", linkClick);
 document.addEventListener("auxclick", linkClick);
+
+// 04/11 (demande : « chemins de fichiers cliquables ») : un chemin d'une réponse (markdown.js, classe md-path)
+// se COPIE d'un clic, avec le toast des chemins des comptes rendus ; rien ne s'ouvre. Une sélection à la souris
+// qui finit dessus reste une sélection (rien n'est copié). Au clavier : Tab, puis Entrée ou Espace (la touche
+// ne remonte pas : jamais un « oui » à la carte de confirmation, la page ne défile pas).
+function copyPath(el) {
+  const path = el.textContent;
+  if (path) copyText(path, t("report.path_copied", { path }));
+}
+document.addEventListener("click", (e) => {
+  const p = e.target?.closest?.(".md-path");
+  if (!p || e.button !== 0) return;
+  const s = getSelection();
+  if (s && !s.isCollapsed && s.toString().trim()) return;
+  if (e.detail > 0) p.blur();
+  copyPath(p);
+});
+document.addEventListener("keydown", (e) => {
+  const p = e.target?.closest?.(".md-path");
+  if (!p || (e.key !== "Enter" && e.key !== " ") || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+  e.preventDefault();
+  e.stopPropagation();
+  copyPath(p);
+});
+
+// 04/11 (recherche, recherche.js) : un résultat mène au message s'il est encore dans le fil du HUD (60 derniers
+// par canal) : la fenêtre se ferme, son canal s'ouvre, le message se montre (liseré un instant, focus pour le
+// clavier). Sinon (plus ancien, HUD rechargé), rien ne bouge : la fenêtre garde l'extrait.
+function goToMessage(r, close) {
+  const m = r?.mid ? byMid.get(String(r.mid)) : null;
+  if (!m || !m.node.isConnected) return false;
+  close();
+  if (shownIn(m.channel) !== activeChannel) showChannel(m.channel);
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  m.node.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+  m.node.classList.remove("found");
+  void m.node.offsetWidth; // l'animation repart même sur le message déjà montré
+  m.node.classList.add("found");
+  if (!m.node.hasAttribute("tabindex")) m.node.tabIndex = -1;
+  m.node.focus({ preventScroll: true });
+  clearTimeout(m.foundTimer);
+  m.foundTimer = setTimeout(() => m.node.classList.remove("found"), 2600);
+  return true;
+}
 
 function setMid(m, mid) {
   if (!mid) return;
@@ -1671,6 +1719,7 @@ try {
 const ASK_MAX_PX = 8 * 19 + 12;
 function fitAsk() {
   const a = $("#ask");
+  queueMicrotask(refreshSend); // 04/11 : chaque changement du texte (tapé, repris par ↑, vidé, dictée versée)
   a.style.height = "auto";
   a.style.height = `${Math.min(ASK_MAX_PX, a.scrollHeight)}px`;
   a.style.overflowY = a.scrollHeight > ASK_MAX_PX ? "auto" : "hidden";
@@ -1684,15 +1733,36 @@ $("#ask").addEventListener("input", (e) => {
 });
 fitAsk();
 
-$("#ask").addEventListener("keydown", async (e) => {
+$("#ask").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.isComposing || composing || e.keyCode === 229) return;
   if (e.shiftKey) return; // Maj+Entrée : retour à la ligne (comportement normal du champ)
   e.preventDefault(); // Entrée seule n'insère pas de ligne : elle envoie
-  const input = e.target;
+  sendAsk();
+});
+// 04/11 (l'utilisateur, « comme ChatGPT ») : bouton « Envoyer » (↑) au bout de la barre : la MÊME fonction qu'Entrée
+// (brouillon effacé seulement une fois reçu, pièces attendues, dictées jointes), rien pendant une composition
+// IME. Grisé (disabled) tant que la barre est vide (ou d'espaces) et sans pièce jointe prête, ou pendant un envoi.
+function refreshSend() {
+  const a = $("#ask"), b = $("#send-btn");
+  if (!b) return;
+  b.disabled = !!a.dataset.sending || (!a.value.trim() && !attached.some((x) => !x.pending && !x.failed));
+}
+$("#send-btn").addEventListener("click", (e) => {
+  e.preventDefault();
+  if (composing || e.currentTarget.disabled) return;
+  sendAsk();
+  $("#ask").focus({ preventScroll: true }); // la suite se tape aussitôt, comme après Entrée
+});
+async function sendAsk() {
+  try { await sendAskNow(); } finally { refreshSend(); }
+}
+async function sendAskNow() {
+  const input = $("#ask");
   const text = input.value.trim();
   if ((!text && !attached.length) || input.dataset.sending) return;
   input.dataset.sending = "1";
   input.classList.add("sending");
+  refreshSend();
   try { sessionStorage.setItem(DRAFT_KEY, text); } catch { /* navigation privée */ }
   const release = () => { delete input.dataset.sending; input.classList.remove("sending"); };
   // 22/10 : image collée juste avant Entrée, encore en préparation : on l'attend (≈ 0,1 à 1 s),
@@ -1752,7 +1822,7 @@ $("#ask").addEventListener("keydown", async (e) => {
     if (!input.value.trim()) { input.value = text; fitAsk(); }
     toast(t("ask.not_sent", { error: tx(r.error) || t("common.send_failed") }), "error");
   }
-});
+}
 // 04/11 (comme un terminal) : ↑ dans la barre VIDE reprend le dernier message de l'utilisateur du canal ouvert
 // (tapé ou dit, pour le corriger ou le renvoyer), ↑ encore le précédent ; ↓ revient vers le plus récent, puis
 // à la barre vide. Seulement tant que le texte repris est intact et le curseur sur sa première (↑) ou sa
@@ -1961,6 +2031,7 @@ function restoreAttachments(ids) {
 }
 
 function renderAttachments() {
+  refreshSend(); // 04/11 : une pièce prête suffit pour envoyer
   const box = $("#attachments");
   box.replaceChildren();
   box.classList.toggle("hidden", !attached.length);
@@ -2049,7 +2120,9 @@ $("#pause-btn").onclick = togglePause;
 $("#paused-note").onclick = togglePause;
 // (14/10) Le bouton « couper la voix » faisait doublon avec la pause et ne valait que
 // pour le tour en cours : retiré. Ne plus entendre Astrel = mode Silencieux.
-$("#stop-btn").onclick = () => command("stop");
+// 04/11 : le bouton Arrêter et Échap (plus bas) passent par la MÊME commande `stop` (voix coupée, réponse interrompue).
+const stopNow = () => command("stop");
+$("#stop-btn").onclick = stopNow;
 $("#reset-btn").onclick = () => command("reset");
 $("#log-btn").onclick = () => $("#activity").classList.toggle("hidden");
 // 28/10 (T10, décision de l'utilisateur) : bouton « Éteindre » retiré de la barre ; même boîte et même commande
@@ -2076,7 +2149,31 @@ document.addEventListener("pointerdown", (e) => {
 });
 addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.defaultPrevented || document.querySelector(".modal-back")) return;
+  if ($("#activity").classList.contains("hidden")) return;
   $("#activity").classList.add("hidden");
+  e.preventDefault(); // 04/11 : Échap a servi (panneau fermé) : il n'arrête pas aussi la réponse
+});
+
+// 04/11 (demande de l'utilisateur) : Échap ARRÊTE la réponse pendant qu'Astrel écrit, réfléchit, agit ou parle,
+// comme le bouton Arrêter (`stopNow`, même commande). SEULEMENT si aucune carte n'est à l'écran : confirmation (Échap = « Non »),
+// question à choix, boîte ou fenêtre du HUD (Échap = fermer) ; un menu ouvert se ferme d'abord. Sans effet
+// si rien n'est en cours, pendant une composition (IME), ou dans un autre champ que la barre (il garde son
+// Échap). Touche maintenue : un seul arrêt.
+const answering = () => liveReplies.size > 0 || ["thinking", "working", "speaking"].includes(currentState);
+const cardShown = () => !!confirmId || !!document.querySelector(".modal-back")
+  || messages.some((m) => m.choice && !m.choice.answered && !m.choice.cancelled && !m.node.classList.contains("hidden"));
+addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.defaultPrevented || e.repeat || e.isComposing || e.keyCode === 229 || composing
+    || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+  const menus = document.querySelectorAll(".menu");
+  if (menus.length) { menus.forEach((x) => x.remove()); e.preventDefault(); return; }
+  if (cardShown() || !answering()) return;
+  if (typingIn() && document.activeElement !== $("#ask")) return;
+  e.preventDefault();
+  stopNow().then((r) => {
+    if (r?.ok === false) toast(tx(r.error) || t("stop.failed"), "error");
+    else toast(t("stop.esc_done"), "info", "stop");
+  });
 });
 initSettings(toast); // Réglages (15/10) : hud/src/settings.js
 initCalibrage(); // 02/11 : assistant de calibrage du micro (hud/src/calibrage.js)
@@ -2098,6 +2195,21 @@ initPlans(toast); // Plans (15/10, mode plan) : hud/src/plans.js
 initTodo(toast); // Tâches par projet (26/10, plan P38 lot 2) : hud/src/todo.js
 initAudit(); // Journal d'audit (plan P3, lot F) : hud/src/audit.js
 initPropositions(toast); // Propositions de mémoire (04/11, T49) : hud/src/propositions.js
+// 04/11 : recherche dans tous les canaux (hud/src/recherche.js) : bouton loupe et Ctrl+K, Avancé seulement.
+initRecherche({
+  command,
+  chan: () => ({ list: channelList, label: chanLabel, shownIn, byId: channelOf, color: (c) => c?.color || "var(--accent)" }),
+  goTo: goToMessage,
+  openChannel: (id) => showChannel(id),
+});
+$("#search-btn").onclick = () => { if (!simpleView()) openSearch(); };
+addEventListener("keydown", (e) => {
+  // Ctrl+K (Cmd+K sur Mac) : raccourci de recherche des messageries ; Ctrl+F reste la recherche de Chrome dans la page.
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.repeat || e.key?.toLowerCase() !== "k") return;
+  if (simpleView() || document.querySelector(".modal-back")) return;
+  e.preventDefault();
+  openSearch();
+});
 
 // ------------------------------------------------------------------ activité
 
@@ -2785,6 +2897,7 @@ async function restoreGuard() {
 }
 $("#lift-off").onclick = restoreGuard;
 $("#lift-chip").onclick = restoreGuard;
+$("#offline-chip").onclick = () => openSettings("hors_ligne"); // 04/11 : le réglage « Rien ne sort »
 // le dépliant des fichiers se referme d'un clic ailleurs
 addEventListener("click", (e) => {
   const box = $("#lift-files");
@@ -3445,6 +3558,11 @@ on("estop", (ev) => {
   chip.classList.toggle("on", !!ev.on);
   setLabel(chip, ev.on ? "play" : "no-entry", t(ev.on ? "estop.resume_all" : "estop.stop_all"));
 });
+async function estopCommand(on) {
+  const r = await command("estop", { mode: on ? "on" : "off" });
+  if (!r.ok) toast(r.error || t("common.refused"), "error");
+  return !!r.ok;
+}
 $("#estop-chip").onclick = async () => {
   const on = !$("#estop-chip").classList.contains("on");
   if (on && !(await openModal({
@@ -3452,9 +3570,11 @@ $("#estop-chip").onclick = async () => {
     text: t("estop.confirm_text"),
     ok: t("estop.confirm_ok"), danger: true,
   }))) return;
-  const r = await command("estop", { mode: on ? "on" : "off" });
-  if (!r.ok) toast(r.error || t("common.refused"), "error");
+  await estopCommand(on);
 };
+// 04/11 (mode « rien ne sort » refusé pendant une tâche de Claude) : Réglages propose « Tout arrêter » ; la
+// boîte de settings.js tient lieu de confirmation, la commande est celle du bouton « Stop tout ».
+onHudAction("estop", () => estopCommand(true));
 
 // ------------------------------------------------------------------ voix
 

@@ -16,7 +16,7 @@ import threading
 import time
 from typing import Any, Callable
 
-from . import __version__, config
+from . import __version__, config, hors_ligne
 
 log = logging.getLogger("astrel.maj")
 
@@ -73,6 +73,8 @@ class MiseAJour:
 
     def blocked(self, state: dict) -> str:
         """Raison de ne PAS toucher au dépôt (vide : permis)."""
+        if hors_ligne.actif():  # 04/11 : git fetch et update.py parlent au dépôt distant
+            return hors_ligne.REFUS
         if not state.get("git"):
             return "pas un dépôt git : mise à jour à la main"
         origin = str(state.get("origin") or "").lower()

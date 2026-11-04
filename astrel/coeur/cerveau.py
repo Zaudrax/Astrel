@@ -14,6 +14,7 @@ from .. import agents as agents_mod
 from .. import config
 from .. import consommation
 from .. import fournisseurs
+from .. import hors_ligne  # 04/11 : mode « rien ne sort »
 from .. import modeles_locaux
 from .. import quota_releve
 from .. import reprise
@@ -83,6 +84,10 @@ class CerveauCoeur:
         """Badge du HUD : l'alias choisi, et l'identifiant exact dès que le CLI
         l'annonce (son `init`, redonné à chaque tour)."""
         model = self.brain.model
+        if hors_ligne.actif():  # 04/11 : le badge et la pastille « Hors ligne » du HUD
+            tag = self._moteur_local.tag
+            bus.publish("model", active=model, label=f"Hors ligne · {tag}", id=tag, offline=True)
+            return
         if self._local_active():  # plan P8 : le badge dit le mode léger, l'alias Claude reste choisi
             tag = modeles_locaux.local.active_tag or self.brain.local
             bus.publish("model", active=model, label=f"Mode léger · {tag}", id=resolved or tag, local=True)
@@ -450,6 +455,8 @@ class CerveauCoeur:
         pendant une tâche, sauf `force` (retour sur Claude à la réinitialisation) ; jamais avec
         Autonome TOTAL ni la levée du garde-fou. Refusé à Claude par ses appelants."""
         local = modeles_locaux.local
+        if on and hors_ligne.actif():  # 04/11 : le moteur local répond déjà à tout, Claude est arrêté
+            return {"ok": False, "error": "mode « rien ne sort » actif : le modèle local répond déjà à tout."}
         if on == self._local_active():
             self._publish_model()
             return {"ok": True, "local": on}
@@ -535,19 +542,21 @@ class CerveauCoeur:
         if not res.get("ok"):
             log.info("retour sur Claude repoussé : %s", res.get("error"))
 
-    def _local_freeze(self, text: str, source: str, channel: str, shown: str | None) -> None:
-        """Mode léger : un message automatique (réflexe, plan, mission) attend le retour sur Claude
-        (gardé en mémoire, 20 au plus) ; une relève est abandonnée."""
+    def _local_freeze(self, text: str, source: str, channel: str, shown: str | None,
+                      pourquoi: str = "Mode léger") -> None:
+        """Mode léger (ou « rien ne sort », 04/11 : `pourquoi`) : un message automatique (réflexe, plan,
+        mission) attend le retour sur Claude (gardé en mémoire, 20 au plus) ; une relève est abandonnée."""
         if source == "relève":
-            log.info("mode léger : relève abandonnée")
+            log.info("%s : relève abandonnée", pourquoi)
             return
         frozen = [f for f in (self._local_frozen or []) if f["text"] != text]
         frozen.append({"text": text, "source": source, "channel": channel, "shown": shown})
         self._local_frozen = frozen[-20:]
         self._local_keep_frozen()  # un plan validé en mode léger survit à une relance
-        log.info("mode léger : message %s gelé jusqu'au retour sur Claude (%s)", source, text[:40])
-        bus.publish("notice", level="info", channel=channel,
-                    text=f"Mode léger : un message automatique ({source}) attend le retour sur Claude.")
+        log.info("%s : message %s gelé jusqu'au retour sur Claude (%d caractères)", pourquoi, source, len(text))
+        bus.publish("notice", level="info", channel=channel, text=(
+            f"Mode léger : un message automatique ({source}) attend le retour sur Claude." if pourquoi == "Mode léger"
+            else f"Mode « rien ne sort » : un message automatique ({source}) attend le retour en ligne."))
 
     def _local_keep_frozen(self) -> None:
         try:
@@ -561,7 +570,7 @@ class CerveauCoeur:
         if self._local_active():
             self._local_return_tick()
             return
-        if not self._local_frozen:
+        if not self._local_frozen or hors_ligne.actif():  # 04/11 : rien ne repart vers Claude hors ligne
             return
         if (config.ESTOP_FILE.exists() or self._turn_active or self._pending_confirm is not None
                 or self._floor_taken()):

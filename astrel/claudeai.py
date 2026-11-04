@@ -26,7 +26,7 @@ import threading
 import time
 from typing import Any, Callable
 
-from . import config, icones
+from . import config, hors_ligne, icones
 
 log = logging.getLogger("astrel.claudeai")
 
@@ -49,6 +49,8 @@ def parse(text: str) -> list[str]:
 
 def discover() -> list[str] | None:
     """Une lecture bloquante (jusqu'à `TIMEOUT_S`) ; None si elle échoue ou ne trouve rien."""
+    if hors_ligne.actif():  # 04/11 : `claude mcp list` interroge le compte claude.ai
+        return None
     try:
         with tempfile.TemporaryDirectory(prefix="astrel-mcp-list-") as tmp:
             proc = subprocess.run([config.CLAUDE_BIN, "mcp", "list"], cwd=tmp, stdin=subprocess.DEVNULL,

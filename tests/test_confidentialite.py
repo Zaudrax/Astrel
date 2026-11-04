@@ -50,7 +50,8 @@ def count(db):
 
 
 def test_texte_de_ce_qui_part():
-    it = next(i for g in reglages.describe()["groups"] if g["id"] == "confidentialite" for i in g["items"])
+    it = next(i for g in reglages.describe()["groups"] if g["id"] == "confidentialite" for i in g["items"]
+              if i["key"] == "confidentialite")  # 04/11 : « Rien ne sort » est la première ligne du groupe
     labels = [line["label"] for line in it["value"]["lines"]]
     assert "Vers Claude (Anthropic)" in labels and "Gardé par Claude Code" in labels
 
