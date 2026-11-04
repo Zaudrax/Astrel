@@ -395,6 +395,14 @@ body.alert-on #dialog { max-height: calc(100vh - var(--head-h) - var(--gap) - va
 .msg.user { position: relative; }
 .msg.user .copy-btn { right: auto; left: -30px; top: 4px; }
 .msg.user:hover .copy-btn { opacity: 1; }
+/* 04/11 (moteur local) : demande et réponse traitées sur la machine par Qwen : badge « Local » */
+.engine-badge {
+  display: inline-flex; align-items: center; gap: 4px; margin: 0 6px 4px 0; padding: 0 6px; border-radius: 6px;
+  font-size: 11px; line-height: 16px; vertical-align: 1px; user-select: none;
+  color: var(--green); border: 1px solid rgba(var(--rgb-ok), 0.45); background: rgba(var(--rgb-ok), 0.10);
+}
+.engine-badge .ico { width: 12px; height: 12px; }
+.msg.user .engine-badge { color: inherit; border-color: rgba(var(--rgb-hi), 0.55); background: rgba(var(--rgb-hi), 0.14); }
 /* 04/11 : nouveau message arrivé pendant la lecture plus haut : point d'accent sur le bouton ↓ */
 #jump-btn.has-new::after {
   content: ""; position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%;

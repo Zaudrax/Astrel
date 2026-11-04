@@ -71,9 +71,14 @@ class Channel:
     keywords: tuple[str, ...] = ()
     workdir: str = ""  # dossier du projet (14/10) : rappelé à Claude quand on passe dans ce canal
     words: tuple[str, ...] = ()  # mots-clés tels qu'écrits dans channels.json (15/10, fenêtre du HUD)
+    # 04/11 (moteur local) : « local » = un message écrit DANS ce canal est traité par le moteur local ;
+    # jamais choisi pour un message qui ne fait que citer son nom (« le serveur local »).
+    engine: str = ""
 
     def public(self) -> dict[str, Any]:
         out: dict[str, Any] = {"id": self.id, "label": self.label, "color": self.color}
+        if self.engine:
+            out["engine"] = self.engine
         if self.workdir:
             out["workdir"] = self.workdir
         if self.words:  # 15/10 : préremplit la fenêtre « Modifier » du HUD
@@ -124,8 +129,9 @@ def parse(data: Any) -> tuple[list[Channel], str]:
         words = entry.get("keywords") if isinstance(entry.get("keywords"), list) else []
         keys = [fold(w).strip() for w in (label, cid, cid.replace("-", " "), *map(str, words))]
         workdir = str(entry.get("workdir") or "").strip()
+        engine = "local" if str(entry.get("moteur") or "").strip().lower() == "local" else ""
         items.append(Channel(cid, label or cid, color, tuple(dict.fromkeys(k for k in keys if k)), workdir,
-                             tuple(str(w).strip() for w in words if str(w).strip())))
+                             tuple(str(w).strip() for w in words if str(w).strip()), engine))
     if not items:
         items = [Channel(DEFAULT, "Général", PALETTE[0], ("general",))]
     wanted = slug(data.get("default")) if isinstance(data, dict) else ""
@@ -273,6 +279,10 @@ class Channels:
         with self.lock:
             return [c.id for c in self._items]
 
+    def local_ids(self) -> frozenset[str]:
+        """04/11 : canaux dont les messages vont au moteur local (`"moteur": "local"`)."""
+        return frozenset(c.id for c in self.items() if c.engine == "local")
+
     def find(self, name: str) -> str:
         """Id d'un canal donné par son id ou son nom (« Compta », « compta ») ; vide si inconnu."""
         wanted = slug(name)
@@ -336,7 +346,7 @@ class Channels:
             if len(addressed) == 1:
                 target = addressed[0]
             elif base == self.default and not addressed:
-                mentioned = [c.id for c in items if c.id != self.default and _mentions(t, c)]
+                mentioned = [c.id for c in items if c.id != self.default and not c.engine and _mentions(t, c)]
                 if len(mentioned) == 1:
                     target = mentioned[0]
             move = follow and target != self.active

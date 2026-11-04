@@ -1,5 +1,6 @@
 """Faux serveur Ollama (plan P8) : /api/version, /api/tags, /api/pull (en flux), /api/delete,
-/api/create, /v1/messages (format Anthropic, en flux SSE ou non), et un faux registre
+/api/create, /v1/messages (format Anthropic, en flux SSE ou non), /api/chat (en flux, ndjson) et /api/ps
+(04/11, moteur local), et un faux registre
 (/v2/library/<nom>/manifests/<tag>). Aucun réseau, aucun disque : tout est en mémoire."""
 from __future__ import annotations
 
@@ -12,8 +13,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 class FauxOllama:
     def __init__(self, installed: dict[str, int] | None = None, manifests: dict[str, int] | None = None,
                  pull_steps: int = 4, pull_delay: float = 0.0, reply: str = "Bonjour, je suis en mode léger.",
-                 create_error: str = "") -> None:
+                 create_error: str = "", chat: list[str] | None = None, chat_error_gpu: str = "",
+                 loaded: list[str] | None = None) -> None:
         self.installed = dict(installed or {})
+        # /api/chat : morceaux de la réponse ; `chat_error_gpu` : erreur rendue tant que `num_gpu` est demandé
+        # (repli du moteur local) ; `loaded` : modèles déjà chargés (/api/ps).
+        self.chat = list(chat or ["Bonjour. ", "Je réponds en local."])
+        self.chat_error_gpu = chat_error_gpu
+        self.loaded = list(loaded or [])
         self.manifests = dict(manifests or {})
         self.pull_steps, self.pull_delay = pull_steps, pull_delay
         self.reply, self.create_error = reply, create_error
@@ -49,6 +56,8 @@ class FauxOllama:
 
             def do_GET(self):  # noqa: N802
                 owner.requests.append(("GET", self.path, {}))
+                if self.path == "/api/ps":
+                    return self._json(200, {"models": [{"name": n, "model": n} for n in owner.loaded]})
                 if self.path == "/api/version":
                     return self._json(200, {"version": "0.30.6"})
                 if self.path == "/api/tags":
@@ -83,6 +92,8 @@ class FauxOllama:
                     return self._json(200, {"status": "success"})
                 if self.path == "/api/pull":
                     return self._pull(body.get("model", ""))
+                if self.path == "/api/chat":
+                    return self._chat(body)
                 if self.path.partition("?")[0] == "/v1/messages":  # le CLI ajoute « ?beta=true »
                     return self._messages(body)
                 return self._json(404, {"error": "inconnu"})
@@ -104,6 +115,21 @@ class FauxOllama:
                     self._chunk(b"")
                 except (BrokenPipeError, ConnectionResetError):
                     owner.pull_closed.set()
+
+            def _chat(self, body: dict) -> None:
+                if owner.chat_error_gpu and "num_gpu" in (body.get("options") or {}):
+                    return self._json(500, {"error": owner.chat_error_gpu})
+                self.send_response(200)
+                self.send_header("Content-Type", "application/x-ndjson")
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                for part in owner.chat:
+                    self._chunk(json.dumps({"message": {"role": "assistant", "content": part},
+                                            "done": False}).encode() + b"\n")
+                self._chunk(json.dumps({"message": {"role": "assistant", "content": ""}, "done": True,
+                                        "eval_count": 20, "eval_duration": 500_000_000,
+                                        "load_duration": 100_000_000}).encode() + b"\n")
+                self._chunk(b"")
 
             def _messages(self, body: dict) -> None:
                 model, text = body.get("model", ""), owner.reply

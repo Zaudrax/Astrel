@@ -92,6 +92,9 @@ class _Item:
     # 15/10 : étiquette d'une phrase qu'on peut retirer SEULE (`Speaker.cancel`) : la
     # question d'une confirmation, à faire taire dès que l'utilisateur a répondu à l'écran.
     tag: str = ""
+    # 04/11 (moteur local) : réponse traitée sur la machine : dite par une voix LOCALE (Piper) seulement,
+    # jamais par Edge (le texte partirait chez Microsoft) ; sans voix locale, elle n'est pas dite.
+    local_only: bool = False
 
 
 def _close_engine(engine: Engine | None) -> None:
@@ -215,12 +218,22 @@ class Speaker:
 
     # --- parole ---
 
-    def say(self, text: str, raw: bool = False, tag: str = "") -> None:
+    def say(self, text: str, raw: bool = False, tag: str = "", local_only: bool = False) -> None:
         payload = text.strip() if raw else clean_for_speech(text)
         if not payload or (tag and tag in self._cancelled):
             return
+        if local_only and self.local_engine() is None:
+            log.info("phrase locale non dite : aucune voix locale (Piper) disponible")
+            return
         self._idle.clear()
-        self._queue.put(_Item(payload, self._generation, tag))
+        self._queue.put(_Item(payload, self._generation, tag, local_only))
+
+    def local_engine(self) -> Engine | None:
+        """La voix qui ne fait rien sortir de la machine (Piper), principale ou de secours ; None sinon."""
+        for engine in (self._primary, self._fallback):
+            if engine is not None and engine.name.startswith("piper:"):
+                return engine
+        return None
 
     def cancel(self, tag: str) -> bool:
         """Retire la phrase marquée `tag`, et elle SEULE (15/10) : en file, gardée par
@@ -414,7 +427,10 @@ class Speaker:
                     self._on_activity(True)
             bus.publish("speech", text=text)
             try:
-                self._speak(text, item.generation)
+                if item.local_only:
+                    self._speak_local(text, item.generation)
+                else:
+                    self._speak(text, item.generation)
             finally:
                 with self._player_lock:
                     self._speaking_tag = ""
@@ -434,7 +450,7 @@ class Speaker:
                 break
             if nxt.generation != first.generation:
                 continue
-            if nxt.tag != first.tag:
+            if nxt.tag != first.tag or nxt.local_only != first.local_only:
                 # Une phrase étiquetée n'est jamais fondue avec une autre : `cancel`
                 # doit pouvoir la retirer seule. Elle sera dite juste après, à sa place.
                 with self._player_lock:
@@ -469,6 +485,17 @@ class Speaker:
             return
         if self._failures and self._emitted:
             self._recovered(engine)
+
+    def _speak_local(self, text: str, generation: int) -> None:
+        """04/11 : phrase d'une réponse locale : Piper ou rien, jamais de repli sur une voix en ligne."""
+        engine = self.local_engine()
+        if engine is None:
+            log.info("phrase locale non dite : plus de voix locale")
+            return
+        try:
+            self._render(engine, text, generation)
+        except Exception:
+            log.exception("la voix locale a échoué : phrase non dite (aucun repli en ligne)")
 
     def _render_primary(self, engine: Engine, text: str, generation: int) -> None:
         """Le moteur principal, avec un ou deux nouveaux essais rapides sur

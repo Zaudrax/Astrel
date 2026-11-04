@@ -32,6 +32,7 @@ from . import audit, detail_agent, equipe, fournisseurs, ipc, levee, memoire
 from . import courrier
 from . import sources
 from . import gel
+from . import routeur  # 04/11 : moteur demandé expressément (local ou Claude)
 from . import langue  # 02/11 : langue de la conversation (fr, en)
 from .attente import attente
 from . import images_ia
@@ -500,6 +501,7 @@ from .coeur.calibrage import CALIBRAGE_COMMANDS, CalibrageCoeur  # 02/11 : assis
 from .coeur.langue import LangueCoeur  # 02/11 : conversation anglaise
 from .coeur.cycle import CycleCoeur  # 04/11 (T46) : cerveau qui tombe proprement
 from .coeur.propositions import PROPOSITIONS_COMMANDS, PropositionsCoeur  # 04/11 (T49) : mémoire à valider
+from .coeur.local_tour import TourLocalCoeur  # 04/11 : moteur local (Qwen), demande forcée en local
 
 
 def _erreur_auth(ev: "BrainEvent") -> bool:
@@ -530,7 +532,7 @@ def _table_commandes(*paires: tuple[Any, str]) -> dict[str, str]:
     return out
 
 class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, ConfirmationsCoeur, TachesCoeur, QuotaCoeur,
-             FiabiliteCoeur, CalibrageCoeur, LangueCoeur, CycleCoeur, PropositionsCoeur):
+             FiabiliteCoeur, CalibrageCoeur, LangueCoeur, CycleCoeur, PropositionsCoeur, TourLocalCoeur):
     # 04/11 (T58, pas 2a) : l'état du tour en cours vit dans `self.tour` (`astrel/tour.py`, champs commentés
     # là-bas) ; les anciens noms (`_turn_active`, `_hushed`, `_splitter`…) en sont des descripteurs.
     _turn_active = DuTour("active")
@@ -899,7 +901,8 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
 
     # ------------------------------------------------------------------ sorties
 
-    def say(self, text: str, raw: bool = False, live: bool = False, force: bool = False, tag: str = "") -> None:
+    def say(self, text: str, raw: bool = False, live: bool = False, force: bool = False, tag: str = "",
+            local_only: bool = False) -> None:
         """Dit une phrase (mise en file : ne bloque pas).
 
         `live` : phrase qui n'a de sens qu'à l'instant (question de confirmation,
@@ -910,24 +913,29 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         Mode silencieux ou dictée : rien n'est dit, le texte reste à l'écran.
         `force` : demande EXPRESSE de l'utilisateur (clic sur 🔊 Lire, essai d'une voix).
         `tag` : phrase qu'on pourra faire taire seule (`speaker.cancel`), la question
-        d'une confirmation à laquelle l'utilisateur répond à l'écran (15/10)."""
+        d'une confirmation à laquelle l'utilisateur répond à l'écran (15/10).
+        `local_only` (04/11, moteur local) : dite par Piper seulement, jamais par une voix en ligne ; le
+        texte n'est pas recopié au journal (réponse traitée sur la machine)."""
         if raw:
             text = langue.parle(text)  # 02/11 : phrase écrite par le code, dite dans la langue de la conversation
+        shown = f"<réponse locale, {len(text)} caractères>" if local_only else text
         if not force and self._voice_muted():
-            log.info("ASTREL (mode %s, non dit) : %s", self._usage, text)
+            log.info("ASTREL (mode %s, non dit) : %s", self._usage, shown)
             return
         if not force and self._away():
             # Plan P1 : l'utilisateur est absent, la pièce est vide ; ce qui compte part sur WhatsApp.
-            log.info("ASTREL (absent, non dit) : %s", text)
+            log.info("ASTREL (absent, non dit) : %s", shown)
             return
         if live and self.speaker.paused:
-            log.info("ASTREL (voix en pause, non dit) : %s", text)
+            log.info("ASTREL (voix en pause, non dit) : %s", shown)
             return
-        log.info("ASTREL: %s", text)
+        log.info("ASTREL: %s", shown)
         if not self.voice_out:
             print(f"\n🔊 {text}\n", flush=True)
             return
-        if tag:
+        if local_only:
+            self.speaker.say(text, raw=raw, local_only=True)
+        elif tag:
             self.speaker.say(text, raw=raw, tag=tag)
         else:
             self.speaker.say(text, raw=raw)
@@ -1210,6 +1218,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         # Et le reste du tour est tu : sinon la phrase suivante, streamée juste
         # après, reprenait la parole et le bouton semblait sans effet (26/09).
         self._hushed = self._turn_active
+        self._local_chut()  # 04/11 : la réponse locale en cours se tait aussi
         self.speaker.interrupt()
         self._drop_backlog("chut")
         return {"ok": True}
@@ -1217,6 +1226,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
     def _cmd_stop(self, name: str, cmd: dict) -> Any:
         self.speaker.interrupt()
         self._drop_backlog("stop")
+        self._local_arreter()  # 04/11 : la réponse locale en cours s'arrête
         if self._turn_active:
             self.brain.interrupt()
         if mission.active:
@@ -2555,6 +2565,13 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         `joined` : pièces jointes déjà enregistrées (images en blocs, fichiers en notes).
         `held_mid` : message gardé pendant une relève (plan P9), déjà affiché et rangé sous cet id ;
         `prefix` : texte mis devant le message pour Claude seulement (liste des agents à relancer)."""
+        if source in _UTILISATEUR and not held_mid:
+            # 04/11 (moteur local, lot 1) : « en local : … » ou canal Local : traité par Qwen sur la machine,
+            # jamais envoyé à Claude (le cœur décide, `routeur.forced_engine`).
+            moteur, demande = self._moteur_force(text, channel)
+            if moteur == routeur.LOCAL:
+                self._tour_local(text, demande, source, channel, shown, joined)
+                return
         if self._local_active() and source in _LOCAL_FROZEN:
             self._local_freeze(text, source, channel, shown)
             return
@@ -3185,7 +3202,10 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                         # Passé en dictée PENDANT l'écoute : la phrase est dictée, pas envoyée.
                         self._dictate(text)
                         continue
-                log.info("UTILISATEUR: %s", text)
+                if self._moteur_force(text, channels.active)[0] == routeur.LOCAL:
+                    log.info("UTILISATEUR (demande locale, %d caractères)", len(text))  # 04/11 : rien en clair
+                else:
+                    log.info("UTILISATEUR: %s", text)
                 if self._answer_by_speech(text):
                     bus.publish("transcript", who="user", text=text, source="voix", channel=channels.active,
                                 mid=uuid.uuid4().hex[:12])
@@ -3254,7 +3274,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         """Juste après une demande : laisser Astrel commencer sa réponse avant de
         réécouter, sinon l'écoute s'ouvrirait pendant qu'il réfléchit."""
         deadline = time.time() + cap_s
-        while (self._turn_active and not self.speaker.busy and not self._confirm_evt.is_set()
+        while ((self._turn_active or self._local_actif()) and not self.speaker.busy and not self._confirm_evt.is_set()
                and not self.speaker.paused and self._running and time.time() < deadline):
             time.sleep(0.1)
 

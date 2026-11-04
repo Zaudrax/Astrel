@@ -159,14 +159,16 @@ on("voice", (ev) => {
 const messages = [];        // { node, body, raw, who, channel, mid, replyTo }
 const byMid = new Map();    // un HUD qui se reconnecte reçoit l'historique : pas de doublon
 const liveReplies = new Map(); // canal → réponse en cours d'écriture
+// 04/11 (moteur local) : la réponse du moteur local s'écrit À CÔTÉ de celle de Claude, jamais dans la même bulle.
+const liveKey = (channel, ev) => (ev?.engine === "local" ? `${channel}\u0000local` : channel);
 const PER_CHANNEL = 60;
 
 on("transcript", (ev) => {
   const channel = ev.channel || defaultChannel;
-  closeLive(channel);
+  closeLive(liveKey(channel, ev));
   // 29/10 : un message venu de WhatsApp portait l'icône du micro (comme s'il avait été dit)
   const src = { clavier: "keyboard", "dictée": "pen", whatsapp: "smartphone" }[ev.source] || "mic";
-  const m = addMsg("user", ev.text, { src, channel, mid: ev.mid, replay: ev.replay, ts: ev.ts });
+  const m = addMsg("user", ev.text, { src, channel, mid: ev.mid, replay: ev.replay, ts: ev.ts, engine: ev.engine });
   if (ev.attachments?.length && !m.node.querySelector(".att-list")) {
     const list = el("div", "att-list");
     for (const a of ev.attachments) list.append(sentAttachment(a));
@@ -325,10 +327,11 @@ function markUnsent(m, kind, error = "") {
 
 on("reply_delta", (ev) => {
   const channel = ev.channel || defaultChannel;
-  let m = liveReplies.get(channel);
+  const key = liveKey(channel, ev);
+  let m = liveReplies.get(key);
   if (!m) {
-    m = addMsg("astrel", "", { channel, replyTo: ev.reply_to, live: true, ts: ev.ts });
-    liveReplies.set(channel, m);
+    m = addMsg("astrel", "", { channel, replyTo: ev.reply_to, live: true, ts: ev.ts, engine: ev.engine });
+    liveReplies.set(key, m);
   }
   m.raw += ev.text;
   scheduleRender(m);
@@ -342,12 +345,14 @@ on("reply", (ev) => {
     return;
   }
   const channel = ev.channel || defaultChannel;
-  let m = ev.replay ? null : liveReplies.get(channel);
+  const key = liveKey(channel, ev);
+  let m = ev.replay ? null : liveReplies.get(key);
   if (m) {
-    closeLive(channel, ev.text);
+    closeLive(key, ev.text);
     setMid(m, ev.mid);
   } else if (ev.text) {
-    m = addMsg("astrel", ev.text, { channel, mid: ev.mid, replyTo: ev.reply_to, replay: ev.replay, ts: ev.ts });
+    m = addMsg("astrel", ev.text, { channel, mid: ev.mid, replyTo: ev.reply_to, replay: ev.replay, ts: ev.ts,
+      engine: ev.engine });
   }
   // P41 : réponse finie sous les yeux de l'utilisateur : vue jusqu'à son heure de FIN (sinon, rejouée
   // après un rechargement, elle compterait comme non lue).
@@ -1087,10 +1092,18 @@ function timeEl(ts) {
   return time;
 }
 
-function addMsg(who, text, { src = null, channel = defaultChannel, mid = "", replyTo = "", live = false, replay = false, ts = null } = {}) {
+function addMsg(who, text, { src = null, channel = defaultChannel, mid = "", replyTo = "", live = false, replay = false, ts = null,
+  engine = "" } = {}) {
   if (mid && byMid.has(mid)) return byMid.get(mid);
-  const node = el("div", `msg ${who}${live ? " live" : ""}`);
+  const node = el("div", `msg ${who}${live ? " live" : ""}${engine === "local" ? " engine-local" : ""}`);
   if (src) { const s = el("span", "src"); s.append(icon(src)); node.append(s); }
+  if (engine === "local") {
+    // 04/11 : demande et réponse traitées par le moteur local (Qwen) : rien n'est sorti de la machine.
+    const b = el("span", "engine-badge");
+    b.append(icon("shield"), document.createTextNode(t("msg.local_badge")));
+    b.title = t("msg.local_title");
+    node.append(b);
+  }
   const body = who === "astrel" ? el("div", "md") : el("span", "");
   node.append(body);
   node.append(timeEl(ts));
@@ -1629,7 +1642,10 @@ on("channel_move", (ev) => {
   for (const m of messages) {
     if (m.mid !== ev.mid && m.replyTo !== ev.mid) continue;
     for (const [channel, live] of liveReplies) {
-      if (live === m) { liveReplies.delete(channel); liveReplies.set(ev.channel, m); }
+      if (live === m) {
+        liveReplies.delete(channel);
+        liveReplies.set(channel.endsWith("\u0000local") ? `${ev.channel}\u0000local` : ev.channel, m);
+      }
     }
     m.channel = ev.channel;
     placeMsg(m);

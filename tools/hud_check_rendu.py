@@ -522,6 +522,7 @@ async def run(url):
         await check_images_ia(p)  # 21/10 (plan P14)
         await check_medias(p)  # 22/10 (plan P26)
         await check_liens_et_barre(p)  # 04/11 : liens cliquables, Copier, ↑, « / », point du bouton ↓
+        await check_moteur_local(p)  # 04/11 : badge « Local », réponse locale à côté de celle de Claude
         await check_sans_graphe(p)  # 23/10 (plan P28) : graphe 3D, Recadrer, Orbite retirés
         await check_affichage_simple(p)  # 22/10 (plan P23, lots A et B) : recharge la page
         await check_theme_a_la_connexion(p)  # 21/10 (relecture P17) : recharge la page
@@ -5145,6 +5146,31 @@ LIENS_JS = """((md) => [...md.querySelectorAll('a')].map(a => { const ico = a.qu
   cls: a.className, icon: ico?.dataset.icon || '', hidden: ico?.getAttribute('aria-hidden') || '', w: ico ? ico.getBoundingClientRect().width : 0,
   desc: a.getAttribute('aria-description') || '', after: (a.nextSibling?.textContent || '').slice(0, 2),
   clipped: !!txt && txt.scrollWidth > txt.clientWidth + 1, cursor: getComputedStyle(a).cursor }; }))"""
+
+
+async def check_moteur_local(p: Page) -> None:
+    """04/11 (moteur local, lot 1) : demande et réponse traitées par Qwen portent le badge « Local » ; la réponse
+    locale s'écrit dans SA bulle, à côté d'une réponse de Claude en cours dans le même canal (jamais mêlées)."""
+    await p.until("!!window.__ws && window.__ws.readyState === 1", 10)
+    ch = await p.js("document.querySelector('.channel-tab.on')?.dataset.chan || ''")
+    await fake_event(p, {"type": "transcript", "who": "user", "text": "en local : badge", "source": "clavier",
+                         "channel": ch, "mid": "loc-q1", "engine": "local"})
+    await fake_event(p, {"type": "reply_delta", "text": "Claude écrit ", "channel": ch, "reply_to": "x"})
+    await fake_event(p, {"type": "reply_delta", "text": "Qwen écrit ", "channel": ch, "reply_to": "loc-q1",
+                         "engine": "local"})
+    await fake_event(p, {"type": "reply_delta", "text": "encore.", "channel": ch, "reply_to": "x"})
+    await fake_event(p, {"type": "reply", "text": "Qwen écrit seul.", "channel": ch, "reply_to": "loc-q1",
+                         "mid": "loc-r1", "engine": "local"})
+    await fake_event(p, {"type": "reply", "text": "Claude écrit encore.", "channel": ch, "reply_to": "x", "mid": "cl-r1"})
+    info = await p.js("""(() => { const ms = [...document.querySelectorAll('#transcript .msg')].slice(-3);
+        return ms.map(m => ({ who: m.classList.contains('user') ? 'user' : 'astrel', local: m.classList.contains('engine-local'),
+          badge: m.querySelector('.engine-badge')?.textContent || '', title: m.querySelector('.engine-badge')?.title || '',
+          text: (m.querySelector('.md') || m.querySelector('span:not(.src):not(.engine-badge)'))?.textContent || '' })); })()""")
+    check(f"moteur local : badge « Local » sur la demande et la réponse, bulles séparées de Claude ({info})",
+          len(info) == 3 and info[0]["who"] == "user" and info[0]["local"] and info[0]["badge"] == "Local"
+          and "rien n'est sorti" in info[0]["title"]
+          and sorted((m["local"], m["text"]) for m in info[1:]) == [(False, "Claude écrit encore."),
+                                                                    (True, "Qwen écrit seul.")])
 
 
 async def check_liens_et_barre(p: Page) -> None:

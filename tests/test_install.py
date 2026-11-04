@@ -46,7 +46,8 @@ def test_exemples_lus_par_astrel(monkeypatch):
     monkeypatch.setattr(reflex, "RULES_FILE", ROOT / "config" / "reflexes.example.json")
     assert [r["id"] for r in reflex.load_rules()] == [r["id"] for r in reflex.DEFAULT_RULES]
     items, default = channels.parse(json.loads((ROOT / "config" / "channels.example.json").read_text("utf-8")))
-    assert default == "general" and [c.id for c in items] == ["general", "exemple"]
+    assert default == "general" and [c.id for c in items] == ["general", "exemple", "local"]
+    assert [c.engine for c in items] == ["", "", "local"]  # 04/11 : canal du moteur local
 
 
 def test_exemples_copies_sans_ecraser(tmp_path):

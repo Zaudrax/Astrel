@@ -1794,5 +1794,17 @@
  "proposition illisible": "unreadable proposal",
  "proposition déjà traitée ({statut})": "proposal already handled ({statut})",
  "la proposition a changé depuis son affichage : relis-la": "the proposal changed since it was shown: read it again",
- "la note {rel} a changé depuis la proposition : elle n'est pas appliquée": "the note {rel} changed since the proposal: it is not applied"
+ "la note {rel} a changé depuis la proposition : elle n'est pas appliquée": "the note {rel} changed since the proposal: it is not applied",
+ "Moteur local : {exc}": "Local model: {exc}",
+ "Moteur local : panne inattendue (voir le journal)": "Local model: unexpected failure (see the log)",
+ "adresse d'Ollama hors de cette machine ({url}) : refusé, rien n'est envoyé": "Ollama address outside this machine ({url}): refused, nothing is sent",
+ "aucun modèle local choisi": "no local model chosen",
+ "{tag} est un modèle en ligne d'Ollama : la demande sortirait de la machine": "{tag} is an online Ollama model: the request would leave the machine",
+ "mémoire trop basse pour charger {tag} ({dispo} Go disponibles, {mini} Go au moins) : ferme une application et réessaie": "memory too low to load {tag} ({dispo} GB available, at least {mini} GB): close an application and try again",
+ "Ollama ne répond pas : lance-le (« ollama serve » ou le service ollama)": "Ollama is not answering: start it (\"ollama serve\" or the ollama service)",
+ "Ollama ne répond plus (délai dépassé)": "Ollama stopped answering (timed out)",
+ "Ollama a répondu {code}": "Ollama answered {code}",
+ "Une demande « en local » ne se fait pas depuis WhatsApp : la réponse repartirait par Internet. Redemande-la sur le PC.": "A \"local\" request can't be made from WhatsApp: the answer would go back over the Internet. Ask again on the PC.",
+ "Le moteur local ne lit pas encore les pièces jointes : elles sont rendues à la barre. Envoie la demande sans elles, ou à Claude.": "The local model can't read attachments yet: they are back in the bar. Send the request without them, or to Claude.",
+ "Le moteur local répond déjà à une demande : attends la fin ou arrête-la (■).": "The local model is already answering a request: wait for the end or stop it (■)."
 }

@@ -1,5 +1,5 @@
 {
-  "_aide": "Canaux du HUD, un par projet. Ajouter un projet = ajouter une entrée ici, sans relancer Astrel (recharger le HUD suffit). id : court, sans espace ; label : nom affiché ; color : facultative ; keywords : mots qui désignent le projet (le nom et l'id comptent déjà). Voir docs/UTILISATION.md, « Canaux ».",
+  "_aide": "Canaux du HUD, un par projet. Ajouter un projet = ajouter une entrée ici, sans relancer Astrel (recharger le HUD suffit). id : court, sans espace ; label : nom affiché ; color : facultative ; keywords : mots qui désignent le projet (le nom et l'id comptent déjà). Voir docs/UTILISATION.md, « Canaux ». moteur : « local » = les messages écrits dans ce canal sont traités par le modèle local (Qwen), jamais envoyés à Claude.",
   "default": "general",
   "channels": [
     {
@@ -14,6 +14,12 @@
       "keywords": [
         "exemple"
       ]
+    },
+    {
+      "id": "local",
+      "label": "Local",
+      "color": "#5ce1c6",
+      "moteur": "local"
     }
   ]
 }
