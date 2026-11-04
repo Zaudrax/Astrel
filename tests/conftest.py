@@ -166,6 +166,10 @@ def _economie_isolee(tmp_path, monkeypatch):
     monkeypatch.setattr(taches_coeur, "COUTS_LOG", tmp_path / "agents-couts.jsonl")
     from astrel.coeur import routage as routage_coeur  # 04/11 (lot 3 du moteur local) : jamais le vrai journal
     monkeypatch.setattr(routage_coeur, "ROUTAGE_LOG", tmp_path / "routage.jsonl")
+    from astrel import outils_local  # 04/11 (lot 4) : ni le banc réel de la machine, ni son dossier du CLI local
+    monkeypatch.setattr(outils_local, "BANC_DIR", tmp_path / "banc")
+    monkeypatch.setattr(outils_local, "CONFIG_CLI", tmp_path / "outils-local")
+    monkeypatch.setattr(outils_local, "_VERSION", {"v": "0.0.0-test"})
     # Plan P28 : effort par métier choisi par l'utilisateur, et ce que le CLI en marche a reçu.
     monkeypatch.setattr(agents, "EFFORT_FILE", tmp_path / "agent-effort.json")
     monkeypatch.setattr(agents, "_written", None)

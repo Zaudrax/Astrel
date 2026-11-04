@@ -75,6 +75,7 @@ SANS_SORTIE = {
     "astrel/guard.py": "garde-fou : juge des commandes, ne lance rien",
     "astrel/ipc.py": "canal de contrôle local",
     "astrel/moteur_local.py": "moteur local : Ollama sur la machine seulement (adresse distante refusée)",
+    "astrel/outils_local.py": "moteur local avec outils (lot 4) : CLI pointé sur Ollama de la machine seulement",
     "astrel/platform/linux_capture.py": "capture d'écran locale (portail du bureau)",
     "astrel/server.py": "HUD sur 127.0.0.1",
     "astrel/tools/connector.py": "réglages des connecteurs ; httpx pour les types d'erreur seulement",

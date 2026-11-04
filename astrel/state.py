@@ -149,17 +149,20 @@ def service_cgroup() -> str:
     return own if own.rsplit("/", 1)[-1] == SERVICE_UNIT else ""
 
 
-def from_claude(pid: int, claude_pid: int | None, service_cg: str | None = None) -> bool:
+def from_claude(pid: int, claude_pid: int | tuple[int, ...] | None, service_cg: str | None = None) -> bool:
     """Le programme `pid` peut-il être Claude (ou l'un de ses process) ?
 
     Vrai si : pid inconnu ou disparu (dans le doute, suspect), descendant du
     process Claude, ou membre du cgroup du service (hors le cœur lui-même).
     macOS et Windows (pas de cgroup) : membre du Job Object du cerveau (Windows,
     03/11), porteur du marqueur `ASTREL_BRAIN` du cerveau, ou environnement
-    illisible (P6 ; sous macOS, plus faible qu'un cgroup)."""
+    illisible (P6 ; sous macOS, plus faible qu'un cgroup).
+    04/11 (moteur local, lot 4) : `claude_pid` peut être un tuple (le cerveau ET le CLI du modèle local avec
+    outils) : descendre de l'un d'eux suffit."""
     if pid <= 0 or not proc.exists(pid):
         return True
-    if descends_from(pid, claude_pid):
+    ancetres = claude_pid if isinstance(claude_pid, tuple) else (claude_pid,)
+    if any(descends_from(pid, a) for a in ancetres):
         return True
     if pid == os.getpid():
         return False  # le cœur lui-même (tests, appels internes)

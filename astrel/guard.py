@@ -1434,7 +1434,8 @@ def _zone_lue(tool_name: str, tool_input: dict) -> Verdict | None:
         base = str(tool_input.get("path") or "") or str(_base())
         cibles.append((base, True))
         pattern = str(tool_input.get("pattern") or "") if tool_name == "Glob" else ""
-        if pattern.startswith(("/", "~")):
+        # 04/11 (CI Windows) : un motif absolu « C:\…\zone/**/*.md » vise aussi une zone
+        if pattern.startswith(("/", "~")) or os.path.isabs(pattern) or re.match(r"^[A-Za-z]:[\\/]", pattern):
             cibles.append((pattern.split("*", 1)[0] or "/", True))
     elif tool_name == "Bash":
         cmd = str(tool_input.get("command", ""))
@@ -1447,7 +1448,8 @@ def _zone_lue(tool_name: str, tool_input: dict) -> Verdict | None:
             cibles.append((str(_base()), False))
         for m in mots:
             for morceau in m.split("=")[-1:] if m.startswith("-") else [m]:
-                if morceau.startswith(("/", "~", "./", "../")) or "/" in morceau:
+                if morceau.startswith(("/", "~", "./", "../")) or "/" in morceau \
+                        or re.match(r"^[A-Za-z]:[\\/]", morceau) or "\\" in morceau:  # 04/11 : 'C:\…' cité
                     cibles.append((morceau.split("*", 1)[0] or morceau, recursif))
     else:
         return None

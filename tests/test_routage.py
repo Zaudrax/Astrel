@@ -4,6 +4,7 @@ confidentielle du garde-fou (lot 3b)."""
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -144,12 +145,20 @@ def zone(tmp_path, monkeypatch):
 ])
 def test_lecture_dans_une_zone_demandee(zone, outil, entree, demande):
     t = zone.parent
-    entree = {k: v.format(z=zone, t=t) for k, v in entree.items()}
+    # 04/11 (CI Windows) : dans une commande Bash, Git Bash mange les « \\ » non cités : chemins en « / »
+    z_, t_ = (zone.as_posix(), t.as_posix()) if outil == "Bash" else (zone, t)
+    entree = {k: v.format(z=z_, t=t_) for k, v in entree.items()}
     for mode in ("autonome", "total"):
         v = guard.assess(outil, entree, mode=mode, cwd=str(t / "autre"))
         assert v.needs_confirm is demande, (mode, v.desc)
         if demande:
             assert v.desc == guard.L_ZONE and v.level == guard.CRITICAL and guard.limites.PLAFOND in v.cats
+
+
+@pytest.mark.skipif(os.name != "nt", reason="chemin Windows à antislash, cité entre guillemets")
+def test_chemin_windows_cite_dans_une_zone(zone):
+    v = guard.assess("Bash", {"command": f"cat '{zone}\\a.txt'"}, mode="autonome", cwd=str(zone.parent / "autre"))
+    assert v.needs_confirm and v.desc == guard.L_ZONE
 
 
 def test_bash_lance_dans_la_zone(zone):

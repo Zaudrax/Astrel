@@ -69,7 +69,8 @@ class RoutageCoeur:
         pieces = [str(s.get("name") or "") for s in (joined.shown if joined is not None else [])] or \
             (list(joined.ids) if joined is not None else [])
         etat = routeur.Etat(canaux_locaux=locaux, projet=projet, source=source,
-                            scan=lambda _t, p: sensible.scan(scanne, p))
+                            scan=lambda _t, p: sensible.scan(scanne, p),
+                            lecture_locale=not self._outils_locaux_raison())  # 04/11 (lot 4)
         # Canal Local : celui DONNÉ avec le message (comme au lot 1), pas le canal ouvert par défaut.
         return routeur.decider(text, channel, pieces, {"moteur_mode": mode}, etat)
 
@@ -108,7 +109,7 @@ class RoutageCoeur:
             return True
         if dec.moteur == routeur.LOCAL:
             self._routage_notice(dec, channel)
-            self._tour_local(text, dec.texte, source, channel, shown, joined)
+            self._tour_local(text, dec.texte, source, channel, shown, joined, outils=dec.outils)
             return True
         return False
 

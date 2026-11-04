@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Iterable
 
 LOCAL, CLAUDE = "local", "claude"
@@ -126,6 +126,14 @@ _CAPACITE = re.compile(
     r"|\b(?:open|run|execute|install|delete|create|edit|write|read|scan)\b[^.?!]{0,30}"
     r"\b(?:file|folder|program|command|script|app|email|calendar|network|port)s?\b"
     r"|\b(?:agent|agents|sous-agent|mission)\b")
+# 04/11 (lot 4) : LIRE seulement (fichiers d'un projet, journaux, configurations) : le local le fait avec ses
+# outils de lecture quand ils sont ouverts (`Etat.lecture_locale`) ; tout le reste de `_CAPACITE` reste proposé.
+_LECTURE = re.compile(
+    r"\b(?:lis|lire|relis|analyse\w*|examine\w*|regarde|inspecte\w*|audite\w*|parcours|explique|resume|cherche)"
+    r"\b[^.?!]{0,40}\b(?:fichiers?|dossiers?|repertoires?|code|config\w*|journaux|logs?|projet|scripts?"
+    r"|sshd_config|sources?)\b"
+    r"|\b(?:read|analy[sz]e|inspect|audit|review|look at|explain|summari[sz]e|grep|search)\b[^.?!]{0,40}"
+    r"\b(?:files?|folders?|director(?:y|ies)|code|config\w*|logs?|project|scripts?|sources?)\b")
 
 
 @dataclass(frozen=True)
@@ -140,6 +148,7 @@ class Decision:
     carte: str = ""
     recommande: str = ""
     explicite: bool = False
+    outils: bool = False   # 04/11 (lot 4) : le local répond AVEC ses outils de lecture
 
 
 @dataclass
@@ -150,6 +159,7 @@ class Etat:
     projet: bool = False          # canal relié à un dossier de projet
     source: str = "clavier"
     scan: Callable[[str, Iterable[str]], list[str]] | None = None
+    lecture_locale: bool = False  # 04/11 (lot 4) : outils de lecture du local ouverts (banc réussi, ni Total ni levée)
 
 
 def mode_valide(mode: object) -> str:
@@ -157,10 +167,25 @@ def mode_valide(mode: object) -> str:
     return m if m in MODES else "auto"
 
 
+def _lecture_seule(demande: str) -> bool:
+    """La demande a besoin de LIRE et de rien d'autre (aucune action, aucun envoi, pas de web)."""
+    plie = _plier(demande)
+    return bool(_LECTURE.search(plie)) and not _CAPACITE.search(_LECTURE.sub(" ", plie))
+
+
 def decider(texte: str, canal: str = "", pieces: Iterable[str] = (), reglages: dict | None = None,
             etat: Etat | None = None) -> Decision:
-    """Moteur d'une demande de l'utilisateur (voir l'en-tête du module pour l'ordre)."""
+    """Moteur d'une demande de l'utilisateur (voir l'en-tête du module pour l'ordre). 04/11 (lot 4) : une demande
+    locale qui a seulement besoin de lire passe par les outils de lecture du local s'ils sont ouverts."""
     etat = etat or Etat()
+    dec = _decider(texte, canal, pieces, reglages, etat)
+    if dec.moteur == LOCAL and not dec.carte and etat.lecture_locale and not list(pieces or ()) \
+            and _lecture_seule(dec.texte):
+        return replace(dec, outils=True)
+    return dec
+
+
+def _decider(texte: str, canal: str, pieces: Iterable[str], reglages: dict | None, etat: Etat) -> Decision:
     pieces = [str(p) for p in pieces or ()]
     mode = mode_valide((reglages or {}).get("moteur_mode"))
     moteur, demande = forced_engine(texte, canal, etat.canaux_locaux)
@@ -175,6 +200,8 @@ def decider(texte: str, canal: str = "", pieces: Iterable[str] = (), reglages: d
     raisons = tuple(scan(texte, pieces))
     if pieces:  # le moteur local ne lit pas encore les pièces jointes
         manque = ("pièces jointes",)
+    elif etat.lecture_locale and _lecture_seule(demande):
+        manque = ()  # 04/11 (lot 4) : le local sait lire, avec ses outils
     else:
         manque = ("outils",) if _CAPACITE.search(_plier(demande)) else ()
     if moteur == CLAUDE:

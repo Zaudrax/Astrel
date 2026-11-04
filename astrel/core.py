@@ -1032,9 +1032,12 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
 
     # ------------------------------------------------------------------ commandes
 
-    def _claude_pid(self) -> int | None:
+    def _claude_pid(self) -> int | tuple[int, ...] | None:
         proc = getattr(getattr(self, "brain", None), "_proc", None)
-        return getattr(proc, "pid", None)
+        pid = getattr(proc, "pid", None)
+        # 04/11 (moteur local, lot 4) : le CLI du modèle local avec outils compte aussi comme Claude.
+        locaux = tuple(sorted(self.__dict__.get("_pids_outils_locaux") or ()))
+        return (*((pid,) if pid else ()), *locaux) if locaux else pid
 
     # Commande qui desserrerait le garde-fou : réservée à l'utilisateur (14/10).
     # Décidé dans `totalgate` (fichier protégé, 15/10).
