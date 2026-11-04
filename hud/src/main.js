@@ -5,7 +5,7 @@ import { command, connect, on } from "./conn.js";
 import { PremiumOrb } from "./orb_premium.js";
 import { GROUP, STATE, premiumGlass, premiumStateColors } from "./theme.js";
 import { affichageNow, applyAffichage, applyTheme, onAffichage, onTheme } from "./apparence.js";
-import { renderMarkdown } from "./markdown.js";
+import { linkifyText, renderMarkdown, safeHref } from "./markdown.js";
 import { missionPathsOutside } from "./mission-chemins.js";
 import { badge, deplacer, entrees, indexChiffre, indexLettre, toucheAutre } from "./choix.js";
 import { openModal, openPanel } from "./modal.js";
@@ -467,6 +467,7 @@ on("media", (ev) => {
     renderChannels();
   }
   scrollTranscript();
+  noteArrival(node, ev.replay);
 });
 
 function markReport(m, ev) {
@@ -614,6 +615,7 @@ function addChoice(ev, id) {
   refreshChoices();
   renderChannels();
   scrollTranscript();
+  noteArrival(node, ev.replay);
   return m;
 }
 
@@ -1020,7 +1022,8 @@ function scheduleRender(m) {
 }
 
 function renderBody(m, force = false) {
-  if (m.who !== "astrel") { m.body.textContent = stripEmoji(m.raw); return; }
+  // 04/11 : message de l'utilisateur en texte brut, seules ses adresses https:// deviennent des liens (markdown.js)
+  if (m.who !== "astrel") { m.body.replaceChildren(linkifyText(m.raw)); return; }
   const s = getSelection();
   if (!force && s && !s.isCollapsed && (m.body.contains(s.anchorNode) || m.body.contains(s.focusNode))) {
     m.dirty = true;
@@ -1043,6 +1046,31 @@ async function copyText(text, done) {
 }
 
 const copyRaw = (m) => copyText(m.raw, t("msg.copied"));
+
+// 04/11 (demande : « les liens ne sont pas ouvrables comme sur ChatGPT, on est obligé de copier-coller ») :
+// un lien du fil (markdown.js : https seulement, nœuds DOM, classe md-link) s'ouvre dans le NAVIGATEUR de
+// l'utilisateur, par le cœur (`open_link`, réservé au HUD : xdg-open). Dans la fenêtre --app du HUD, target=_blank
+// ouvrirait un onglet du profil DÉDIÉ du HUD (ni ses sessions ni ses mots de passe, à côté du cookie du HUD).
+// Repli (cœur injoignable, plus ancien, refus) : cet onglet-là, sans opener ni referrer, aussitôt (moins de
+// 3 s : le clic autorise encore la fenêtre). Clic du milieu et Ctrl+clic : pareil. Le texte DIT ne change pas.
+async function openLink(a) {
+  const href = safeHref(a.getAttribute("href"));
+  if (!href) return;
+  const r = await command("open_link", { url: href }, 0, 3000);
+  if (r.ok) { toast(t("link.opened"), "info", "external-link"); return; }
+  window.open(href, "_blank", "noopener,noreferrer");
+}
+function linkClick(e) {
+  const a = e.target?.closest?.("a.md-link");
+  if (!a || e.button !== (e.type === "auxclick" ? 1 : 0)) return;
+  e.preventDefault();
+  // Clic à la souris : le lien ne garde pas le focus, l'Entrée suivante reste à la carte de confirmation
+  // (au clavier, `detail` vaut 0 : le focus reste sur le lien).
+  if (e.detail > 0) a.blur();
+  openLink(a);
+}
+document.addEventListener("click", linkClick);
+document.addEventListener("auxclick", linkClick);
 
 function setMid(m, mid) {
   if (!mid) return;
@@ -1068,10 +1096,12 @@ function addMsg(who, text, { src = null, channel = defaultChannel, mid = "", rep
   node.append(timeEl(ts));
   const m = { node, body, raw: text || "", who, channel, mid: "", replyTo: replyTo || "" };
   renderBody(m, true);
-  if (who === "astrel") {
+  // 04/11 (comme ChatGPT) : « Copier » aussi sur les messages de l'utilisateur, toujours le texte brut (m.raw)
+  if (who === "astrel" || who === "user") {
     const copy = el("button", "copy-btn");
+    copy.type = "button";
     copy.append(icon("copy"));
-    copy.title = t("msg.copy_title");
+    copy.title = t(who === "user" ? "msg.copy_user_title" : "msg.copy_title");
     copy.setAttribute("aria-label", t("common.copy"));
     copy.onclick = (e) => { e.stopPropagation(); copyRaw(m); };
     node.append(copy);
@@ -1087,6 +1117,7 @@ function addMsg(who, text, { src = null, channel = defaultChannel, mid = "", rep
     renderChannels();
   }
   scrollTranscript(who === "user" && !replay); // ce que l'utilisateur vient de dire ramène en bas
+  noteArrival(node, replay);
   return m;
 }
 
@@ -1137,10 +1168,27 @@ function selectingText() {
     && (transcript.contains(s.anchorNode) || transcript.contains(s.focusNode)));
 }
 function updateJump() {
-  $("#jump-btn").classList.toggle("hidden", atBottom());
+  const bottom = atBottom();
+  $("#jump-btn").classList.toggle("hidden", bottom);
+  if (bottom) setJumpNew(false);
   // Fondu du haut seulement s'il y a des messages cachés au-dessus (16/10 : sinon
   // il rognait le premier message d'un fil qui tient sans défiler).
   transcript.classList.toggle("fade", transcript.scrollTop > 0);
+}
+
+// 04/11 (comme ChatGPT) : un message arrivé pendant que l'utilisateur lit plus haut met un point sur le bouton ↓
+// (nom accessible « nouveaux messages ») ; retiré dès qu'il est revenu en bas. Rien ne défile pour autant.
+let jumpNew = false;
+function setJumpNew(on) {
+  if (on === jumpNew) return;
+  jumpNew = on;
+  const j = $("#jump-btn");
+  j.classList.toggle("has-new", on);
+  j.setAttribute("aria-label", t(on ? "chat.jump_new" : "chat.jump"));
+  j.title = t(on ? "chat.jump_new" : "chat.jump_title");
+}
+function noteArrival(node, replay) {
+  if (!replay && !node.classList.contains("hidden") && !atBottom()) setJumpNew(true);
 }
 
 function scrollTranscript(force = false) {
@@ -1537,10 +1585,23 @@ addEventListener("keydown", (e) => {
   showChannel(c.id);
 });
 
+// 04/11 (raccourci courant des messageries) : « / » hors d'un champ met le curseur dans la barre, au bout du
+// texte. Rien pendant une boîte ouverte ; une carte de confirmation ne répond jamais à « / ».
+addEventListener("keydown", (e) => {
+  if (e.key !== "/" || e.ctrlKey || e.altKey || e.metaKey || e.defaultPrevented || e.repeat || typingIn()) return;
+  if (document.querySelector(".modal-back")) return;
+  e.preventDefault();
+  const ask = $("#ask");
+  ask.focus();
+  ask.setSelectionRange(ask.value.length, ask.value.length);
+});
+
 // Un message mal rangé se déplace à la main. Celui de l'utilisateur emmène la
 // réponse d'Astrel ; une réponse seule ne déplace qu'elle-même.
 function moveMenu(m, e) {
   if (!m.mid || channelList.length < 2 || simpleView()) return; // Simple : les noms de projets restent cachés
+  // 04/11 : clic droit sur un LIEN : le menu de Chrome (« Copier l'adresse du lien »), pas celui des canaux
+  if (e.target?.closest?.("a.md-link")) return;
   e.preventDefault();
   document.querySelectorAll(".menu").forEach((x) => x.remove());
   const menu = el("div", "menu");
@@ -1676,6 +1737,42 @@ $("#ask").addEventListener("keydown", async (e) => {
     toast(t("ask.not_sent", { error: tx(r.error) || t("common.send_failed") }), "error");
   }
 });
+// 04/11 (comme un terminal) : ↑ dans la barre VIDE reprend le dernier message de l'utilisateur du canal ouvert
+// (tapé ou dit, pour le corriger ou le renvoyer), ↑ encore le précédent ; ↓ revient vers le plus récent, puis
+// à la barre vide. Seulement tant que le texte repris est intact et le curseur sur sa première (↑) ou sa
+// dernière ligne (↓) : sinon les flèches déplacent le curseur, comme d'habitude. Rien n'est envoyé.
+let recall = null; // { list: textes du plus récent au plus ancien, at: indice montré (-1 : barre vide) }
+function recallList() {
+  const out = [];
+  for (let k = messages.length - 1; k >= 0 && out.length < 50; k--) {
+    const m = messages[k];
+    if (m.who !== "user" || !["clavier", "voix"].includes(m.source) || !m.raw.trim() || !m.node.isConnected
+      || shownIn(m.channel) !== activeChannel) continue;
+    if (out[out.length - 1] !== m.raw) out.push(m.raw); // deux fois le même de suite : une seule entrée
+  }
+  return out;
+}
+$("#ask").addEventListener("keydown", (e) => {
+  if ((e.key !== "ArrowUp" && e.key !== "ArrowDown") || e.isComposing || composing || e.keyCode === 229
+    || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  const a = e.target;
+  const recalled = !!recall && recall.at >= 0 && a.value === recall.list[recall.at];
+  if (!recalled && (a.value || e.key === "ArrowDown")) return;
+  if (recalled) {
+    const start = a.selectionStart, end = a.selectionEnd;
+    if (start !== end) return;
+    if (e.key === "ArrowUp" ? a.value.slice(0, start).includes("\n") : a.value.slice(end).includes("\n")) return;
+  } else recall = { list: recallList(), at: -1 };
+  e.preventDefault();
+  const at = recall.at + (e.key === "ArrowUp" ? 1 : -1);
+  if (at >= recall.list.length) return; // déjà le plus ancien
+  recall.at = at;
+  a.value = at < 0 ? "" : recall.list[at];
+  if (at < 0) recall = null;
+  fitAsk();
+  a.setSelectionRange(a.value.length, a.value.length);
+});
+
 // ------------------------------------------------------------------ pièces jointes (14/10)
 
 // Trombone, Ctrl+V d'une image dans la barre, glisser-déposer n'importe où sur la page.

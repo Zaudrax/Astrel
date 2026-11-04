@@ -271,48 +271,45 @@ class MissionCoeur:
         except Exception:
             log.exception("compte rendu de mission non posé")
 
+    # 04/11 (T58, pas 4) : un try PAR tick, dans l'ordre d'avant. Avant, les cinq premiers partageaient un seul
+    # try : une panne de l'un sautait les suivants, garde de l'arrêt d'urgence comprise.
+    _TICKS = (("arrêt d'urgence", "_estop_watch"), ("mission", "_mission_tick"), ("tâches", "_tasks_tick"),
+              ("reprise", "_reprise_tick"), ("mode léger", "_local_tick"),
+              ("cycle du cerveau", "_cycle_tick"),       # 04/11 (T46) : messages gardés, sondes du moteur
+              ("tâches muettes", "_muettes_tick"),       # 01/11 : sous-agent sans nouvelles, alerte seule
+              ("mémoire", "_memoire_tick"),              # plan P20 : toutes les 5 s
+              ("courrier", "_courrier_tick"),            # plan P33 : courrier entre agents, toutes les 5 s
+              ("todo", "_todo_tick"),                    # plan P38 lot 3 : « prêt à clore »
+              ("propositions de mémoire", "_propositions_tick"),  # 04/11 (T49) : badge, toutes les 5 s
+              ("relevé du quota", "_quota_tick"))        # 22/10 : quota relevé hors des tours
+    TICK_PANNE_S = 60.0  # un tick qui retombe en panne : une ligne de journal par minute au plus
+
+    def _tick_en_panne(self, libelle: str) -> None:
+        """Première panne d'un tick : trace pleine ; ensuite une ligne par `TICK_PANNE_S` au plus."""
+        vues = self.__dict__.setdefault("_ticks_en_panne", {})
+        now = time.monotonic()
+        if libelle not in vues:
+            log.exception(libelle)
+        elif now - vues[libelle] >= self.TICK_PANNE_S:
+            log.warning("%s : toujours en panne (trace complète au premier échec)", libelle)
+        else:
+            return
+        vues[libelle] = now
+
+    def _ticks_une_fois(self) -> None:
+        for libelle, meth in self._TICKS:
+            try:
+                getattr(self, meth)()
+            except Exception:
+                self._tick_en_panne(libelle)
+        try:
+            self._quota_arret.tick()  # plan P34 : arrêt des agents sur quota, puis reprise
+        except Exception:
+            self._tick_en_panne("arrêt pour quota")
+
     def _mission_loop(self) -> None:
-        """Toutes les secondes : la mission, et la garde de l'arrêt d'urgence."""
+        """Toutes les secondes : la mission, l'arrêt d'urgence et les autres ticks du cœur."""
         while self._running:
             time.sleep(1.0)
             gel.chien.battre("taches")  # 01/11 : chien de garde des boucles (`gel.py`)
-            try:
-                self._estop_watch()
-                self._mission_tick()
-                self._tasks_tick()
-                self._reprise_tick()
-                self._local_tick()
-            except Exception:
-                log.exception("mission")
-            try:
-                self._cycle_tick()  # 04/11 (T46) : messages gardés pendant une relance, sondes du moteur
-            except Exception:
-                log.exception("cycle du cerveau")
-            try:
-                self._muettes_tick()  # 01/11 : sous-agent sans nouvelles, alerte seule
-            except Exception:
-                log.exception("tâches muettes")
-            try:
-                self._memoire_tick()  # plan P20 : toutes les 5 s, pas de thread de plus
-            except Exception:
-                log.exception("mémoire")
-            try:
-                self._courrier_tick()  # plan P33 : courrier entre agents, toutes les 5 s
-            except Exception:
-                log.exception("courrier")
-            try:
-                self._todo_tick()  # plan P38 lot 3 : « prêt à clore » suit les fiches de passation
-            except Exception:
-                log.exception("todo")
-            try:
-                self._propositions_tick()  # 04/11 (T49) : badge des propositions de mémoire, toutes les 5 s
-            except Exception:
-                log.exception("propositions de mémoire")
-            try:
-                self._quota_tick()  # 22/10 : quota relevé hors des tours (Claude Code utilisé ailleurs)
-            except Exception:
-                log.exception("relevé du quota")
-            try:
-                self._quota_arret.tick()  # plan P34 : arrêt des agents sur quota, puis reprise
-            except Exception:
-                log.exception("arrêt pour quota")
+            self._ticks_une_fois()

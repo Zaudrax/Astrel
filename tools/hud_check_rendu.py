@@ -171,8 +171,9 @@ async def run(url):
               hr: md.querySelectorAll('hr').length, strong: md.querySelectorAll('strong').length,
               code: md.querySelectorAll(':not(pre) > code').length,
               links: [...md.querySelectorAll('a')].map(a => [a.href, a.rel, a.target]),
-              // les seuls <svg> permis dans le fil sont les icônes du HUD (svg.ico), jamais dans le texte rendu
-              bad: t.querySelectorAll('script, img, iframe, svg:not(.ico), object, embed, .md svg').length,
+              // les seuls <svg> permis dans le fil sont les icônes du HUD (svg.ico), jamais dans le texte rendu ;
+              // 04/11 : sauf l'icône d'un lien (icons.js, tracés constants), enfant direct de a.md-link
+              bad: t.querySelectorAll('script, img, iframe, svg:not(.ico), object, embed, .md svg:not(a.md-link > svg.ico)').length,
               onattr: [...t.querySelectorAll('*')].filter(e => [...e.attributes].some(a => /^on/i.test(a.name))).length,
               text: md.textContent,
               codeBg: getComputedStyle(md.querySelector('pre')).backgroundColor,
@@ -520,6 +521,7 @@ async def run(url):
         await check_images_panneau(p)
         await check_images_ia(p)  # 21/10 (plan P14)
         await check_medias(p)  # 22/10 (plan P26)
+        await check_liens_et_barre(p)  # 04/11 : liens cliquables, Copier, ↑, « / », point du bouton ↓
         await check_sans_graphe(p)  # 23/10 (plan P28) : graphe 3D, Recadrer, Orbite retirés
         await check_affichage_simple(p)  # 22/10 (plan P23, lots A et B) : recharge la page
         await check_theme_a_la_connexion(p)  # 21/10 (relecture P17) : recharge la page
@@ -5129,6 +5131,193 @@ async def check_medias(p: Page) -> None:
     found = await p.js(EMOJI_DOM_JS)
     check(f"P26 : aucun émoji dans le DOM ({found[:3]})", found == [])
     await p.send("Emulation.setDeviceMetricsOverride", width=1600, height=1000, deviceScaleFactor=1, mobile=False)
+
+
+ASK_DEMO_JS = """((cmd, args) => new Promise((res) => {
+  // commande à la démo AVEC sa réponse (accusé `ack` de même id ; conn.js ignore un id qu'il n'a pas émis)
+  const ws = window.__ws, id = 800000 + Math.floor(Math.random() * 100000);
+  const on = (ev) => { try { const m = JSON.parse(ev.data); if (m.type === 'ack' && m.id === id) {
+    ws.removeEventListener('message', on); res(m.result); } } catch {} };
+  ws.addEventListener('message', on); ws.send(JSON.stringify({ ...args, cmd, id })); setTimeout(() => res(null), 4000); }))"""
+
+LIENS_JS = """((md) => [...md.querySelectorAll('a')].map(a => { const ico = a.querySelector(':scope > svg.ico');
+  const txt = a.querySelector('.md-link-text'); return { text: a.textContent, href: a.href, target: a.target, rel: a.rel,
+  cls: a.className, icon: ico?.dataset.icon || '', hidden: ico?.getAttribute('aria-hidden') || '', w: ico ? ico.getBoundingClientRect().width : 0,
+  desc: a.getAttribute('aria-description') || '', after: (a.nextSibling?.textContent || '').slice(0, 2),
+  clipped: !!txt && txt.scrollWidth > txt.clientWidth + 1, cursor: getComputedStyle(a).cursor }; }))"""
+
+
+async def check_liens_et_barre(p: Page) -> None:
+    """04/11 (demande : « les liens ne sont pas ouvrables comme c'est le cas pour ChatGPT avec un logo indiquant
+    que c'est un lien, on est obligé de copier-coller », puis « d'autres petits détails de ce genre ») :
+    adresses nues cliquables dans les réponses ET dans ses messages (icône, nouvel onglet, ponctuation hors du
+    lien, rien dans le code), ouvertes par le cœur (`open_link`) avec repli sur un onglet sans opener ;
+    Copier sur ses messages (texte brut) ; ↑ dans la barre vide ; « / » pour la barre ; point du bouton ↓."""
+    await p.send("Emulation.setDeviceMetricsOverride", width=1600, height=1000, deviceScaleFactor=1, mobile=False)
+    await p.until("!!window.__ws && window.__ws.readyState === 1", 10)
+    await p.js("document.querySelectorAll('.modal-back, .menu, .toast').forEach(b => b.remove()), true")
+    ask_demo = lambda cmd, **a: p.js(f"{ASK_DEMO_JS}({json.dumps(cmd)}, {json.dumps(a)})")
+    await p.js("""window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; };
+        window.__clip = null; navigator.clipboard.writeText = async (t) => { window.__clip = t; }; true""")
+
+    async def mouse(expr, button="left"):  # vrai clic (activation utilisateur, `detail` 1, comme l'utilisateur)
+        r = await p.js(f"(() => {{ const e = {expr}; e.scrollIntoView({{block: 'center'}}); const b = e.getBoundingClientRect();"
+                       " return [b.left + Math.min(12, b.width / 2), b.top + b.height / 2]; })()")
+        for kind in ("mousePressed", "mouseReleased"):
+            await p.send("Input.dispatchMouseEvent", type=kind, x=r[0], y=r[1], button=button, clickCount=1)
+
+    def say(text):
+        return p.js(f"""(() => {{ const a = document.querySelector('#ask'); a.value = {json.dumps(text)};
+            a.dispatchEvent(new Event('input')); a.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }})); }})()""")
+
+    # ---------------------------------------------------------- réponse : adresses nues, ponctuation, code
+    await say("démo liens")
+    got = await p.until("[...document.querySelectorAll('.msg.astrel:not(.live) .md')].some(m => m.textContent.startsWith('Voici les liens'))", 10)
+    md = "[...document.querySelectorAll('.msg.astrel .md')].filter(m => m.textContent.startsWith('Voici les liens')).at(-1)"
+    links = await p.js(f"{LIENS_JS}({md})") if got else []
+    texts = [x["text"] for x in links]
+    want = ["https://github.com/exemple/projet", "https://fr.wikipedia.org/wiki/Nantes_(France)", "https://example.org/page",
+            "https://www.example.com/un/chemin/vraiment/tres/long/qui/n/en/finit/pas?avec=des&parametres=nombreux&encore=oui",
+            "en markdown"]
+    check(f"liens d'une réponse : 5 adresses cliquables, ponctuation et parenthèses justes ({texts})", texts == want)
+    check("liens d'une réponse : point final hors du lien (« . »), virgule après la parenthèse (« , »)",
+          len(links) == 5 and links[0]["after"].startswith(".") and links[1]["after"].startswith(","))
+    check(f"liens d'une réponse : icône « ouvrir ailleurs » visible et cachée aux lecteurs d'écran, nouvel onglet sans "
+          f"opener ni referrer, main au survol ({[(x['icon'], round(x['w'])) for x in links][:2]})",
+          links and all(x["icon"] == "external-link" and x["hidden"] == "true" and x["w"] >= 8 and x["target"] == "_blank"
+                        and "noopener" in x["rel"] and "noreferrer" in x["rel"] and x["cursor"] == "pointer" and x["desc"]
+                        and x["href"].startswith("https://") for x in links))
+    code = await p.js(f"""(() => {{ const m = {md}; return {{ inCode: m.querySelectorAll('code a, pre a').length,
+        codeText: [...m.querySelectorAll('code')].map(c => c.textContent).join('|'), http: m.textContent.includes('http://pas-https.example') }}; }})()""")
+    check(f"jamais de lien dans le code (en ligne, bloc) ni en http:// ({code['codeText']})",
+          code["inCode"] == 0 and "https://code.example/en-ligne" in code["codeText"] and "https://bloc.example/jamais" in code["codeText"]
+          and code["http"] and not any("code.example" in t or "bloc.example" in t or "pas-https" in t for t in texts))
+    long_ = links[3] if len(links) == 5 else {}
+    check(f"adresse très longue : rognée à l'affichage (« … », classe {long_.get('cls')}), texte et href entiers",
+          long_.get("clipped") and "long" in long_.get("cls", "") and long_.get("text") == want[3] and long_.get("href") == want[3])
+    sel = await p.js(f"""(() => {{ const t = {md}.querySelectorAll('a')[3].querySelector('.md-link-text'), r = document.createRange();
+        r.selectNodeContents(t); const s = getSelection(); s.removeAllRanges(); s.addRange(r); const v = s.toString();
+        s.removeAllRanges(); return v; }})()""")
+    check("adresse rognée : la sélection à la main donne l'adresse ENTIÈRE", sel == want[3])
+    await p.js(f"{md}.closest('.msg').querySelector('.copy-btn').click()")
+    await asyncio.sleep(0.2)
+    clip = await p.js("window.__clip")
+    check("« Copier » d'une réponse à liens : le texte brut (markdown compris)",
+          bool(clip) and clip.startswith("Voici les liens :") and "[en markdown](https://docs.example.org/guide)" in clip)
+    await p.shot("liens-reponse.png")
+
+    # ---------------------------------------------------------- clic : navigateur du système (cœur), repli
+    before = len((await ask_demo("demo_link_log"))["items"])
+    await mouse(f"{md}.querySelectorAll('a')[0]")
+    opened = await p.until("[...document.querySelectorAll('.toast')].some(t => t.textContent.includes('Lien ouvert dans ton navigateur'))", 4)
+    log = (await ask_demo("demo_link_log"))["items"]
+    focus = await p.js("document.activeElement?.tagName || ''")
+    check(f"clic sur un lien : `open_link` au cœur (navigateur de l'utilisateur), via le HUD, toast, aucun onglet du HUD, "
+          f"le lien ne garde pas le focus ({log[before:]}, {focus})",
+          opened and log[before:] == [{"url": "https://github.com/exemple/projet", "via": "hud"}]
+          and await p.js("window.__opened.length") == 0 and focus != "A")
+    await mouse(f"{md}.querySelectorAll('a')[4]", button="middle")
+    await asyncio.sleep(0.4)
+    log = (await ask_demo("demo_link_log"))["items"]
+    check(f"clic du milieu : même chemin ({log[-1]})", log[-1] == {"url": "https://docs.example.org/guide", "via": "hud"})
+    await ask_demo("demo_link_log", fail=True)
+    await mouse(f"{md}.querySelectorAll('a')[2]")
+    await p.until("window.__opened.length === 1", 4)
+    fb = await p.js("window.__opened")
+    await ask_demo("demo_link_log", fail=False)
+    check(f"cœur qui refuse (plus ancien) : repli sur un onglet SANS opener ni referrer ({fb})",
+          fb == [["https://example.org/page", "_blank", "noopener,noreferrer"]])
+    await p.js(f"{md}.querySelectorAll('a')[1].focus(), true")
+    await p.key("Enter", vk=13)
+    await asyncio.sleep(0.4)
+    log = (await ask_demo("demo_link_log"))["items"]
+    check(f"au clavier (Tab puis Entrée) : le lien s'ouvre aussi ({log[-1]['url']})",
+          log[-1]["url"] == "https://fr.wikipedia.org/wiki/Nantes_(France)")
+    await p.js("document.activeElement?.blur(), true")
+    ctx = await p.js(f"""(() => {{ const m = {md}, fire = (e) => {{ const ev = new MouseEvent('contextmenu', {{ bubbles: true,
+          cancelable: true, clientX: 500, clientY: 500 }}); e.dispatchEvent(ev); const r = {{ prevented: ev.defaultPrevented,
+          menu: !!document.querySelector('.menu') }}; document.querySelectorAll('.menu').forEach(x => x.remove()); return r; }};
+        return {{ link: fire(m.querySelector('a .md-link-text')), text: fire(m.querySelector('li')) }}; }})()""")
+    check(f"clic droit sur un lien : menu de Chrome (« Copier l'adresse du lien »), pas celui des canaux ; ailleurs dans "
+          f"le message : menu « Déplacer » inchangé ({ctx})",
+          ctx["link"] == {"prevented": False, "menu": False} and ctx["text"] == {"prevented": True, "menu": True})
+
+    # ---------------------------------------------------------- message de l'utilisateur : liens, Copier
+    typed = "Regarde https://github.com/Zaudrax/Astrel. Et le **code** `https://code.example/x` (https://ok.example/y)"
+    await say(typed)
+    ok = await p.until(f"[...document.querySelectorAll('.msg.user')].some(m => m.querySelector(':scope > span:not([class])')?.textContent === {json.dumps(typed)})", 5)
+    um = f"[...document.querySelectorAll('.msg.user')].filter(m => m.querySelector(':scope > span:not([class])')?.textContent === {json.dumps(typed)}).at(-1)"
+    ulinks = await p.js(f"{LIENS_JS}({um}.querySelector(':scope > span:not([class])'))") if ok else []
+    check(f"message de l'utilisateur : texte tel que tapé (ni gras ni code rendus), 2 liens avec icône "
+          f"({[x['text'] for x in ulinks]})",
+          ok and [x["text"] for x in ulinks] == ["https://github.com/Zaudrax/Astrel", "https://ok.example/y"]
+          and all(x["icon"] == "external-link" and x["target"] == "_blank" and "noopener" in x["rel"] for x in ulinks)
+          and await p.js(f"!{um}.querySelector('strong, code, .md')"))
+    contrast = await p.js(f"""(() => {{ const m = {um}, a = m.querySelector('a.md-link');
+        return [getComputedStyle(a).color, getComputedStyle(m).color]; }})()""") if ulinks else ["", "?"]
+    check(f"lien dans la bulle de l'utilisateur : couleur du texte de la bulle ({contrast})", contrast[0] == contrast[1])
+    await p.js("window.__clip = null")
+    await p.js(f"{um}.querySelector('.copy-btn').click()")
+    await asyncio.sleep(0.2)
+    cb = await p.js(f"""(() => {{ const b = {um}.querySelector('.copy-btn'); return {{ clip: window.__clip, title: b.title,
+        aria: b.getAttribute('aria-label'), outside: b.getBoundingClientRect().right <= {um}.getBoundingClientRect().left + 1 }}; }})()""")
+    check(f"Copier sur le message de l'utilisateur : le texte brut, bouton à gauche de la bulle (« {cb['title']} »)",
+          cb["clip"] == typed and cb["title"] == "Copier ton message (texte brut)" and cb["aria"] == "Copier" and cb["outside"])
+    await p.shot("liens-message-utilisateur.png")
+
+    # ---------------------------------------------------------- ↑ dans la barre vide, « / »
+    await p.js("(() => { const a = document.querySelector('#ask'); a.value = ''; a.dispatchEvent(new Event('input')); a.focus(); })()")
+    await p.key("ArrowUp", vk=38)
+    v1 = await p.js("document.querySelector('#ask').value")
+    await p.key("ArrowUp", vk=38)
+    v2 = await p.js("document.querySelector('#ask').value")
+    await p.key("ArrowDown", vk=40)
+    v3 = await p.js("document.querySelector('#ask').value")
+    await p.key("ArrowDown", vk=40)
+    v4 = await p.js("document.querySelector('#ask').value")
+    check(f"↑ dans la barre vide : dernier message, ↑ le précédent, ↓ ↓ revient à la barre vide "
+          f"({v1[:24]!r}, {v2[:24]!r}, {v3[:24]!r}, {v4!r})",
+          v1 == typed and v2 == "démo liens" and v3 == typed and v4 == "")
+    await p.js("(() => { const a = document.querySelector('#ask'); a.value = 'brouillon'; a.dispatchEvent(new Event('input')); })()")
+    await p.key("ArrowUp", vk=38)
+    kept = await p.js("document.querySelector('#ask').value")
+    check(f"↑ dans une barre qui contient du texte : rien n'est remplacé ({kept!r})", kept == "brouillon")
+    await p.js("(() => { const a = document.querySelector('#ask'); a.blur(); document.body.focus(); })()")
+    await p.key("/", code="Slash", vk=191, text="/")
+    sl = await p.js("({ focus: document.activeElement?.id || '', value: document.querySelector('#ask').value, "
+                    "keys: document.querySelector('#ask').getAttribute('aria-keyshortcuts') })")
+    check(f"« / » hors d'un champ : curseur dans la barre, rien d'inséré ({sl})",
+          sl["focus"] == "ask" and sl["value"] == "brouillon" and sl["keys"] == "/")
+    await p.key("/", code="Slash", vk=191, text="/")
+    typed_slash = await p.js("document.querySelector('#ask').value")
+    check(f"« / » dans la barre : un « / » ordinaire ({typed_slash!r})", typed_slash == "brouillon/")
+    await p.js("(() => { const a = document.querySelector('#ask'); a.value = ''; a.dispatchEvent(new Event('input')); a.blur(); })()")
+
+    # ---------------------------------------------------------- point « nouveaux messages » sur ↓
+    await p.js("document.querySelector('#dialog').style.setProperty('--chat-h', '180px'), true")
+    await asyncio.sleep(0.3)
+    await p.js("(() => { const t = document.querySelector('#transcript'); t.scrollTop = 0; t.dispatchEvent(new Event('scroll')); })()")
+    await asyncio.sleep(0.2)
+    j0 = await p.js("({ shown: !document.querySelector('#jump-btn').classList.contains('hidden'), "
+                    "dot: document.querySelector('#jump-btn').classList.contains('has-new') })")
+    chan = await p.js("document.querySelector('.channel-tab.on')?.dataset.chan || 'general'")
+    await ask_demo("demo_report", text="Compte rendu arrivé pendant la lecture.", channel=chan)
+    dot = await p.until("document.querySelector('#jump-btn').classList.contains('has-new')", 4)
+    j1 = await p.js("""(() => { const j = document.querySelector('#jump-btn'), a = getComputedStyle(j, '::after');
+        return { aria: j.getAttribute('aria-label'), title: j.title, bg: a.backgroundColor, w: a.width,
+                 top: document.querySelector('#transcript').scrollTop }; })()""")
+    await p.shot("liens-point-nouveaux.png")
+    check(f"message arrivé pendant la lecture plus haut : point sur ↓ (« {j1['aria']} », {j1['bg']}, {j1['w']}), "
+          f"le fil ne bouge pas ({j1['top']})", j0["shown"] and not j0["dot"] and dot and j1["aria"] == "Aller en bas : nouveaux messages"
+          and j1["w"] == "8px" and j1["bg"] not in ("", "rgba(0, 0, 0, 0)") and j1["top"] == 0)
+    await p.js("document.querySelector('#jump-btn').click()")
+    await asyncio.sleep(0.3)
+    j2 = await p.js("({ dot: document.querySelector('#jump-btn').classList.contains('has-new'), "
+                    "aria: document.querySelector('#jump-btn').getAttribute('aria-label') })")
+    check(f"revenu en bas : point retiré, nom « {j2['aria']} »", not j2["dot"] and j2["aria"] == "Aller en bas")
+    await p.js("document.querySelector('#dialog').style.removeProperty('--chat-h'), true")
+    found = await p.js(EMOJI_DOM_JS)
+    check(f"liens et barre : aucun émoji dans le DOM ({found[:3]})", found == [])
 
 
 def main() -> int:

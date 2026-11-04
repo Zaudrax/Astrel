@@ -371,6 +371,18 @@ body.alert-on #dialog { max-height: calc(100vh - var(--head-h) - var(--gap) - va
 .md hr { border: none; border-top: 1px solid var(--panel-border); margin: 8px 0; }
 .md a { color: var(--accent); text-decoration: underline; text-decoration-color: rgba(var(--rgb-accent), 0.4); text-underline-offset: 2px; }
 .md a:hover { text-decoration-color: var(--accent); }
+/* 04/11 (l'utilisateur, « comme ChatGPT ») : liens du fil (markdown.js, classe md-link), dans les réponses ET dans
+   les messages de l'utilisateur : soulignés, main au survol, petite icône « ouvrir ailleurs » après le texte.
+   Adresse très longue (classe long) rognée à l'AFFICHAGE : le texte du DOM reste entier (sélection, copie). */
+.md-link { cursor: pointer; border-radius: 3px; }
+.md-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.md-link .md-link-ico { width: 0.85em; height: 0.85em; margin-left: 0.18em; vertical-align: -0.06em; opacity: 0.75; }
+.md-link:hover .md-link-ico { opacity: 1; }
+.md-link.long { display: inline-flex; align-items: baseline; max-width: 100%; vertical-align: bottom; }
+.md-link.long .md-link-text { min-width: 0; max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg.user .md-link { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
+  text-underline-offset: 2px; overflow-wrap: anywhere; }
+.msg.user .md-link:hover { text-decoration-color: currentColor; }
 /* copier le texte brut : discret, visible au survol */
 .copy-btn {
   position: absolute; top: 4px; right: 4px; padding: 0 6px; border-radius: 6px; font-size: 12px; line-height: 18px;
@@ -378,6 +390,16 @@ body.alert-on #dialog { max-height: calc(100vh - var(--head-h) - var(--gap) - va
   opacity: 0; transition: opacity 0.15s; user-select: none;
 }
 .msg.astrel:hover .copy-btn, .copy-btn:focus-visible { opacity: 1; }
+/* 04/11 : Copier aussi sur le message de l'utilisateur, À GAUCHE de sa bulle (dehors : ni sur son texte ni sur sa
+   couleur pleine), visible au survol ou au focus clavier */
+.msg.user { position: relative; }
+.msg.user .copy-btn { right: auto; left: -30px; top: 4px; }
+.msg.user:hover .copy-btn { opacity: 1; }
+/* 04/11 : nouveau message arrivé pendant la lecture plus haut : point d'accent sur le bouton ↓ */
+#jump-btn.has-new::after {
+  content: ""; position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--panel);
+}
 .copy-btn:hover { color: var(--ink-hi); border-color: var(--accent); }
 .md ~ .read-btn { margin: 6px 0 0; }
 .msg .src { font-size: 10px; color: var(--muted); margin-right: 6px; }

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import threading
 
-from .. import langue
+from .. import langue, sources
 from ..events import bus
 from ..graph import graph
 from ..core import log  # aides du cœur (le paquet charge core d'abord)
@@ -29,7 +29,7 @@ NOTICES_SESSION = {
     "en": "Conversation en anglais : nouvelle session avec les consignes en anglais.",
     "fr": "Conversation en français : nouvelle session avec les consignes en français.",
 }
-_UTILISATEUR = ("voix", "clavier", "whatsapp")
+_UTILISATEUR = sources.UTILISATEUR  # 04/11 (T58) : `astrel/sources.py`
 
 
 class LangueCoeur:

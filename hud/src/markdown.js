@@ -16,12 +16,21 @@
 // 19/10 (demande : « tableau, schéma et autre ? ») : tableaux | a | b | (alignement
 // :--: lu, défilement horizontal s'ils sont larges) et bouton « Copier » discret sur
 // chaque bloc de code (le code brut, espaces des schémas ASCII gardés).
+//
+// 04/11 (demande : « les liens ne sont pas ouvrables comme sur ChatGPT, avec un logo qui dit
+// que c'est un lien ») : chaque lien porte la classe `md-link` et une petite icône du jeu du HUD
+// (icons.js, `external-link`, aria-hidden). Une adresse de plus de LONG_URL caractères est rognée
+// À L'AFFICHAGE seulement (CSS, points de suspension) : le texte du DOM et le href restent
+// l'adresse entière (sélection et copie à la main donnent l'adresse complète). `linkifyText` :
+// le message de l'utilisateur, texte brut, où seules les adresses https:// nues deviennent des liens
+// (jamais dans un bloc ``` ni un `code`). Le clic est pris par main.js (navigateur du système).
 
-import { stripEmoji } from "./icons.js";
+import { icon, stripEmoji } from "./icons.js";
 import { t } from "./i18n.js";
 
 const TAGS =new Set(["p", "br", "h3", "h4", "h5", "ul", "ol", "li", "blockquote", "pre", "code", "hr",
-  "strong", "em", "del", "a", "div", "button", "table", "thead", "tbody", "tr", "th", "td"]);
+  "strong", "em", "del", "a", "span", "div", "button", "table", "thead", "tbody", "tr", "th", "td"]);
+const LONG_URL = 60; // au-delà : adresse rognée à l'affichage (classe « long »)
 const MAX_COLS = 32; // au-delà : pas un tableau (texte)
 const MAX_DEPTH = 6; // listes et citations imbriquées au-delà : du texte
 
@@ -254,8 +263,8 @@ export function safeHref(url) {
   }
 }
 
-// Ponctuation qui termine une URL nue plutôt que d'en faire partie.
-const TRAILING = new Set([..."., ;:!?…»\"')]"].filter((c) => c !== " "));
+// Ponctuation qui termine une URL nue plutôt que d'en faire partie (04/11 : « * », fin d'un **gras**).
+const TRAILING = new Set([..."., ;:!?…»\"')]*"].filter((c) => c !== " "));
 function trimUrl(u) {
   let end = u.length;
   while (end > 0 && TRAILING.has(u[end - 1])) end--;
@@ -274,6 +283,20 @@ function trimUrl(u) {
 const LOOKS_LIKE_URL = /^(?:[a-z][a-z0-9+.-]{0,20}:\/\/|www\.)|^[\w-]{1,63}(?:\.[\w-]{1,63}){1,10}(?:\/\S{0,200})?$/i;
 
 const isWord = (ch) => !!ch && /\w/.test(ch);
+
+// Adresse https:// nue qui commence en i : { url, href, end } si elle est cliquable (url = le texte
+// montré, ponctuation finale exclue, parenthèses équilibrées), { end } si elle ne l'est pas (trop
+// longue, invalide : le texte jusqu'à `end` reste inerte), null si rien ne commence ici.
+function bareUrlAt(s, i, n) {
+  if ((s[i] !== "h" && s[i] !== "H") || s.slice(i, i + 8).toLowerCase() !== "https://") return null;
+  if (isWord(s[i - 1]) || s[i - 1] === "/") return null;
+  let k = i + 8;
+  const limit = Math.min(n, i + MAX_URL);
+  while (k < limit && !URL_STOP.test(s[k])) k++;
+  const url = trimUrl(s.slice(i, k));
+  const href = k < limit || k === n ? safeHref(url) : null;
+  return href ? { url, href, end: i + url.length } : { end: k };
+}
 
 /** Découpe une ligne en morceaux : texte, gras, italique, barré, code, lien. */
 export function parseInline(src, depth = 0) {
@@ -382,20 +405,16 @@ export function parseInline(src, depth = 0) {
       }
     }
 
-    if ((c === "h" || c === "H") && s.slice(i, i + 8).toLowerCase() === "https://"
-        && !isWord(s[i - 1]) && s[i - 1] !== "/") {
-      let k = i + 8;
-      const limit = Math.min(n, i + MAX_URL);
-      while (k < limit && !URL_STOP.test(s[k])) k++;
-      const url = trimUrl(s.slice(i, k));
-      const href = k < limit || k === n ? safeHref(url) : null;
-      if (href) {
+    const bare = (c === "h" || c === "H") ? bareUrlAt(s, i, n) : null;
+    if (bare) {
+      if (bare.href) {
         flush();
-        out.push({ t: "a", href, c: [{ t: "text", v: url }] });
-        i += url.length;
-        continue;
+        out.push({ t: "a", href: bare.href, c: [{ t: "text", v: bare.url }] });
+      } else {
+        buf += s.slice(i, bare.end); // trop longue ou invalide : texte
       }
-      buf += s.slice(i, k); i = k; continue; // trop longue ou invalide : texte
+      i = bare.end;
+      continue;
     }
 
     if ((c === "*" || c === "_" || c === "~") && depth < MAX_DEPTH) {
@@ -467,19 +486,29 @@ function appendText(doc, parent, text) {
   });
 }
 
+// Un lien (https seulement : `it.href` sort de safeHref) : nouvel onglet sans opener ni referrer, cible
+// entière au survol, icône « ouvrir ailleurs » (décor, cachée aux lecteurs d'écran qui entendent la
+// description). `fill(label)` y pose le texte du lien.
+function linkNode(doc, it, fill) {
+  const plain = it.c.length === 1 && it.c[0].t === "text" ? it.c[0].v : "";
+  const a = node(doc, "a", plain.length > LONG_URL ? "md-link long" : "md-link");
+  a.href = it.href;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.title = it.href;
+  a.setAttribute("aria-description", t("md.link_opens"));
+  const label = node(doc, "span", "md-link-text");
+  fill(label);
+  a.append(label, icon("external-link", "md-link-ico", doc));
+  return a;
+}
+
 function inlineTo(doc, parent, items) {
   for (const it of items) {
     if (it.t === "text") appendText(doc, parent, it.v);
     else if (it.t === "code") { const e = node(doc, "code"); e.textContent = it.v; parent.append(e); }
-    else if (it.t === "a") {
-      const a = node(doc, "a");
-      a.href = it.href;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      a.title = it.href;
-      inlineTo(doc, a, it.c);
-      parent.append(a);
-    } else {
+    else if (it.t === "a") parent.append(linkNode(doc, it, (label) => inlineTo(doc, label, it.c)));
+    else {
       const e = node(doc, it.t);
       inlineTo(doc, e, it.c);
       parent.append(e);
@@ -578,5 +607,82 @@ export function renderMarkdown(text, doc = globalThis.document) {
     return frag;
   }
   blocksTo(doc, frag, parseBlocks(src));
+  return frag;
+}
+
+// ------------------------------------------------------------------ message de l'utilisateur (04/11)
+
+/** Morceaux d'un TEXTE BRUT : texte tel quel, et liens pour les adresses https:// nues. Rien d'autre
+ *  n'est lu (ni gras ni [x](…) : le message s'affiche tel que tapé) ; pas de lien dans un bloc ```
+ *  (lignes de clôture comprises) ni dans un `code` d'une ligne (accents graves gardés à l'écran).
+ *  Une passe, recherches de fermeture mémorisées comme parseInline (texte hostile : temps linéaire). */
+export function linkPieces(src) {
+  const s = String(src ?? "");
+  const n = s.length;
+  if (n > MAX_TEXT || !/https:\/\//i.test(s)) return s ? [{ t: "text", v: s }] : [];
+  const out = [];
+  let buf = "";
+  const flush = () => { if (buf) { out.push({ t: "text", v: buf }); buf = ""; } };
+  const closeCache = new Map();
+  const closeOf = (mark, from) => {
+    const k = closeCache.get(mark);
+    if (k && from >= k.from && (k.at === -1 || from <= k.at)) return k.at;
+    const at = findClose(s, from, mark, "`");
+    closeCache.set(mark, { from, at });
+    return at;
+  };
+  let fence = ""; // marque du bloc ``` ouvert
+  let lineEnd = -1; // fin de la ligne en cours (indice du \n, ou n)
+  let i = 0;
+  while (i < n) {
+    if (i > lineEnd) { // début de ligne
+      const e = s.indexOf("\n", i);
+      lineEnd = e === -1 ? n : e;
+      const line = s.slice(i, lineEnd);
+      const opens = !fence && fenceOf(line);
+      if (fence || opens) {
+        if (fence && closesFence(line, fence)) fence = "";
+        else if (opens) fence = opens.mark;
+        buf += s.slice(i, lineEnd + 1);
+        i = lineEnd + 1;
+        continue;
+      }
+    }
+    const c = s[i];
+    if (c === "`") {
+      let run = 1;
+      while (s[i + run] === "`") run++;
+      const close = run <= 16 ? closeOf("`".repeat(run), i + run) : -1;
+      const end = close !== -1 && close < lineEnd ? close + run : i + run; // code sur la même ligne seulement
+      buf += s.slice(i, end);
+      i = end;
+      continue;
+    }
+    const bare = (c === "h" || c === "H") ? bareUrlAt(s, i, n) : null;
+    if (bare) {
+      if (bare.href) {
+        flush();
+        out.push({ t: "a", href: bare.href, c: [{ t: "text", v: bare.url }] });
+      } else {
+        buf += s.slice(i, bare.end);
+      }
+      i = bare.end;
+      continue;
+    }
+    buf += c;
+    i++;
+  }
+  flush();
+  return out;
+}
+
+/** Fragment DOM d'un message de l'utilisateur : nœuds texte (sauts de ligne gardés tels quels, la bulle est
+ *  en `pre-wrap`, émojis retirés à l'affichage) et liens https. Jamais de HTML venu du texte. */
+export function linkifyText(text, doc = globalThis.document) {
+  const frag = doc.createDocumentFragment();
+  for (const it of linkPieces(text)) {
+    if (it.t === "a") frag.append(linkNode(doc, it, (label) => label.append(doc.createTextNode(it.c[0].v))));
+    else frag.append(doc.createTextNode(stripEmoji(it.v)));
+  }
   return frag;
 }

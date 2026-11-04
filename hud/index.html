@@ -172,8 +172,9 @@
          pleine largeur, qui grandit vers le haut puis défile ; en bas une rangée de boutons
          de hauteur fixe, qui ne bouge pas quand le texte grandit. -->
     <div id="composer">
-      <!-- 15/10 : zone multiligne, Entrée envoie, Maj+Entrée passe à la ligne -->
-      <textarea id="ask" rows="1" placeholder="Demande à Astrel…  (Maj+Entrée : à la ligne)" autocomplete="off" data-i18n-placeholder="ask.placeholder"></textarea>
+      <!-- 15/10 : zone multiligne, Entrée envoie, Maj+Entrée passe à la ligne. 04/11 : « / » y met le
+           curseur (hors d'un champ), ↑ dans la barre vide reprend ton dernier message (main.js) -->
+      <textarea id="ask" rows="1" aria-keyshortcuts="/" placeholder="Demande à Astrel…  (Maj+Entrée : à la ligne · ↑ : ton dernier message)" autocomplete="off" data-i18n-placeholder="ask.placeholder"></textarea>
       <div class="composer-row">
         <div class="composer-tools">
           <!-- 16/10 : trois coupures, comme les « muet » d'un appel. Micro seul,

@@ -382,6 +382,7 @@ def whatsapp_main(args: list[str]) -> int:
 
 def text_mode(j) -> None:
     j.boot()
+    j.veille_texte()  # 04/11 (T58) : relève, session neuve après 2 h, coffre, comme en voix
     j.status.set(state.SLEEPING)
     print("Mode texte. Ctrl-D pour quitter.\n")
     try:

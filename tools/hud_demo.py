@@ -6,6 +6,7 @@ d'événements réalistes (états, voix, outils, quota, confirmation).
     .venv/bin/python tools/hud_demo.py --once     # une séquence, puis attend
     Taper « démo markdown » dans la barre : réponse mise en forme écrite en flux.
     « démo tableau » (19/10) : tableau, schéma ASCII, liste et code.
+    « démo liens » (04/11) : adresses nues cliquables, ponctuation, parenthèses, code, adresse longue.
 
 15/10 (contrat des lots) : comptes rendus typés (`report_kind`, `report_files`),
 question à choix (`choice` puis `choice_answered`), coût par agent (`tokens`,
@@ -192,6 +193,23 @@ Schéma du trajet du samedi :
 ```
 Budget : 2 billets × 39 € = 78 €
 ```"""
+
+
+# 04/11 (demande : « les liens ne sont pas ouvrables comme sur ChatGPT ») : adresses NUES dans une réponse,
+# ponctuation finale, parenthèses, adresse longue, lien markdown, et ce qui ne doit JAMAIS devenir un lien
+# (code en ligne, bloc ```, http://) ; « démo liens » dans la barre.
+LINKS_DEMO = """Voici les liens :
+- le dépôt : https://github.com/exemple/projet.
+- la ville https://fr.wikipedia.org/wiki/Nantes_(France), puis la suite ;
+- entre parenthèses (https://example.org/page) et fin.
+- une adresse très longue : https://www.example.com/un/chemin/vraiment/tres/long/qui/n/en/finit/pas?avec=des&parametres=nombreux&encore=oui
+- un lien écrit [en markdown](https://docs.example.org/guide) ;
+- en code, jamais cliquable : `https://code.example/en-ligne`
+
+```
+https://bloc.example/jamais
+```
+Et http://pas-https.example reste du texte."""
 
 
 def stream_markdown(channel: str, reply_to: str, text: str = MARKDOWN_DEMO) -> None:
@@ -1428,6 +1446,8 @@ def main() -> int:
     demo_videos, demo_video_submit = make_demo_videos(config.HUD_TOKEN_FILE.parent, settings)
     demo_videos.publier_etat()  # évènement sticky `video_etat` dès la connexion (P41 B4)
     media_log: list[dict] = []  # boutons des cartes de médias (jamais d'application ouverte en démo)
+    link_log: list[dict] = []  # 04/11 : liens du fil cliqués (jamais de navigateur ouvert en démo)
+    link_fail = {"on": False}  # tests du HUD : le cœur refuse, le HUD se replie sur son propre onglet
     staged: list[dict] = []  # pièces jointes en attente déposées par le HUD (16/10)
     last_sent: list[str] = []  # id des pièces parties avec la dernière phrase dite (`demo_voice`)
 
@@ -1607,6 +1627,9 @@ def main() -> int:
             if text.strip().lower() in ("démo tableau", "demo tableau"):
                 threading.Thread(target=stream_markdown, args=(channel, mid, TABLE_DEMO), daemon=True).start()
                 return {"ok": True}
+            if text.strip().lower() in ("démo liens", "demo liens"):
+                threading.Thread(target=stream_markdown, args=(channel, mid, LINKS_DEMO), daemon=True).start()
+                return {"ok": True}
             bus.publish("reply", text=f"(démo) Reçu dans le canal {channel}.", usage={}, channel=channel,
                         reply_to=mid, mid=uuid.uuid4().hex[:12])
             return {"ok": True}
@@ -1649,6 +1672,19 @@ def main() -> int:
 
                 return {"ok": medias.open_target(cmd.get("media_id")) is not None}
             return {"ok": True, "playing": bool(cmd.get("playing"))}
+        elif cmd.get("cmd") == "open_link":  # 04/11 : lien du fil, même contrôle que le cœur, rien d'ouvert
+            from astrel.coeur.medias import lien_ouvrable
+
+            link_log.append({"url": cmd.get("url"), "via": cmd.get("_via")})
+            if link_fail["on"]:  # comme un cœur d'avant le 04/11
+                name = str(cmd["cmd"])
+                return {"ok": False, "error": f"commande inconnue : {name}"}
+            ok = cmd.get("_via") == "hud" and lien_ouvrable(cmd.get("url")) is not None
+            return {"ok": True} if ok else {"ok": False, "error": "lien refusé : seules les adresses https:// s'ouvrent"}
+        elif cmd.get("cmd") == "demo_link_log":  # tests du HUD : liens demandés, et refus simulé (`fail`)
+            if "fail" in cmd:
+                link_fail["on"] = bool(cmd.get("fail"))
+            return {"ok": True, "items": list(link_log)}
         elif cmd.get("cmd") == "demo_media_log":
             return {"ok": True, "items": list(media_log)}
         elif cmd.get("cmd") == "image_retry":  # bouton « Réessayer » d'une carte en échec

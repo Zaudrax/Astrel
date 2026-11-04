@@ -54,7 +54,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import config, quota_arret
+from . import config, quota_arret, sources
 from .events import bus
 from .floor import backlog
 from .settings import reglages
@@ -120,8 +120,8 @@ HELD_NOTE = "[l'utilisateur a écrit pendant la relève : sa demande prime, ne r
 HELD_NOTICE = "Message gardé : il part dès la relève de session finie."
 # Sources gardées pendant une relève (l'utilisateur, comme `core._UTILISATEUR`, les réflexes, et le relais
 # de l'équipe d'agents, plan P13 : un codeur fini de lui-même pendant la relève ne la dérange pas).
-UTILISATEUR = ("voix", "clavier", "whatsapp")
-HELD_SOURCES = (*UTILISATEUR, "réflexe", "equipe", "quota")
+UTILISATEUR = sources.UTILISATEUR  # 04/11 (T58) : `astrel/sources.py`
+HELD_SOURCES = sources.HELD_RELEVE
 # Caractères d'une consigne recopiée dans l'amorce (27/10 : 8 000 coupait les longues consignes de
 # planificateur ; une consigne coupée n'est plus la consigne d'origine).
 _CONSIGNE_MAX = 20_000

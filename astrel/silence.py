@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import re
 
+from . import sources
+
 MARKER = "[SILENT]"
 # Tours concernés : `Astrel._turn_source`. « plan » (15/10, `plans.py`) : révision ou
 # question sur un plan, la réponse va dans le fil du plan (`plan_reply`), pas dans le chat.
 # « equipe » (20/10, plan P13) : relais de l'équipe d'agents envoyé par le cœur (`equipe.py`).
-AUTO_SOURCES = ("fond", "réflexe", "plan", "equipe", "quota")  # « quota » : plan P34
+AUTO_SOURCES = sources.AUTO_SILENT  # « quota » : plan P34 ; 04/11 (T58) : `astrel/sources.py`
 _MARKER_RE = re.compile(re.escape(MARKER), re.IGNORECASE)
 
 

@@ -36,11 +36,11 @@ import tempfile
 import threading
 import time
 
-from . import config
+from . import config, sources
 
 log = logging.getLogger("astrel.attente")
 
-SOURCES = ("voix", "clavier")
+SOURCES = sources.ATTENTE  # 04/11 (T58) : `astrel/sources.py`
 MAX_ITEMS = 20
 TEXTE_MAX = 20_000   # au-delà, pas noté : un message coupé ne doit pas être renvoyé
 BOOT = secrets.token_hex(8)  # ce démarrage du cœur

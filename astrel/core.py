@@ -30,6 +30,7 @@ from typing import Any
 from . import attachments, audio, config, guard, boucles, mcp_config, relief, reprise, silence, state, totalgate
 from . import audit, detail_agent, equipe, fournisseurs, ipc, levee, memoire
 from . import courrier
+from . import sources
 from . import gel
 from . import langue  # 02/11 : langue de la conversation (fr, en)
 from .attente import attente
@@ -61,6 +62,7 @@ from .tools import memory
 from .server import HudServer
 from .state import ControlServer, StatePublisher
 from .voice import SentenceSplitter, Speaker, available_voices
+from .tour import DuTour, tour_de
 from .whatsapp import WhatsApp, away_phrase
 
 log = logging.getLogger("astrel")
@@ -82,13 +84,13 @@ _BACKGROUND_YIELDS_TO = (state.ASKING, state.LISTENING)
 # révision ou question sur un plan, envoyée par le cœur ; jamais dit non plus. « equipe » (20/10,
 # plan P13, `equipe.py`) : relais testeur puis relecteur après un codeur, jamais dit. « quota »
 # (24/10, plan P34, `quota_arret.py`) : note des chantiers et relance après l'arrêt pour quota.
-_UNASKED = ("fond", "réflexe", "relève", "mission", "plan", "equipe", "quota")
+_UNASKED = sources.UNASKED  # 04/11 (T58) : liste fermée des sources, `astrel/sources.py`
 # Tours de l'utilisateur lui-même : à la voix, au clavier, ou depuis WhatsApp (plan P1,
 # 17/10 : traité comme le clavier, mais jamais dit sur le PC).
-_UTILISATEUR = ("voix", "clavier", "whatsapp")
+_UTILISATEUR = sources.UTILISATEUR
 # Mode léger (plan P8) : messages automatiques qui demandent des outils, gelés jusqu'au retour
 # sur Claude (la relève est simplement abandonnée, elle se refera).
-_LOCAL_FROZEN = ("réflexe", "relève", "mission", "plan", "equipe", "quota")
+_LOCAL_FROZEN = sources.LOCAL_FROZEN
 # Outils d'écriture de fichier : la relève immédiate attend qu'un agent les ait finis (plan P9).
 _WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 # Plan P39 : la fiche de passation et le courrier en cours sont attendus comme une écriture (relève
@@ -516,32 +518,50 @@ def _erreur_a_proposer(ev: "BrainEvent") -> bool:
     return bool(data.get("eof")) or _erreur_auth(ev) or reprise.classify(ev.text) == "limit"
 
 
+
+def _table_commandes(*paires: tuple[Any, str]) -> dict[str, str]:
+    """Table des commandes du cœur (04/11, T58) : NOMS de méthodes, jamais des objets (les tests remplacent
+    des noms du module `core` ; `conftest.remplacer_coeur`). Un nom en double est une erreur."""
+    out: dict[str, str] = {}
+    for noms, meth in paires:
+        for n in noms:
+            assert n not in out, n
+            out[n] = meth
+    return out
+
 class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, ConfirmationsCoeur, TachesCoeur, QuotaCoeur,
              FiabiliteCoeur, CalibrageCoeur, LangueCoeur, CycleCoeur, PropositionsCoeur):
-    # Le morceau de réponse en cours vient d'un tour de fond (compte rendu), et
-    # a-t-il été dit ? Sinon il est « à lire » : bouton 🔊 dans le HUD.
-    _report_chunk = False
+    # 04/11 (T58, pas 2a) : l'état du tour en cours vit dans `self.tour` (`astrel/tour.py`, champs commentés
+    # là-bas) ; les anciens noms (`_turn_active`, `_hushed`, `_splitter`…) en sont des descripteurs.
+    _turn_active = DuTour("active")
+    _turn_idle = DuTour("idle")
+    _turn_source = DuTour("source")
+    _hushed = DuTour("hushed")
+    _last_event = DuTour("last_event")
+    _splitter = DuTour("splitter")
+    _spoken_any = DuTour("spoken_any")
+    _reply = DuTour("reply")
+    _silent_hold = DuTour("silent_hold")
+    _silenced = DuTour("silenced")
+    _auto_joined = DuTour("auto_joined")
+    _report_chunk = DuTour("report_chunk")
+    _report_spoken = DuTour("report_spoken")
+    _held_group = DuTour("held_group")
+    _turn_sent = DuTour("sent")
+    _turn_acted = DuTour("acted")
+    _turn_retry = DuTour("retry")
     _settings_apply_lock = threading.Lock()  # un seul « Appliquer maintenant » à la fois
-    _report_spoken = False
-    # Message non demandé du tour en cours, mis en attente (`floor.backlog`) :
-    # la suite du même tour le rejoint, pour garder l'ordre.
-    _held_group: Held | None = None
-    # Tour automatique silencieux (`silence.py`) : début de texte retenu tant qu'il
-    # peut encore devenir « [SILENT] », et marqueur vu dans ce tour.
-    _silent_hold = ""
-    _silenced = False
-    # Un message automatique (plan, réflexe) a rejoint un tour de l'utilisateur, qui
-    # reste le sien (dit à voix haute) : un « [SILENT] » y est quand même retiré.
-    _auto_joined = False
+
+    @property
+    def tour(self):
+        """Le Tour en cours (créé au premier accès : les tests montent `Astrel` sans `__init__`)."""
+        return tour_de(self)
     _pending_confirm: dict[str, Any] | None = None
     _last_user_at = 0.0  # dernier message de l'utilisateur (voix ou clavier)
     _loops: boucles.LoopGuard | None = None
     _agent_desc_map: dict[str, str] | None = None
-    # Reprise après coupure (15/10, idée 6, `reprise.py`) : ce que le tour en cours
-    # a envoyé et fait. Un tour n'est rejoué que si rien n'a été dit ni exécuté.
-    _turn_sent: list | None = None     # (prompt, images) envoyés pendant le tour
-    _turn_acted = False                # un outil du cerveau principal a démarré
-    _turn_retry = 0                    # numéro du rejeu en cours (0 : premier envoi)
+    # Reprise après coupure (15/10, idée 6, `reprise.py`) : ce que le tour en cours a envoyé et fait
+    # (`_turn_sent`, `_turn_acted`, `_turn_retry` : Tour ci-dessus). Rejoué seulement si rien n'a été dit ni exécuté.
     _retry_job: dict | None = None     # rejeu programmé (un seul à la fois)
     _limit_unknown_at = 0.0            # dernière alerte « heure de reprise inconnue »
     _hud_newest_origin = 0.0           # 19/10 : chargement (s) de la page du HUD la plus récente (`hud_here`)
@@ -1043,420 +1063,507 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             # double clic), jamais par Claude (son Bash, `--send unmute`).
             log.warning("réactivation du micro refusée : elle vient de Claude (%s)", name)
             return {"ok": False, "error": "micro coupé par l'utilisateur : lui seul le réactive"}
-        if name in ("mute", "off"):
-            self._mute()
-            log.info("micro coupé (%s)", cmd.get("_via") or "interne")
-            return {"ok": True, "muted": True}
-        if name in ("unmute", "on"):
-            self._unmute()
-            log.info("micro réactivé (%s)", cmd.get("_via") or "interne")
-            return {"ok": True, "muted": False}
-        if name in _CUT_COMMANDS:
-            return self._cut_command(name, cmd)
-        if name in _STAGE_COMMANDS:
-            return self._stage_attachments(cmd)
-        if name == "quota_refresh":
-            return self._quota_refresh_command()
-        if name in ("endlisten", "end_listen", "stop-listening"):
-            # ◉ pendant l'écoute : fermer CETTE écoute (fenêtre de suite comprise),
-            # le micro reste allumé et « Hey Jarvis » marche toujours.
-            self._end_listen.set()
-            self._followup = False
-            return {"ok": True}
-        if name in ("usage", "mode"):
-            word = str(cmd.get("mode") or cmd.get("text") or "").strip()
-            if word and self._voice_back_by_claude(cmd, usage_word(word)):
-                return {"ok": False, "error": "voix coupée par l'utilisateur : lui seul la réactive"}
-            return self.set_usage(word) if word else {"ok": True, "usage": self.usage}
-        if name in ("followup", "suite"):
-            return self._set_followup(str(cmd.get("seconds") if cmd.get("seconds") is not None
-                                          else cmd.get("text") or "").strip())
-        if name in ("dictation", "dictee"):
-            action = str(cmd.get("action") or cmd.get("text") or "").strip().lower()
-            if action in ("clear", "effacer", "vider"):
-                self._dictation_text = ""
-                bus.publish("dictation", text="", last="", copied=False)
-                return {"ok": True}
-            if action in ("copy", "copier"):
-                return {"ok": self._copy_dictation(), "text": self._dictation_text}
-            return {"ok": True, "text": self._dictation_text}
-        if name == "mission":
-            # Lancée, mise en pause, arrêtée par l'utilisateur (HUD, CLI) : le serveur
-            # MCP n'expose PAS cette commande, comme `autonomy`.
-            return self._mission_command(cmd)
-        if name == "mission_auto":
-            # T25 : outil MCP `mission_start`, Astrel lance lui-même une mission BORNÉE.
-            return self._mission_auto(cmd)
-        if name == "mission_close":
-            # 04/11 : × du panneau Mission, mission TERMINÉE seulement ; refusée à Claude.
-            return self._mission_close(cmd)
-        if name in ("settings_get", "settings_set", "settings_apply", "settings_action"):
-            # Page « Réglages » du HUD (contrat du 15/10) : l'utilisateur seul.
-            return self._settings_command(name, cmd)
-        if name in _PLAN_HUD_COMMANDS:
-            # Page « Plans » du HUD (contrat du 15/10) : l'utilisateur seul.
-            return self._plan_command(name, cmd)
-        if name in PROPOSITIONS_COMMANDS:
-            # 04/11 (T49) : propositions de mémoire, HUD ou terminal, l'utilisateur seul.
-            return self._propositions_command(name, cmd)
-        if name in ("guide_get", "guide_mark"):
-            # Guide de démarrage du HUD (18/10, plan P5) : l'utilisateur seul (ou la personne
-            # qui installe), comme les réglages.
-            if cmd.get("_from_claude") is True:
-                log.warning("commande %r refusée : elle vient de Claude", name)
-                return {"ok": False, "error": "guide réservé à la personne devant l'écran, refusé à Claude"}
-            from . import guide as guide_mod
 
-            res = guide_mod.command(name, cmd)
-            if name == "guide_mark" and cmd.get("finish") is True and res.get("ok"):
-                reglages.publish()  # `first_run` passe à faux : la page « Réglages » suit
-            return res
-        if name == "capacites_get":
-            # Page « Tout ce qu'Astrel sait faire » (22/10, plan P22) : ouverte depuis le Guide,
-            # donc réservée comme lui à la personne devant l'écran (l'outil MCP viendra plus tard).
-            if cmd.get("_from_claude") is True:
-                log.warning("commande %r refusée : elle vient de Claude", name)
-                return {"ok": False, "error": "page des capacités réservée à la personne devant l'écran, refusée à Claude"}
-            return self._capacites_command(cmd)
-        if name == "audit_get":
-            # Journal d'audit du HUD (plan P3, lot F) : l'utilisateur seul, comme les plans.
-            return self._audit_command(cmd)
-        if name in ("hud_pages", "hud_replace", "hud_here"):
-            # 19/10 (demande : « HUD » rouvrait une deuxième fenêtre) : `./hud.sh`.
-            return self._hud_window_command(name, cmd)
-        if name in ("plan_submit", "plan_reply", "plan_list"):
-            # Outils MCP du même nom (côté Claude) : aucun ne valide, ne rejette ni ne commente.
-            return self._plan_tool(name, cmd)
-        if name in todo_mod.COMMANDES:
-            # Plan P38 : outils MCP `todo_*` et vue « Tâches » du HUD ; mêmes droits pour Claude
-            # et l'utilisateur (abandon jamais supprimé, journal en ajout seul).
-            if cmd.get("_via") == "hud":
-                # Lot 2 : le HUD nomme la carte `todo_id` ; son `id` est le numéro de la requête
-                # (conn.js), qui désignerait une autre carte (« 7 » → T7).
-                cmd = {**cmd, "id": cmd.get("todo_id") or ""}
-            return todo_mod.commande(name, cmd, [(c.id, c.label) for c in channels.items()])
-        if name in ("grants", "autorisations"):
-            return self._grants_command(cmd)
-        if name in ("channel_create", "channel_edit", "channel_rename", "channel_delete", "channel_reorder"):
-            return self._channel_command(name, cmd)
-        if name == "wake":
-            if self._off:
-                # Geste EXPRÈS (Ctrl+Alt+J, double clic, « Parler maintenant ») : il
-                # rallume le micro. « Hey Jarvis » et le geste HOLO, eux, non.
-                self._unmute()
-                log.info("micro réactivé par un réveil exprès (%s)", cmd.get("_via") or "interne")
-            if self.speaker.paused:
-                # Ctrl+Alt+J, double clic ou « Parler maintenant » : un geste EXPRÈS de
-                # l'utilisateur, il est donc là. En pause, l'écoute est fermée : on
-                # reprend la voix d'abord (le mot de réveil, lui, reste ignoré).
-                self.set_paused(False)
-            self._force_wake = True
+        # 04/11 (T58, pas 1) : une méthode par commande, `_COMMANDES` (nom → méthode, défini sous la classe).
+        # Les refus ci-dessus (Claude, sans confinement, micro coupé) passent AVANT la table, à l'identique.
+        meth = self._COMMANDES.get(name)
+        if meth is None:
+            return {"ok": False, "error": f"commande inconnue : {name}"}
+        return getattr(self, meth)(name, cmd)
+
+    def _cmd_mute(self, name: str, cmd: dict) -> Any:
+        self._mute()
+        log.info("micro coupé (%s)", cmd.get("_via") or "interne")
+        return {"ok": True, "muted": True}
+
+    def _cmd_unmute(self, name: str, cmd: dict) -> Any:
+        self._unmute()
+        log.info("micro réactivé (%s)", cmd.get("_via") or "interne")
+        return {"ok": True, "muted": False}
+
+    def _cmd_cut_commands(self, name: str, cmd: dict) -> Any:
+        return self._cut_command(name, cmd)
+
+    def _cmd_stage_commands(self, name: str, cmd: dict) -> Any:
+        return self._stage_attachments(cmd)
+
+    def _cmd_quota_refresh(self, name: str, cmd: dict) -> Any:
+        return self._quota_refresh_command()
+
+    def _cmd_endlisten(self, name: str, cmd: dict) -> Any:
+        # ◉ pendant l'écoute : fermer CETTE écoute (fenêtre de suite comprise),
+        # le micro reste allumé et « Hey Jarvis » marche toujours.
+        self._end_listen.set()
+        self._followup = False
+        return {"ok": True}
+
+    def _cmd_usage(self, name: str, cmd: dict) -> Any:
+        word = str(cmd.get("mode") or cmd.get("text") or "").strip()
+        if word and self._voice_back_by_claude(cmd, usage_word(word)):
+            return {"ok": False, "error": "voix coupée par l'utilisateur : lui seul la réactive"}
+        return self.set_usage(word) if word else {"ok": True, "usage": self.usage}
+
+    def _cmd_followup(self, name: str, cmd: dict) -> Any:
+        return self._set_followup(str(cmd.get("seconds") if cmd.get("seconds") is not None
+                                      else cmd.get("text") or "").strip())
+
+    def _cmd_dictation(self, name: str, cmd: dict) -> Any:
+        action = str(cmd.get("action") or cmd.get("text") or "").strip().lower()
+        if action in ("clear", "effacer", "vider"):
+            self._dictation_text = ""
+            bus.publish("dictation", text="", last="", copied=False)
             return {"ok": True}
-        if name in ("hush", "chut", "silence"):
-            # Coupe la VOIX seulement : le travail en cours continue. Sans ça, le
-            # seul moyen de faire taire Astrel était `stop`, qui arrête aussi la tâche.
-            # Et le reste du tour est tu : sinon la phrase suivante, streamée juste
-            # après, reprenait la parole et le bouton semblait sans effet (26/09).
-            self._hushed = self._turn_active
-            self.speaker.interrupt()
-            self._drop_backlog("chut")
-            return {"ok": True}
-        if name in ("stop", "interrupt", "tais-toi"):
-            self.speaker.interrupt()
-            self._drop_backlog("stop")
-            if self._turn_active:
-                self.brain.interrupt()
-            if mission.active:
-                # ■ en pleine mission : elle attend l'utilisateur au lieu de relancer un tour.
-                mission.pause("mise en pause par ■ Stop")
-                self._publish_mission()
-            return {"ok": True}
-        if name in ("estop", "stop-tout", "stoptout", "stop_tout"):
-            # Arrêt d'urgence (HUD « ⛔ Stop tout », `--send estop`, `--send "estop off"`).
-            return self.emergency_stop(totalgate.estop_wanted(cmd))
-        if name in ("pause", "resume", "reprendre", "reprends"):
-            return self._pause_command(name, cmd)
-        if name == "reset":
-            threading.Thread(target=self.reset_session, name="reset", daemon=True).start()
-            return {"ok": True}
-        if name == "say":
-            text = str(cmd.get("text", "")).strip()
-            items, claimed = cmd.get("attachments"), []
-            if isinstance(items, list) and items:
-                # 16/10 : une pièce déjà partie avec une phrase dite ne repart pas.
-                fresh, claimed = self._claim_attachments(items)
-                if not fresh and not text:
-                    return {"ok": True, "attachments": [], "already_sent": True}
-                items = fresh
-            try:
-                # Pièces jointes (HUD : 📎, Ctrl+V, glisser-déposer ; bulle : Ctrl+V) : enregistrées
-                # ici, AVANT de répondre, pour qu'un refus (trop gros…) revienne au HUD.
-                # 16/10 : une pièce refusée ne bloque plus les autres (`partial`).
-                joined = attachments.prepare(items, partial=True)
-            except ValueError as exc:
+        if action in ("copy", "copier"):
+            return {"ok": self._copy_dictation(), "text": self._dictation_text}
+        return {"ok": True, "text": self._dictation_text}
+
+    def _cmd_mission(self, name: str, cmd: dict) -> Any:
+        # Lancée, mise en pause, arrêtée par l'utilisateur (HUD, CLI) : le serveur
+        # MCP n'expose PAS cette commande, comme `autonomy`.
+        return self._mission_command(cmd)
+
+    def _cmd_mission_auto(self, name: str, cmd: dict) -> Any:
+        # T25 : outil MCP `mission_start`, Astrel lance lui-même une mission BORNÉE.
+        return self._mission_auto(cmd)
+
+    def _cmd_mission_close(self, name: str, cmd: dict) -> Any:
+        # 04/11 : × du panneau Mission, mission TERMINÉE seulement ; refusée à Claude.
+        return self._mission_close(cmd)
+
+    def _cmd_settings_get(self, name: str, cmd: dict) -> Any:
+        # Page « Réglages » du HUD (contrat du 15/10) : l'utilisateur seul.
+        return self._settings_command(name, cmd)
+
+    def _cmd_plan_hud_commands(self, name: str, cmd: dict) -> Any:
+        # Page « Plans » du HUD (contrat du 15/10) : l'utilisateur seul.
+        return self._plan_command(name, cmd)
+
+    def _cmd_propositions_commands(self, name: str, cmd: dict) -> Any:
+        # 04/11 (T49) : propositions de mémoire, HUD ou terminal, l'utilisateur seul.
+        return self._propositions_command(name, cmd)
+
+    def _cmd_guide_get(self, name: str, cmd: dict) -> Any:
+        # Guide de démarrage du HUD (18/10, plan P5) : l'utilisateur seul (ou la personne
+        # qui installe), comme les réglages.
+        if cmd.get("_from_claude") is True:
+            log.warning("commande %r refusée : elle vient de Claude", name)
+            return {"ok": False, "error": "guide réservé à la personne devant l'écran, refusé à Claude"}
+        from . import guide as guide_mod
+
+        res = guide_mod.command(name, cmd)
+        if name == "guide_mark" and cmd.get("finish") is True and res.get("ok"):
+            reglages.publish()  # `first_run` passe à faux : la page « Réglages » suit
+        return res
+
+    def _cmd_capacites_get(self, name: str, cmd: dict) -> Any:
+        # Page « Tout ce qu'Astrel sait faire » (22/10, plan P22) : ouverte depuis le Guide,
+        # donc réservée comme lui à la personne devant l'écran (l'outil MCP viendra plus tard).
+        if cmd.get("_from_claude") is True:
+            log.warning("commande %r refusée : elle vient de Claude", name)
+            return {"ok": False, "error": "page des capacités réservée à la personne devant l'écran, refusée à Claude"}
+        return self._capacites_command(cmd)
+
+    def _cmd_audit_get(self, name: str, cmd: dict) -> Any:
+        # Journal d'audit du HUD (plan P3, lot F) : l'utilisateur seul, comme les plans.
+        return self._audit_command(cmd)
+
+    def _cmd_hud_pages(self, name: str, cmd: dict) -> Any:
+        # 19/10 (demande : « HUD » rouvrait une deuxième fenêtre) : `./hud.sh`.
+        return self._hud_window_command(name, cmd)
+
+    def _cmd_plan_submit(self, name: str, cmd: dict) -> Any:
+        # Outils MCP du même nom (côté Claude) : aucun ne valide, ne rejette ni ne commente.
+        return self._plan_tool(name, cmd)
+
+    def _cmd_todo_mod_commandes(self, name: str, cmd: dict) -> Any:
+        # Plan P38 : outils MCP `todo_*` et vue « Tâches » du HUD ; mêmes droits pour Claude
+        # et l'utilisateur (abandon jamais supprimé, journal en ajout seul).
+        if cmd.get("_via") == "hud":
+            # Lot 2 : le HUD nomme la carte `todo_id` ; son `id` est le numéro de la requête
+            # (conn.js), qui désignerait une autre carte (« 7 » → T7).
+            cmd = {**cmd, "id": cmd.get("todo_id") or ""}
+        return todo_mod.commande(name, cmd, [(c.id, c.label) for c in channels.items()])
+
+    def _cmd_grants(self, name: str, cmd: dict) -> Any:
+        return self._grants_command(cmd)
+
+    def _cmd_channel_create(self, name: str, cmd: dict) -> Any:
+        return self._channel_command(name, cmd)
+
+    def _cmd_wake(self, name: str, cmd: dict) -> Any:
+        if self._off:
+            # Geste EXPRÈS (Ctrl+Alt+J, double clic, « Parler maintenant ») : il
+            # rallume le micro. « Hey Jarvis » et le geste HOLO, eux, non.
+            self._unmute()
+            log.info("micro réactivé par un réveil exprès (%s)", cmd.get("_via") or "interne")
+        if self.speaker.paused:
+            # Ctrl+Alt+J, double clic ou « Parler maintenant » : un geste EXPRÈS de
+            # l'utilisateur, il est donc là. En pause, l'écoute est fermée : on
+            # reprend la voix d'abord (le mot de réveil, lui, reste ignoré).
+            self.set_paused(False)
+        self._force_wake = True
+        return {"ok": True}
+
+    def _cmd_hush(self, name: str, cmd: dict) -> Any:
+        # Coupe la VOIX seulement : le travail en cours continue. Sans ça, le
+        # seul moyen de faire taire Astrel était `stop`, qui arrête aussi la tâche.
+        # Et le reste du tour est tu : sinon la phrase suivante, streamée juste
+        # après, reprenait la parole et le bouton semblait sans effet (26/09).
+        self._hushed = self._turn_active
+        self.speaker.interrupt()
+        self._drop_backlog("chut")
+        return {"ok": True}
+
+    def _cmd_stop(self, name: str, cmd: dict) -> Any:
+        self.speaker.interrupt()
+        self._drop_backlog("stop")
+        if self._turn_active:
+            self.brain.interrupt()
+        if mission.active:
+            # ■ en pleine mission : elle attend l'utilisateur au lieu de relancer un tour.
+            mission.pause("mise en pause par ■ Stop")
+            self._publish_mission()
+        return {"ok": True}
+
+    def _cmd_estop(self, name: str, cmd: dict) -> Any:
+        # Arrêt d'urgence (HUD « ⛔ Stop tout », `--send estop`, `--send "estop off"`).
+        return self.emergency_stop(totalgate.estop_wanted(cmd))
+
+    def _cmd_pause(self, name: str, cmd: dict) -> Any:
+        return self._pause_command(name, cmd)
+
+    def _cmd_reset(self, name: str, cmd: dict) -> Any:
+        threading.Thread(target=self.reset_session, name="reset", daemon=True).start()
+        return {"ok": True}
+
+    def _cmd_say(self, name: str, cmd: dict) -> Any:
+        text = str(cmd.get("text", "")).strip()
+        items, claimed = cmd.get("attachments"), []
+        if isinstance(items, list) and items:
+            # 16/10 : une pièce déjà partie avec une phrase dite ne repart pas.
+            fresh, claimed = self._claim_attachments(items)
+            if not fresh and not text:
+                return {"ok": True, "attachments": [], "already_sent": True}
+            items = fresh
+        try:
+            # Pièces jointes (HUD : 📎, Ctrl+V, glisser-déposer ; bulle : Ctrl+V) : enregistrées
+            # ici, AVANT de répondre, pour qu'un refus (trop gros…) revienne au HUD.
+            # 16/10 : une pièce refusée ne bloque plus les autres (`partial`).
+            joined = attachments.prepare(items, partial=True)
+        except ValueError as exc:
+            self._release_attachments(claimed, items)
+            return {"ok": False, "error": str(exc)}
+        refused = joined.refused
+        if refused:
+            if not joined.shown:  # aucune pièce valable : rien ne part, tout reste dans la barre
                 self._release_attachments(claimed, items)
-                return {"ok": False, "error": str(exc)}
-            refused = joined.refused
-            if refused:
-                if not joined.shown:  # aucune pièce valable : rien ne part, tout reste dans la barre
-                    self._release_attachments(claimed, items)
-                    return {"ok": False, "error": " ; ".join(r["error"] for r in refused), "refused": refused}
-                self._release_attachments([r["id"] for r in refused if r["id"]], items)
-            if not text and joined.shown:
-                text = "Regarde ce que je te joins."
-            if not text:
-                return {"ok": False, "error": "texte vide"}
-            source = str(cmd.get("source") or "clavier")
-            turn_text, turn_source = text, source
-            if cmd.get("_from_claude") is True:
-                # 04/11 (lot B, M1) : envoyé par un process de Claude (son Bash, un script) : le tour n'est jamais
-                # un tour de l'utilisateur (voix, clavier, WhatsApp), dont la mission, la reprise de la voix et les
-                # messages en attente se fient à la source. Tour de fond, dit tel quel à Claude. (Une bascule de
-                # mode tapée reste lue comme avant, avec ses refus : ce n'est pas un tour.)
-                if source != "fond":
-                    log.warning("say venu de Claude avec la source %r : traité comme un tour de fond", source)
-                turn_source = "fond"
-                turn_text = "[Message envoyé par un process de Claude, pas par l'utilisateur.] " + text
-            # Le HUD joint le canal qu'il affiche : un clic sur un onglet suivi
-            # aussitôt d'Entrée ne doit pas dépendre de l'ordre des commandes.
-            channel = str(cmd.get("channel") or "")
-            if source == "réflexe":
-                gated = self._reflex_gate(text, channel, str(cmd.get("reflex") or ""))
-                if gated is not None:
-                    return gated
-            log.info("message tapé reçu (%s, %d caractères, %d pièce(s) jointe(s))", source, len(text),
-                     len(joined.shown))
-            self._mark_resent(cmd)
-            if source == "clavier" and cmd.get("_from_claude") is not True:
-                away = "" if joined.shown else away_phrase(text)
-                if away:
-                    # « Je m'absente » / « je suis de retour » tapé : une bascule, pas une question pour Claude.
-                    bus.publish("transcript", who="user", text=text, source=source,
-                                channel=channel or channels.active, mid=uuid.uuid4().hex[:12])
-                    return {**self.whatsapp.set_away(away == "absent", "clavier"), "away_command": True}
-                self._user_present("clavier")
-            if joined.shown:
-                threading.Thread(target=self.handle, args=(turn_text, turn_source, channel), kwargs={"joined": joined},
-                                 name="typed-turn", daemon=True).start()
-                return {"ok": True, "attachments": joined.shown, **({"refused": refused} if refused else {})}
-            mode = mode_phrase(text) if source == "clavier" else ""
-            if mode:
-                # « mode silencieux » tapé : une bascule, pas une question pour Claude.
-                if self._voice_back_by_claude(cmd, mode):
-                    return {"ok": False, "error": "voix coupée par l'utilisateur : lui seul la réactive"}
-                bus.publish("transcript", who="user", text=text, source=source, channel=channel or channels.active,
-                            mid=uuid.uuid4().hex[:12])
-                return {**self.set_usage(mode), "mode_command": True}
-            threading.Thread(target=self.handle, args=(turn_text, turn_source, channel), name="typed-turn",
-                             daemon=True).start()
-            return {"ok": True}
-        if name in ("channel", "canal"):
-            # Canal ouvert dans le HUD (un fil par projet) : l'AFFICHAGE seulement,
-            # la session Claude reste une seule conversation.
-            wanted = str(cmd.get("active") or cmd.get("text") or "").strip()
-            return channels.select(wanted) if wanted else channels.describe()
-        if name in ("channels", "canaux"):
-            channels.refresh()
-            return channels.describe()
-        if name == "channel_move":
-            return channels.move(str(cmd.get("mid") or ""), str(cmd.get("channel") or ""))
-        if name in ("reports", "rapports"):
-            # Comptes rendus des tâches de fond : « demande » (bouton 🔊) ou
-            # « direct » (dits aussitôt). Réglage de l'utilisateur (HUD, CLI), que le
-            # serveur MCP n'expose pas.
-            word = str(cmd.get("mode") or cmd.get("text") or "").strip()
-            if not word:
-                return reports.describe()
-            res = reports.set_mode(word)
-            if res.get("ok"):
-                # 28/10 (hud-boutons-t10) : la ligne « Comptes rendus » des Réglages du HUD suit.
-                threading.Thread(target=reglages.publish, name="settings-reports", daemon=True).start()
-            return res
-        if name == "whatsapp":
-            # Plan P1 : `--send "whatsapp absent|présent|on|off|status"`. Seul l'état est
-            # permis à Claude : le reste change où partent les questions de confirmation.
-            arg = str(cmd.get("mode") or cmd.get("text") or "").strip()
-            if arg and fold(arg) not in ("status", "etat") and cmd.get("_from_claude") is True:
-                log.warning("commande whatsapp %r refusée : elle vient de Claude", arg)
-                return {"ok": False, "error": "réglage WhatsApp réservé à l'utilisateur (HUD ou terminal), refusé à Claude"}
-            return self.whatsapp.command(arg)
-        if name == "whatsapp_file":
-            # 17/10, outil MCP `whatsapp_send_file` : un fichier de SES dossiers, vers SON chat
-            # à soi seulement (aucun destinataire ici) ; chemin vérifié par `whatsapp.file_refusal`.
-            return self.whatsapp.send_file(str(cmd.get("path") or ""), str(cmd.get("caption") or ""))
-        if name == "whatsapp_file_status":
-            return self.whatsapp.file_status(str(cmd.get("ref") or ""))
-        if name == "report":
-            return self._post_report(str(cmd.get("text") or ""), str(cmd.get("channel") or ""),
-                                     kind=cmd.get("kind"), files=cmd.get("files"))
-        if name == "ask_choice":
-            return self._ask_choice(cmd)
-        if name == "show_media":
-            return self._show_media(cmd)
-        if name in ("media_open", "media_playing"):
-            return self._media_command(name, cmd)
-        if name in ("image_generate", "image_retry", "image_status", "image_piece", *images_ia.COMMANDES_COMPTES):
-            return self._image_command(name, cmd)
-        if name in ("video_generate", "video_cancel", "video_status"):
-            return self._video_command(name, cmd)
-        if name == "choice_answer":
-            return self._choice_answer(cmd)
-        if name in ("stop_task", "task_stop"):
-            # Bouton Stop d'une ligne du panneau « en cours » (HUD). « task_id » :
-            # le HUD écrase « id » par l'identifiant de sa requête WebSocket.
-            raw_id = cmd.get("id")
-            tid = str(cmd.get("task_id") or (raw_id if isinstance(raw_id, str) else "") or cmd.get("text") or "")
-            return self._stop_task(tid.strip())
-        if name == "task_detail":
-            # Clic sur une ligne du panneau « en cours » (plan P18). Refusé à Claude : la
-            # consigne et les erreurs d'un agent ne doivent pas revenir dans son contexte.
-            if cmd.get("_from_claude") is True:
-                return {"ok": False, "error": "hud_only"}
-            raw_id = cmd.get("id")
-            tid = str(cmd.get("task_id") or (raw_id if isinstance(raw_id, str) else "") or cmd.get("text") or "")
-            return self._task_detail(tid.strip())
-        if name == "agent_effort":
-            # Plan P28 : effort des PROCHAINS agents d'un métier (fiche d'agent du HUD, terminal :
-            # --send "agent_effort codeur xhigh"). Claude ne change jamais l'effort.
-            # Le niveau est EXIGÉ (relecture P28) : « » = retour explicite à l'en-tête (ce
-            # qu'envoie le HUD), « defaut » au terminal ; clé absente ou null = erreur.
-            if cmd.get("_from_claude") is True:
-                log.warning("commande %r refusée : elle vient de Claude", name)
-                return {"ok": False, "error": "hud_only"}
-            agent, effort = str(cmd.get("agent") or "").strip(), cmd.get("effort")
-            if not agent and cmd.get("text"):
-                agent, _, rest = str(cmd["text"]).strip().partition(" ")
-                rest = rest.strip()
-                effort = "" if rest.lower() in ("defaut", "défaut") else (rest or None)
-            return self._set_agent_effort(agent, None if effort is None else str(effort).strip())
-        if name == "memory_top":
-            # Clic sur la ligne « Mémoire » du HUD (plan P20) : classement des gros consommateurs.
-            # Refusé à Claude comme `task_detail` (il a `system_status`, qui donne le même classement).
-            if cmd.get("_from_claude") is True:
-                return {"ok": False, "error": "hud_only"}
-            return {"ok": True, **memoire.top(), "memory": getattr(self, "_mem_view", None)}
-        if name in ("read_report", "lire"):
-            if cmd.get("_from_claude") is True:
-                # 04/11 (lot B, M2) : Claude ne fait pas reparler Astrel : son texte de repli (libre) n'est pas
-                # dit, et le compte rendu suit Silencieux, la pause et l'absence (pas de lecture « expresse »).
-                if cmd.get("fallback"):
-                    log.warning("read_report venu de Claude : texte de repli refusé")
-                    return {"ok": False, "error": "texte de repli réservé au bouton 🔊 du HUD, refusé à Claude"}
-                return self._read_report(str(cmd.get("mid") or ""), force=False)
-            return self._read_report(str(cmd.get("mid") or ""), str(cmd.get("fallback") or ""))
-        if name == "confirm":
-            # `confirm_id` (HUD, bulle) : « id » est l'identifiant de la requête WebSocket.
-            cid = str(cmd.get("confirm_id") or cmd.get("id") or "")
-            return self._answer_confirmation(cid, bool(cmd.get("allow")), bool(cmd.get("always")))
-        if name == "total":
-            return self._total_command(cmd)
-        if name == "autonomy":
-            # Changé par l'utilisateur (HUD, CLI) — le serveur MCP n'expose PAS cette commande :
-            # Claude ne peut pas desserrer son propre garde-fou.
-            mode = str(cmd.get("mode") or cmd.get("text") or "").strip()
-            if not mode:
-                return {"ok": True, "mode": guard.get_mode()}
-            if mode == "autonome" and self._non_claude() and fournisseurs.prudent_exige():
-                # Plan P11 : un fournisseur non-Claude avec outils ne tourne qu'en prudent (P27 : CLI aussi).
-                return {"ok": False, "error": "mode prudent exigé avec un fournisseur autre que Claude : repasse "
-                                              "d'abord sur Claude (Réglages › Fournisseur)"}
-            try:
-                guard.set_mode(mode)
-            except ValueError as exc:
-                return {"ok": False, "error": str(exc)}
-            bus.publish("autonomy", mode=mode)
-            return {"ok": True, "mode": mode}
-        if name == "voice":
-            return self._set_voice(str(cmd.get("spec") or cmd.get("text") or "").strip())
-        if name == "model":
-            model = str(cmd.get("model") or cmd.get("text") or "").strip().lower()
-            if not model:
-                return {"ok": True, "model": self.brain.model}
-            return self._set_model(model)
-        if name in ("local", "local_on", "local_off"):
-            return self._local_command(name, cmd)  # mode léger (plan P8)
-        if name == "models":
-            return {"ok": True, "active": self.brain.model,
-                    "models": [{"model": k, "label": label, "desc": desc}
-                               for k, (label, desc) in config.CLAUDE_MODELS.items()]}
-        if name == "voices":
-            return {"ok": True, "voices": [v.__dict__ for v in available_voices()], "active": self.speaker.voice}
-        if name == "mics":
-            return {"ok": True, "mics": audio.list_mics(), "active": self.mic.source}
-        if name in ("mic", "micprofile") and cmd.get("_from_claude") is True:
+                return {"ok": False, "error": " ; ".join(r["error"] for r in refused), "refused": refused}
+            self._release_attachments([r["id"] for r in refused if r["id"]], items)
+        if not text and joined.shown:
+            text = "Regarde ce que je te joins."
+        if not text:
+            return {"ok": False, "error": "texte vide"}
+        source = str(cmd.get("source") or "clavier")
+        turn_text, turn_source = text, source
+        if cmd.get("_from_claude") is True:
+            # 04/11 (lot B, M1) : envoyé par un process de Claude (son Bash, un script) : le tour n'est jamais
+            # un tour de l'utilisateur (voix, clavier, WhatsApp), dont la mission, la reprise de la voix et les
+            # messages en attente se fient à la source. Tour de fond, dit tel quel à Claude. (Une bascule de
+            # mode tapée reste lue comme avant, avec ses refus : ce n'est pas un tour.)
+            if source != "fond":
+                log.warning("say venu de Claude avec la source %r : traité comme un tour de fond", source)
+            turn_source = "fond"
+            turn_text = "[Message envoyé par un process de Claude, pas par l'utilisateur.] " + text
+        # Le HUD joint le canal qu'il affiche : un clic sur un onglet suivi
+        # aussitôt d'Entrée ne doit pas dépendre de l'ordre des commandes.
+        channel = str(cmd.get("channel") or "")
+        if source == "réflexe":
+            gated = self._reflex_gate(text, channel, str(cmd.get("reflex") or ""))
+            if gated is not None:
+                return gated
+        log.info("message tapé reçu (%s, %d caractères, %d pièce(s) jointe(s))", source, len(text),
+                 len(joined.shown))
+        self._mark_resent(cmd)
+        if source == "clavier" and cmd.get("_from_claude") is not True:
+            away = "" if joined.shown else away_phrase(text)
+            if away:
+                # « Je m'absente » / « je suis de retour » tapé : une bascule, pas une question pour Claude.
+                bus.publish("transcript", who="user", text=text, source=source,
+                            channel=channel or channels.active, mid=uuid.uuid4().hex[:12])
+                return {**self.whatsapp.set_away(away == "absent", "clavier"), "away_command": True}
+            self._user_present("clavier")
+        if joined.shown:
+            threading.Thread(target=self.handle, args=(turn_text, turn_source, channel), kwargs={"joined": joined},
+                             name="typed-turn", daemon=True).start()
+            return {"ok": True, "attachments": joined.shown, **({"refused": refused} if refused else {})}
+        mode = mode_phrase(text) if source == "clavier" else ""
+        if mode:
+            # « mode silencieux » tapé : une bascule, pas une question pour Claude.
+            if self._voice_back_by_claude(cmd, mode):
+                return {"ok": False, "error": "voix coupée par l'utilisateur : lui seul la réactive"}
+            bus.publish("transcript", who="user", text=text, source=source, channel=channel or channels.active,
+                        mid=uuid.uuid4().hex[:12])
+            return {**self.set_usage(mode), "mode_command": True}
+        threading.Thread(target=self.handle, args=(turn_text, turn_source, channel), name="typed-turn",
+                         daemon=True).start()
+        return {"ok": True}
+
+    def _cmd_channel(self, name: str, cmd: dict) -> Any:
+        # Canal ouvert dans le HUD (un fil par projet) : l'AFFICHAGE seulement,
+        # la session Claude reste une seule conversation.
+        wanted = str(cmd.get("active") or cmd.get("text") or "").strip()
+        return channels.select(wanted) if wanted else channels.describe()
+
+    def _cmd_channels(self, name: str, cmd: dict) -> Any:
+        channels.refresh()
+        return channels.describe()
+
+    def _cmd_channel_move(self, name: str, cmd: dict) -> Any:
+        return channels.move(str(cmd.get("mid") or ""), str(cmd.get("channel") or ""))
+
+    def _cmd_reports(self, name: str, cmd: dict) -> Any:
+        # Comptes rendus des tâches de fond : « demande » (bouton 🔊) ou
+        # « direct » (dits aussitôt). Réglage de l'utilisateur (HUD, CLI), que le
+        # serveur MCP n'expose pas.
+        word = str(cmd.get("mode") or cmd.get("text") or "").strip()
+        if not word:
+            return reports.describe()
+        res = reports.set_mode(word)
+        if res.get("ok"):
+            # 28/10 (hud-boutons-t10) : la ligne « Comptes rendus » des Réglages du HUD suit.
+            threading.Thread(target=reglages.publish, name="settings-reports", daemon=True).start()
+        return res
+
+    def _cmd_whatsapp(self, name: str, cmd: dict) -> Any:
+        # Plan P1 : `--send "whatsapp absent|présent|on|off|status"`. Seul l'état est
+        # permis à Claude : le reste change où partent les questions de confirmation.
+        arg = str(cmd.get("mode") or cmd.get("text") or "").strip()
+        if arg and fold(arg) not in ("status", "etat") and cmd.get("_from_claude") is True:
+            log.warning("commande whatsapp %r refusée : elle vient de Claude", arg)
+            return {"ok": False, "error": "réglage WhatsApp réservé à l'utilisateur (HUD ou terminal), refusé à Claude"}
+        return self.whatsapp.command(arg)
+
+    def _cmd_whatsapp_file(self, name: str, cmd: dict) -> Any:
+        # 17/10, outil MCP `whatsapp_send_file` : un fichier de SES dossiers, vers SON chat
+        # à soi seulement (aucun destinataire ici) ; chemin vérifié par `whatsapp.file_refusal`.
+        return self.whatsapp.send_file(str(cmd.get("path") or ""), str(cmd.get("caption") or ""))
+
+    def _cmd_whatsapp_file_status(self, name: str, cmd: dict) -> Any:
+        return self.whatsapp.file_status(str(cmd.get("ref") or ""))
+
+    def _cmd_report(self, name: str, cmd: dict) -> Any:
+        return self._post_report(str(cmd.get("text") or ""), str(cmd.get("channel") or ""),
+                                 kind=cmd.get("kind"), files=cmd.get("files"))
+
+    def _cmd_ask_choice(self, name: str, cmd: dict) -> Any:
+        return self._ask_choice(cmd)
+
+    def _cmd_show_media(self, name: str, cmd: dict) -> Any:
+        return self._show_media(cmd)
+
+    def _cmd_media_open(self, name: str, cmd: dict) -> Any:
+        return self._media_command(name, cmd)
+
+    def _cmd_image_generate(self, name: str, cmd: dict) -> Any:
+        return self._image_command(name, cmd)
+
+    def _cmd_video_generate(self, name: str, cmd: dict) -> Any:
+        return self._video_command(name, cmd)
+
+    def _cmd_choice_answer(self, name: str, cmd: dict) -> Any:
+        return self._choice_answer(cmd)
+
+    def _cmd_stop_task(self, name: str, cmd: dict) -> Any:
+        # Bouton Stop d'une ligne du panneau « en cours » (HUD). « task_id » :
+        # le HUD écrase « id » par l'identifiant de sa requête WebSocket.
+        raw_id = cmd.get("id")
+        tid = str(cmd.get("task_id") or (raw_id if isinstance(raw_id, str) else "") or cmd.get("text") or "")
+        return self._stop_task(tid.strip())
+
+    def _cmd_task_detail(self, name: str, cmd: dict) -> Any:
+        # Clic sur une ligne du panneau « en cours » (plan P18). Refusé à Claude : la
+        # consigne et les erreurs d'un agent ne doivent pas revenir dans son contexte.
+        if cmd.get("_from_claude") is True:
+            return {"ok": False, "error": "hud_only"}
+        raw_id = cmd.get("id")
+        tid = str(cmd.get("task_id") or (raw_id if isinstance(raw_id, str) else "") or cmd.get("text") or "")
+        return self._task_detail(tid.strip())
+
+    def _cmd_agent_effort(self, name: str, cmd: dict) -> Any:
+        # Plan P28 : effort des PROCHAINS agents d'un métier (fiche d'agent du HUD, terminal :
+        # --send "agent_effort codeur xhigh"). Claude ne change jamais l'effort.
+        # Le niveau est EXIGÉ (relecture P28) : « » = retour explicite à l'en-tête (ce
+        # qu'envoie le HUD), « defaut » au terminal ; clé absente ou null = erreur.
+        if cmd.get("_from_claude") is True:
+            log.warning("commande %r refusée : elle vient de Claude", name)
+            return {"ok": False, "error": "hud_only"}
+        agent, effort = str(cmd.get("agent") or "").strip(), cmd.get("effort")
+        if not agent and cmd.get("text"):
+            agent, _, rest = str(cmd["text"]).strip().partition(" ")
+            rest = rest.strip()
+            effort = "" if rest.lower() in ("defaut", "défaut") else (rest or None)
+        return self._set_agent_effort(agent, None if effort is None else str(effort).strip())
+
+    def _cmd_memory_top(self, name: str, cmd: dict) -> Any:
+        # Clic sur la ligne « Mémoire » du HUD (plan P20) : classement des gros consommateurs.
+        # Refusé à Claude comme `task_detail` (il a `system_status`, qui donne le même classement).
+        if cmd.get("_from_claude") is True:
+            return {"ok": False, "error": "hud_only"}
+        return {"ok": True, **memoire.top(), "memory": getattr(self, "_mem_view", None)}
+
+    def _cmd_read_report(self, name: str, cmd: dict) -> Any:
+        if cmd.get("_from_claude") is True:
+            # 04/11 (lot B, M2) : Claude ne fait pas reparler Astrel : son texte de repli (libre) n'est pas
+            # dit, et le compte rendu suit Silencieux, la pause et l'absence (pas de lecture « expresse »).
+            if cmd.get("fallback"):
+                log.warning("read_report venu de Claude : texte de repli refusé")
+                return {"ok": False, "error": "texte de repli réservé au bouton 🔊 du HUD, refusé à Claude"}
+            return self._read_report(str(cmd.get("mid") or ""), force=False)
+        return self._read_report(str(cmd.get("mid") or ""), str(cmd.get("fallback") or ""))
+
+    def _cmd_confirm(self, name: str, cmd: dict) -> Any:
+        # `confirm_id` (HUD, bulle) : « id » est l'identifiant de la requête WebSocket.
+        cid = str(cmd.get("confirm_id") or cmd.get("id") or "")
+        return self._answer_confirmation(cid, bool(cmd.get("allow")), bool(cmd.get("always")))
+
+    def _cmd_total(self, name: str, cmd: dict) -> Any:
+        return self._total_command(cmd)
+
+    def _cmd_autonomy(self, name: str, cmd: dict) -> Any:
+        # Changé par l'utilisateur (HUD, CLI) — le serveur MCP n'expose PAS cette commande :
+        # Claude ne peut pas desserrer son propre garde-fou.
+        mode = str(cmd.get("mode") or cmd.get("text") or "").strip()
+        if not mode:
+            return {"ok": True, "mode": guard.get_mode()}
+        if mode == "autonome" and self._non_claude() and fournisseurs.prudent_exige():
+            # Plan P11 : un fournisseur non-Claude avec outils ne tourne qu'en prudent (P27 : CLI aussi).
+            return {"ok": False, "error": "mode prudent exigé avec un fournisseur autre que Claude : repasse "
+                                          "d'abord sur Claude (Réglages › Fournisseur)"}
+        try:
+            guard.set_mode(mode)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        bus.publish("autonomy", mode=mode)
+        return {"ok": True, "mode": mode}
+
+    def _cmd_voice(self, name: str, cmd: dict) -> Any:
+        return self._set_voice(str(cmd.get("spec") or cmd.get("text") or "").strip())
+
+    def _cmd_model(self, name: str, cmd: dict) -> Any:
+        model = str(cmd.get("model") or cmd.get("text") or "").strip().lower()
+        if not model:
+            return {"ok": True, "model": self.brain.model}
+        return self._set_model(model)
+
+    def _cmd_local(self, name: str, cmd: dict) -> Any:
+        return self._local_command(name, cmd)  # mode léger (plan P8)
+
+    def _cmd_models(self, name: str, cmd: dict) -> Any:
+        return {"ok": True, "active": self.brain.model,
+                "models": [{"model": k, "label": label, "desc": desc}
+                           for k, (label, desc) in config.CLAUDE_MODELS.items()]}
+
+    def _cmd_voices(self, name: str, cmd: dict) -> Any:
+        return {"ok": True, "voices": [v.__dict__ for v in available_voices()], "active": self.speaker.voice}
+
+    def _cmd_mics(self, name: str, cmd: dict) -> Any:
+        return {"ok": True, "mics": audio.list_mics(), "active": self.mic.source}
+
+    def _cmd_mic(self, name: str, cmd: dict) -> Any:
+        if cmd.get("_from_claude") is True:
             # 04/11 (lot B, H1) : source et seuils du micro, par lequel l'utilisateur confirme à la voix : à lui
             # seul (comme le calibrage). Claude pourrait sinon brancher une source à lui ou rendre l'écoute sourde.
             log.warning("commande %r refusée : elle vient de Claude", name)
             bus.publish("notice", level="warning",
                         text=f"Claude a tenté « {name} » : refusé, le choix et le réglage du micro sont à toi seul.")
             return {"ok": False, "error": "choix et réglage du micro réservés à l'utilisateur (HUD, terminal), refusés à Claude"}
-        if name == "mic":
-            return self._set_mic(str(cmd.get("source") or cmd.get("text") or "").strip())
-        if name == "micprofile":
-            return self._set_mic_profile(str(cmd.get("text") or "").strip())
-        if name in CALIBRAGE_COMMANDS:
-            return self._calibrage_command(name, cmd)  # 02/11 : HUD non-Claude seulement (seuils d'écoute)
-        if name == "sensor":
-            return sensors.set(str(cmd.get("name", "")), bool(cmd.get("on")))
-        if name == "sensors":
-            return {"ok": True, "capteurs": sensors.snapshot()}
-        if name == "photo":
-            return self._photo()
-        if name == "initiative":
-            return self._initiative(cmd)  # plan P32 : brief du matin (réflexe `brief-matin`)
-        if name == "announce":
-            # Rappel programmé, alerte d'un réflexe : Astrel parle sans passer par Claude.
-            text = str(cmd.get("text", "")).strip()
-            if not text:
-                return {"ok": False, "error": "texte vide"}
-            bus.publish("notice", level="info", text=text)
-            if self._away():
-                self.whatsapp.send_text(f"🔔 {text}")  # plan P1 : absent, la voix est muette
-            if not sensors.is_on("FOCUS") or cmd.get("urgent"):
-                threading.Thread(target=self._announce, args=(text,), daemon=True).start()
-            return {"ok": True}
-        if name == "reflexes":
-            from .senses import reflex
-            return {"ok": True, "reflexes": reflex.load_rules()}
-        if name == "reflex_allowed":
-            # Outils MCP reflex_create / reflex_enable : pas de réflexe en cascade.
-            refused = self._reflex_cascade()
-            return {"ok": True, "allowed": not refused, "reason": refused}
-        if name in ("reflex_create", "reflex_delete", "reflex_enable"):
-            from .senses import reflex
-            refused = self._reflex_cascade() if cmd.get("_from_claude") and (
-                name == "reflex_create" or (name == "reflex_enable" and cmd.get("enabled", True))) else ""
-            if refused:
-                return {"ok": False, "error": refused}
-            try:
-                if name == "reflex_create":
-                    return {"ok": True, "reflex": reflex.create_rule(dict(cmd.get("rule") or {}))}
-                if name == "reflex_delete":
-                    return {"ok": True, "message": reflex.delete_rule(str(cmd.get("id", "")))}
-                return {"ok": True, "message": reflex.set_enabled(str(cmd.get("id", "")), bool(cmd.get("enabled", True)))}
-            except Exception as exc:
-                return {"ok": False, "error": str(exc)}
-        if name == "graph":
-            graph.publish()
-            return {"ok": True}
-        if name == "status":
-            return {"ok": True, "state": self.status.current, "muted": self._off, "voice": self.speaker.voice,
-                    "paused": self.speaker.paused, "reports": reports.mode, "usage": self.usage,
-                    "followup": self._followup_setting, "autonomy": guard.get_mode(), "total": self._total,
-                    "mission": mission.describe().get("status", ""),
-                    "model": self.brain.model, "context_tokens": self.brain.context_tokens,
-                    "estop": config.ESTOP_FILE.exists(),
-                    "session": self.brain.session_id, "quota": self.brain.quota}
-        if name == "restart":
-            # Relance sur place (après une modification du code ou des réglages).
-            # ⚠️ Pas de systemd-run : quand l'unité temporaire se termine, systemd
-            # tue tout ce qu'elle a lancé, nouveau Astrel compris (vécu le 26/09).
-            threading.Thread(target=self._restart, name="restart", daemon=True).start()
-            return {"ok": True}
-        if name == "quit":
-            self._running = False
-            return {"ok": True}
+        return self._set_mic(str(cmd.get("source") or cmd.get("text") or "").strip())
+
+    def _cmd_micprofile(self, name: str, cmd: dict) -> Any:
+        if cmd.get("_from_claude") is True:
+            # 04/11 (lot B, H1) : source et seuils du micro, par lequel l'utilisateur confirme à la voix : à lui
+            # seul (comme le calibrage). Claude pourrait sinon brancher une source à lui ou rendre l'écoute sourde.
+            log.warning("commande %r refusée : elle vient de Claude", name)
+            bus.publish("notice", level="warning",
+                        text=f"Claude a tenté « {name} » : refusé, le choix et le réglage du micro sont à toi seul.")
+            return {"ok": False, "error": "choix et réglage du micro réservés à l'utilisateur (HUD, terminal), refusés à Claude"}
+        return self._set_mic_profile(str(cmd.get("text") or "").strip())
+
+    def _cmd_calibrage_commands(self, name: str, cmd: dict) -> Any:
+        return self._calibrage_command(name, cmd)  # 02/11 : HUD non-Claude seulement (seuils d'écoute)
+
+    def _cmd_sensor(self, name: str, cmd: dict) -> Any:
+        return sensors.set(str(cmd.get("name", "")), bool(cmd.get("on")))
+
+    def _cmd_sensors(self, name: str, cmd: dict) -> Any:
+        return {"ok": True, "capteurs": sensors.snapshot()}
+
+    def _cmd_photo(self, name: str, cmd: dict) -> Any:
+        return self._photo()
+
+    def _cmd_initiative(self, name: str, cmd: dict) -> Any:
+        return self._initiative(cmd)  # plan P32 : brief du matin (réflexe `brief-matin`)
+
+    def _cmd_announce(self, name: str, cmd: dict) -> Any:
+        # Rappel programmé, alerte d'un réflexe : Astrel parle sans passer par Claude.
+        text = str(cmd.get("text", "")).strip()
+        if not text:
+            return {"ok": False, "error": "texte vide"}
+        bus.publish("notice", level="info", text=text)
+        if self._away():
+            self.whatsapp.send_text(f"🔔 {text}")  # plan P1 : absent, la voix est muette
+        if not sensors.is_on("FOCUS") or cmd.get("urgent"):
+            threading.Thread(target=self._announce, args=(text,), daemon=True).start()
+        return {"ok": True}
+
+    def _cmd_reflexes(self, name: str, cmd: dict) -> Any:
+        from .senses import reflex
+        return {"ok": True, "reflexes": reflex.load_rules()}
+
+    def _cmd_reflex_allowed(self, name: str, cmd: dict) -> Any:
+        # Outils MCP reflex_create / reflex_enable : pas de réflexe en cascade.
+        refused = self._reflex_cascade()
+        return {"ok": True, "allowed": not refused, "reason": refused}
+
+    def _cmd_reflex_create(self, name: str, cmd: dict) -> Any:
+        from .senses import reflex
+        refused = self._reflex_cascade() if cmd.get("_from_claude") and (
+            name == "reflex_create" or (name == "reflex_enable" and cmd.get("enabled", True))) else ""
+        if refused:
+            return {"ok": False, "error": refused}
+        try:
+            if name == "reflex_create":
+                return {"ok": True, "reflex": reflex.create_rule(dict(cmd.get("rule") or {}))}
+            if name == "reflex_delete":
+                return {"ok": True, "message": reflex.delete_rule(str(cmd.get("id", "")))}
+            return {"ok": True, "message": reflex.set_enabled(str(cmd.get("id", "")), bool(cmd.get("enabled", True)))}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
         return {"ok": False, "error": f"commande inconnue : {name}"}
+
+    def _cmd_graph(self, name: str, cmd: dict) -> Any:
+        graph.publish()
+        return {"ok": True}
+
+    def _cmd_status(self, name: str, cmd: dict) -> Any:
+        return {"ok": True, "state": self.status.current, "muted": self._off, "voice": self.speaker.voice,
+                "paused": self.speaker.paused, "reports": reports.mode, "usage": self.usage,
+                "followup": self._followup_setting, "autonomy": guard.get_mode(), "total": self._total,
+                "mission": mission.describe().get("status", ""),
+                "model": self.brain.model, "context_tokens": self.brain.context_tokens,
+                "estop": config.ESTOP_FILE.exists(),
+                "session": self.brain.session_id, "quota": self.brain.quota}
+
+    def _cmd_restart(self, name: str, cmd: dict) -> Any:
+        # Relance sur place (après une modification du code ou des réglages).
+        # ⚠️ Pas de systemd-run : quand l'unité temporaire se termine, systemd
+        # tue tout ce qu'elle a lancé, nouveau Astrel compris (vécu le 26/09).
+        threading.Thread(target=self._restart, name="restart", daemon=True).start()
+        return {"ok": True}
+
+    def _cmd_quit(self, name: str, cmd: dict) -> Any:
+        self._running = False
+        return {"ok": True}
 
     def _pause_command(self, name: str, cmd: dict) -> dict:
         """Pause / reprise de la VOIX, comme un lecteur vidéo (bouton ⏸ du HUD,
@@ -2601,15 +2708,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
 
     def _begin_turn(self, source: str) -> None:
         if not self._turn_active:
-            self._splitter = SentenceSplitter()
-            self._spoken_any = False
-            self._reply = []
-            self._silent_hold, self._silenced, self._auto_joined = "", False, False
-            self._turn_source = source
-            self._hushed = False
-            self._report_chunk = self._report_spoken = False
-            self._held_group = None
-            self._turn_sent, self._turn_acted, self._turn_retry = [], False, 0
+            self.tour.nouveau(source)  # 04/11 (T58) : remise à zéro du tour, `astrel/tour.py`
         elif source in _UTILISATEUR or (self._turn_source == "relève" and source != "relève"):
             # (Un réflexe tombé pendant une relève prend le tour : sa réponse doit
             # être dite, et la relève, qui le voit, s'abandonne.)
@@ -3365,8 +3464,6 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         self.say(config.SAY_READY if langue.anglais() else nom(config.SAY_READY, language="fr"), raw=True, live=True)
         log.info("en veille — dis « %s »%s", assistant_name(),
                  " ou « Hey Jarvis »" if getattr(self.wake, "legacy", False) else "")
-        last_vault_check = 0.0
-
         while self._running:
             gel.chien.battre("coeur")  # 01/11 : chien de garde des boucles (`gel.py`), alerte seule
             try:
@@ -3421,23 +3518,8 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                     else:
                         self.status.set(self._rest_state(), text="")
                     log.info("retour en veille%s", " (le travail continue)" if self._turn_active else "")
-                elif (
-                    reglages.value("session_idle_reset_s") > 0
-                    and self._last_turn
-                    and not self._turn_active
-                    and not self._tasks  # une remise à zéro tuerait les agents de fond
-                    and time.time() - self._last_turn > reglages.value("session_idle_reset_s")
-                ):
-                    self.reset_session()
-                elif not self._in_conversation and not self._local_active():
-                    # Contexte trop gros et Astrel au repos : relève (`relief.py`).
-                    self.relief.tick()
-
-                now = time.monotonic()
-                if now - last_vault_check > 5.0:
-                    last_vault_check = now
-                    if graph.vault_changed():
-                        graph.publish()
+                else:
+                    self._repos_tick()
             except IOError as exc:
                 log.warning("micro perdu (%s), relance", exc)
                 self.mic.stop()
@@ -3446,6 +3528,47 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             except Exception as exc:
                 log.exception("erreur dans la boucle : %s", exc)
                 time.sleep(0.5)
+
+    _vault_vu = 0.0
+
+    def _repos_tick(self) -> None:
+        """Ce qui se fait au repos, hors conversation (04/11, T58 pas 5 : sorti de `run` pour le mode texte) :
+        session neuve après `session_idle_reset_s`, sinon relève du contexte trop gros (`relief.py`) ;
+        puis le coffre relu toutes les 5 s. Chaque partie dans son try."""
+        try:
+            if (
+                reglages.value("session_idle_reset_s") > 0
+                and self._last_turn
+                and not self._turn_active
+                and not self._tasks  # une remise à zéro tuerait les agents de fond
+                and time.time() - self._last_turn > reglages.value("session_idle_reset_s")
+            ):
+                self.reset_session()
+            elif not self._in_conversation and not self._local_active():
+                # Contexte trop gros et Astrel au repos : relève (`relief.py`).
+                self.relief.tick()
+        except Exception:
+            log.exception("repos : session ou relève")
+        now = time.monotonic()
+        if now - self._vault_vu > 5.0:
+            self._vault_vu = now
+            try:
+                if graph.vault_changed():
+                    graph.publish()
+            except Exception:
+                log.exception("repos : coffre")
+
+    def veille_texte(self) -> None:
+        """Mode texte (`--text`) : `run` ne tourne pas, ce fil fait le travail de repos (relève, session neuve
+        après 2 h, coffre). Un seul appelant de `relief.tick` à la fois : jamais avec `run`. Pas de battement
+        du chien de garde : la boucle « coeur » n'existe pas en mode texte."""
+        def boucle() -> None:
+            while self._running:
+                time.sleep(0.5)
+                if not self._turn_active:
+                    self._repos_tick()
+
+        threading.Thread(target=boucle, name="texte-repos", daemon=True).start()
 
     def shutdown(self, *_a) -> None:
         if not self._running and self.status.current == state.OFF:
@@ -3469,3 +3592,81 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         self._cerveau_arreter()  # 04/11 (T46) : plus aucune relance programmée
         self.brain.stop()
         self.mic.stop()
+
+
+# 04/11 (T58, pas 1) : `Astrel._on_command` → méthode, après les refus du prologue.
+Astrel._COMMANDES = _table_commandes(
+    (("mute", "off"), "_cmd_mute"),
+    (("unmute", "on"), "_cmd_unmute"),
+    (_CUT_COMMANDS, "_cmd_cut_commands"),
+    (_STAGE_COMMANDS, "_cmd_stage_commands"),
+    (("quota_refresh",), "_cmd_quota_refresh"),
+    (("endlisten", "end_listen", "stop-listening"), "_cmd_endlisten"),
+    (("usage", "mode"), "_cmd_usage"),
+    (("followup", "suite"), "_cmd_followup"),
+    (("dictation", "dictee"), "_cmd_dictation"),
+    (("mission",), "_cmd_mission"),
+    (("mission_auto",), "_cmd_mission_auto"),
+    (("mission_close",), "_cmd_mission_close"),
+    (("settings_get", "settings_set", "settings_apply", "settings_action"), "_cmd_settings_get"),
+    (_PLAN_HUD_COMMANDS, "_cmd_plan_hud_commands"),
+    (PROPOSITIONS_COMMANDS, "_cmd_propositions_commands"),
+    (("guide_get", "guide_mark"), "_cmd_guide_get"),
+    (("capacites_get",), "_cmd_capacites_get"),
+    (("audit_get",), "_cmd_audit_get"),
+    (("hud_pages", "hud_replace", "hud_here"), "_cmd_hud_pages"),
+    (("plan_submit", "plan_reply", "plan_list"), "_cmd_plan_submit"),
+    (todo_mod.COMMANDES, "_cmd_todo_mod_commandes"),
+    (("grants", "autorisations"), "_cmd_grants"),
+    (("channel_create", "channel_edit", "channel_rename", "channel_delete", "channel_reorder"), "_cmd_channel_create"),
+    (("wake",), "_cmd_wake"),
+    (("hush", "chut", "silence"), "_cmd_hush"),
+    (("stop", "interrupt", "tais-toi"), "_cmd_stop"),
+    (("estop", "stop-tout", "stoptout", "stop_tout"), "_cmd_estop"),
+    (("pause", "resume", "reprendre", "reprends"), "_cmd_pause"),
+    (("reset",), "_cmd_reset"),
+    (("say",), "_cmd_say"),
+    (("channel", "canal"), "_cmd_channel"),
+    (("channels", "canaux"), "_cmd_channels"),
+    (("channel_move",), "_cmd_channel_move"),
+    (("reports", "rapports"), "_cmd_reports"),
+    (("whatsapp",), "_cmd_whatsapp"),
+    (("whatsapp_file",), "_cmd_whatsapp_file"),
+    (("whatsapp_file_status",), "_cmd_whatsapp_file_status"),
+    (("report",), "_cmd_report"),
+    (("ask_choice",), "_cmd_ask_choice"),
+    (("show_media",), "_cmd_show_media"),
+    (("media_open", "media_playing", "open_link"), "_cmd_media_open"),
+    (("image_generate", "image_retry", "image_status", "image_piece", *images_ia.COMMANDES_COMPTES), "_cmd_image_generate"),
+    (("video_generate", "video_cancel", "video_status"), "_cmd_video_generate"),
+    (("choice_answer",), "_cmd_choice_answer"),
+    (("stop_task", "task_stop"), "_cmd_stop_task"),
+    (("task_detail",), "_cmd_task_detail"),
+    (("agent_effort",), "_cmd_agent_effort"),
+    (("memory_top",), "_cmd_memory_top"),
+    (("read_report", "lire"), "_cmd_read_report"),
+    (("confirm",), "_cmd_confirm"),
+    (("total",), "_cmd_total"),
+    (("autonomy",), "_cmd_autonomy"),
+    (("voice",), "_cmd_voice"),
+    (("model",), "_cmd_model"),
+    (("local", "local_on", "local_off"), "_cmd_local"),
+    (("models",), "_cmd_models"),
+    (("voices",), "_cmd_voices"),
+    (("mics",), "_cmd_mics"),
+    (("mic",), "_cmd_mic"),
+    (("micprofile",), "_cmd_micprofile"),
+    (CALIBRAGE_COMMANDS, "_cmd_calibrage_commands"),
+    (("sensor",), "_cmd_sensor"),
+    (("sensors",), "_cmd_sensors"),
+    (("photo",), "_cmd_photo"),
+    (("initiative",), "_cmd_initiative"),
+    (("announce",), "_cmd_announce"),
+    (("reflexes",), "_cmd_reflexes"),
+    (("reflex_allowed",), "_cmd_reflex_allowed"),
+    (("reflex_create", "reflex_delete", "reflex_enable"), "_cmd_reflex_create"),
+    (("graph",), "_cmd_graph"),
+    (("status",), "_cmd_status"),
+    (("restart",), "_cmd_restart"),
+    (("quit",), "_cmd_quit"),
+)

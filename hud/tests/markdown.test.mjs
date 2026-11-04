@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseBlocks, parseInline, renderMarkdown, safeHref } from "../src/markdown.js";
+import { linkPieces, linkifyText, parseBlocks, parseInline, renderMarkdown, safeHref } from "../src/markdown.js";
 
 class FakeNode {
   constructor(tag) { this.tag = tag; this.children = []; this.props = {}; }
@@ -19,11 +19,14 @@ class FakeText { constructor(v) { this.text = v; } }
 
 function fakeDoc() {
   const created = [];
+  const createdNS = []; // 04/11 : icônes (icons.js, createElementNS), notées à part des balises HTML
   return {
     created,
+    createdNS,
     createElement(tag) { created.push(tag); return new Proxy(new FakeNode(tag), {
       set(t, k, v) { if (k in t || k === "children") t[k] = v; else t.props[k] = v; return true; },
     }); },
+    createElementNS(ns, tag) { createdNS.push(tag); const n = new FakeNode(tag); n.ns = ns; return n; },
     createTextNode(v) { return new FakeText(v); },
     createDocumentFragment() { return new FakeNode("#frag"); },
   };
@@ -44,6 +47,10 @@ function render(md) {
   return { out: html(renderMarkdown(md, doc)), created: doc.created };
 }
 const text = (n) => (n instanceof FakeText ? n.text : n.children.map(text).join(""));
+// 04/11 : un lien rendu = <a class="md-link"> + <span class="md-link-text"> + l'icône <svg data-icon="external-link">
+const ICON_RE = '<svg [^>]*data-icon="external-link"[^>]*>(?:<path [^>]*></path>)+</svg>';
+const linkHtml = (href, label, cls = "md-link") => new RegExp(`<a className="${cls}" href="${href.replace(/[.?+*()[\]\\/]/g, "\\$&")}" `
+  + `target="_blank" rel="noopener noreferrer" title="[^"]*" aria-description="[^"]+"><span className="md-link-text">${label}</span>${ICON_RE}</a>`);
 
 test("listes à puces, numérotées et imbriquées", () => {
   const { out } = render("Voici :\n- un\n- deux\n  - deux bis\n- trois\n\n1. premier\n2. second");
@@ -90,8 +97,9 @@ test("citation, séparateur, barré", () => {
 
 test("liens : https cliquable (noopener), le reste en texte inerte", () => {
   const { out } = render("[doc](https://exemple.fr/a?b=1) et https://astrel.local/x. et http://non.fr");
-  assert.match(out, /<a href="https:\/\/exemple.fr\/a\?b=1" target="_blank" rel="noopener noreferrer" title="[^"]*">doc<\/a>/);
-  assert.match(out, /<a href="https:\/\/astrel.local\/x"[^>]*>https:\/\/astrel.local\/x<\/a>\. et http:\/\/non.fr/);
+  assert.match(out, linkHtml("https://exemple.fr/a?b=1", "doc"));
+  assert.match(out, linkHtml("https://astrel.local/x", "https://astrel.local/x"));
+  assert.match(out, /<\/a>\. et http:\/\/non.fr<\/p>$/);
 });
 
 test("ATTAQUE : balises, onerror, javascript:, data:, images → texte inerte", () => {
@@ -109,11 +117,13 @@ test("ATTAQUE : balises, onerror, javascript:, data:, images → texte inerte", 
   ].join("\n\n");
   const doc = fakeDoc();
   const frag = renderMarkdown(evil, doc);
-  const allowed = new Set(["p", "br", "strong", "code", "a"]);
+  const allowed = new Set(["p", "br", "strong", "code", "a", "span"]);
   for (const tag of doc.created) assert.ok(allowed.has(tag), `balise créée : ${tag}`);
+  // 04/11 : les seuls éléments SVG sont l'icône des liens (tracés constants d'icons.js)
+  for (const tag of doc.createdNS) assert.ok(tag === "svg" || tag === "path", `élément SVG créé : ${tag}`);
   const out = html(frag);
-  // aucune vraie balise dangereuse : tout est échappé, donc du texte
-  assert.doesNotMatch(out, /<(script|img|iframe|svg)\b/i);
+  // aucune vraie balise dangereuse : tout est échappé, donc du texte (l'icône des liens mise à part)
+  assert.doesNotMatch(out.replace(new RegExp(ICON_RE, "g"), ""), /<(script|img|iframe|svg)\b/i);
   assert.match(out, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(out, /&lt;img src=x onerror="alert\(2\)"&gt;/);
   assert.match(out, /\[clique\]\(javascript:alert\(3\)\)/);
@@ -195,10 +205,10 @@ test("au-delà de 200 000 caractères : texte brut, sans analyse", () => {
 test("lien dont le texte est une autre adresse : la vraie cible est montrée", () => {
   const { out } = render("[https://banque.fr](https://pirate.example/x) [www.banque.fr](https://pirate.example/) "
     + "[banque.fr/compte](https://pirate.example/) [Expo](https://expo.dev/) [https://ok.fr/](https://ok.fr/)");
-  assert.equal((out.match(/>https:\/\/pirate\.example\/x?<\/a>/g) || []).length, 3);
-  assert.doesNotMatch(out, />[^<]*banque\.fr[^<]*<\/a>/);
-  assert.match(out, />Expo<\/a>/);
-  assert.match(out, />https:\/\/ok\.fr\/<\/a>/);
+  assert.equal((out.match(/"md-link-text">https:\/\/pirate\.example\/x?<\/span>/g) || []).length, 3);
+  assert.doesNotMatch(out, /"md-link-text">[^<]*banque\.fr/);
+  assert.match(out, /"md-link-text">Expo<\/span>/);
+  assert.match(out, /"md-link-text">https:\/\/ok\.fr\/<\/span>/);
 });
 
 // 19/10 (demande : « tableau, schéma et autre ? »)
@@ -267,5 +277,101 @@ test("PERFORMANCE : lignes à | hostiles de 100 000 caractères en moins de 100 
     renderMarkdown(s, doc);
     const ms = performance.now() - t0;
     assert.ok(ms < 100 * LENTEUR, `${s.slice(0, 12)} : ${ms.toFixed(0)} ms (lenteur ${LENTEUR.toFixed(1)})`);
+  }
+});
+
+// 04/11 (demande : « les liens ne sont pas ouvrables comme sur ChatGPT, avec un logo qui indique que c'est un
+// lien, on est obligé de copier-coller ») : adresses nues cliquables dans les réponses ET dans ses messages.
+const linksOf = (frag) => {
+  const out = [];
+  (function walk(n) { if (n.tag === "a") out.push(n); (n.children || []).forEach(walk); })(frag);
+  return out.map((a) => ({ href: a.props.href, text: text(a), cls: a.props.className, target: a.props.target,
+    rel: a.props.rel, icon: a.children.some((c) => c.tag === "svg" && c.props["data-icon"] === "external-link") }));
+};
+
+test("liens nus : ponctuation finale exclue, parenthèses équilibrées, guillemets, gras", () => {
+  const cas = [
+    ["Le dépôt : https://github.com/x/y.", "https://github.com/x/y"],
+    ["vu https://x.fr/a, puis", "https://x.fr/a"],
+    ["(voir https://x.fr/page)", "https://x.fr/page"],
+    ["la ville https://fr.wikipedia.org/wiki/Nantes_(France), puis", "https://fr.wikipedia.org/wiki/Nantes_(France)"],
+    ["« https://x.fr/b » dit-il", "https://x.fr/b"],
+    ["c'est **https://x.fr/gras** ici", "https://x.fr/gras"],
+    ["vraiment ? https://x.fr/q?!", "https://x.fr/q"],
+    ["https://x.fr/fin…", "https://x.fr/fin"],
+    ["https://x.fr/a;b ; suite", "https://x.fr/a;b"],
+    ["<https://x.fr/chevrons>", "https://x.fr/chevrons"],
+  ];
+  for (const [md, want] of cas) {
+    const doc = fakeDoc();
+    const links = linksOf(renderMarkdown(md, doc));
+    assert.equal(links.length, 1, md);
+    assert.equal(links[0].text, want, md);
+    assert.equal(new URL(links[0].href).href, new URL(want).href, md);
+    assert.ok(links[0].icon && links[0].target === "_blank" && links[0].rel === "noopener noreferrer", md);
+  }
+});
+
+test("liens : jamais dans un bloc de code ni dans un code en ligne, ni en http://", () => {
+  const doc = fakeDoc();
+  const frag = renderMarkdown("`https://en-ligne.example/a`\n\n```\nhttps://bloc.example/b\n```\nhttp://pas-https.example", doc);
+  assert.equal(linksOf(frag).length, 0);
+  assert.match(text(frag), /https:\/\/en-ligne\.example\/a/);
+  assert.match(text(frag), /https:\/\/bloc\.example\/b/);
+});
+
+test("adresse longue : rognée à l'affichage seulement (classe long), href et texte du DOM entiers", () => {
+  const long = "https://www.example.com/" + "chemin/".repeat(12) + "?a=1&b=2";
+  const [l] = linksOf(renderMarkdown(`voir ${long} fin`, fakeDoc()));
+  assert.equal(l.cls, "md-link long");
+  assert.equal(l.text, long);
+  assert.equal(l.href, new URL(long).href);
+  const [court] = linksOf(renderMarkdown("https://x.fr/court", fakeDoc()));
+  assert.equal(court.cls, "md-link");
+});
+
+test("message de l'utilisateur (linkifyText) : texte brut gardé, adresses https cliquables", () => {
+  const msg = "Regarde https://github.com/Zaudrax/Astrel. et **pas gras** [x](y)\n`https://code.example/a` puis\n"
+    + "```\nhttps://bloc.example/b\n```\nfin (https://ok.example/c)";
+  const doc = fakeDoc();
+  const frag = linkifyText(msg, doc);
+  assert.equal(text(frag), msg, "le texte affiché est le message tel que tapé");
+  assert.deepEqual(linksOf(frag).map((l) => l.text), ["https://github.com/Zaudrax/Astrel", "https://ok.example/c"]);
+  assert.ok(linksOf(frag).every((l) => l.icon && l.target === "_blank" && l.rel === "noopener noreferrer"));
+  for (const tag of doc.created) assert.ok(tag === "a" || tag === "span", `balise créée : ${tag}`);
+  assert.ok(!doc.created.includes("strong") && !doc.created.includes("br"), "rien d'autre n'est interprété");
+});
+
+test("message de l'utilisateur : attaques et adresses refusées restent du texte inerte", () => {
+  const evil = '<script>alert(1)</script> javascript:alert(2) https://ok.fr" onclick="x http://non.fr '
+    + "https:// b data:text/html,x https://" + "a".repeat(2100);
+  const doc = fakeDoc();
+  const frag = linkifyText(evil, doc);
+  assert.equal(text(frag), evil);
+  const links = linksOf(frag);
+  assert.deepEqual(links.map((l) => l.href), ["https://ok.fr/"]);
+  for (const tag of doc.createdNS) assert.ok(tag === "svg" || tag === "path");
+  assert.deepEqual(linkPieces(""), []);
+  assert.deepEqual(linkPieces("sans lien"), [{ t: "text", v: "sans lien" }]);
+});
+
+test("message de l'utilisateur : un ``` jamais refermé couvre la fin, un ` seul n'empêche rien", () => {
+  assert.equal(linkPieces("```\nhttps://a.example/x\nhttps://b.example/y").filter((p) => p.t === "a").length, 0);
+  assert.equal(linkPieces("un ` seul https://a.example/x").filter((p) => p.t === "a").length, 1);
+  // code en ligne sur deux lignes : pas du code (une ligne seulement), le lien reste cliquable
+  assert.equal(linkPieces("`début\nhttps://a.example/x`").filter((p) => p.t === "a").length, 1);
+});
+
+test("PERFORMANCE : linkPieces sur des messages hostiles de 100 000 caractères en moins de 100 ms", () => {
+  const N = 100_000;
+  const rep = (u) => u.repeat(Math.ceil(N / u.length)).slice(0, N);
+  for (const [name, s] of Object.entries({
+    "`a": rep("`a"), "``a`": rep("``a`"), "https": rep("https://a "), "url": "https://" + "a".repeat(N),
+    "fences": rep("```\n"), "lignes": rep("x https://a.fr/b\n"), "accents": "`".repeat(N), "mélange": rep("`https://a.fr` (https://b.fr) "),
+  })) {
+    const t0 = performance.now();
+    linkifyText(s, fakeDoc());
+    const ms = performance.now() - t0;
+    assert.ok(ms < 100 * LENTEUR, `${name} : ${ms.toFixed(0)} ms (lenteur ${LENTEUR.toFixed(1)})`);
   }
 });

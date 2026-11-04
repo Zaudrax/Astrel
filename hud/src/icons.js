@@ -60,6 +60,8 @@ const ICONS = {
   check: ["M20 6 9 17l-5-5"],
   help: [["circle", { cx: 12, cy: 12, r: 10 }], "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
   copy: [["rect", { x: 8, y: 8, width: 14, height: 14, rx: 2 }], "M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"],
+  // 04/11 : lien du fil, ouvert dans le navigateur (markdown.js)
+  "external-link": ["M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"],
   bot: ["M12 8V4H8", ["rect", { x: 4, y: 8, width: 16, height: 12, rx: 2 }], "M2 14h2", "M20 14h2", "M15 13v2", "M9 13v2"],
   terminal: ["m4 17 6-6-6-6", "M12 19h8"],
   timer: ["M10 2h4", "M12 14l3-3", ["circle", { cx: 12, cy: 14, r: 8 }]],

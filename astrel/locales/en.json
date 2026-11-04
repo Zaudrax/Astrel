@@ -1289,6 +1289,7 @@
  "aucun fichier affichable": "no file can be shown",
  "{name} est réservé au HUD de l'utilisateur": "{name} is reserved for the user's HUD",
  "média introuvable ou effacé": "media not found or deleted",
+ "lien refusé : seules les adresses https:// s'ouvrent": "link refused: only https:// addresses open",
  "Groupe inconnu.": "Unknown group.",
  "Autres réflexes, non listés ici : demande à Astrel de les lister.": "Other reflexes, not listed here: ask Astrel to list them.",
  "Autres skills, non listées ici : voir Réglages, Skills.": "Other skills, not listed here: see Settings, Skills.",

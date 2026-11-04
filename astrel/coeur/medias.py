@@ -17,6 +17,52 @@ from ..events import bus
 from ..core import MEDIA_HOLD_MAX_S, _MEDIA_LOCK, _MEDIA_TITLE_CONTROLS, log  # aides du cœur (le paquet charge core d'abord)
 
 
+LIEN_MAX = 2000  # comme MAX_URL de hud/src/markdown.js
+
+
+def lien_ouvrable(url) -> str | None:
+    """04/11 (demande : « les liens ne sont pas ouvrables comme sur ChatGPT ») : adresse d'un lien du fil
+    que le HUD demande d'ouvrir (`open_link`). Même règle que le HUD (`safeHref`) : https:// seulement, un
+    hôte, ni espace ni caractère de contrôle, 2 000 caractères au plus ; jamais d'identifiants dans
+    l'adresse (`https://banque.fr@ailleurs.example`). None si elle est refusée."""
+    if not isinstance(url, str):
+        return None
+    u = url.strip()
+    if not u or len(u) > LIEN_MAX or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in u):
+        return None
+    from urllib.parse import urlsplit
+
+    try:
+        p = urlsplit(u)
+        host = p.hostname
+    except ValueError:
+        return None
+    if p.scheme.lower() != "https" or not host or p.username is not None or p.password is not None:
+        return None
+    return u
+
+
+def _open_link(cmd: dict) -> dict:
+    """Clic sur un lien du fil (`open_link {url}`, hud/src/main.js) : ouvert dans le navigateur du SYSTÈME
+    (xdg-open), pas dans le profil dédié du HUD. RÉSERVÉ au HUD de l'utilisateur : refusé venant de Claude et
+    hors du HUD (canal de contrôle, `--send`) ; Claude a son propre outil `open_url`, jugé par le garde-fou."""
+    name = "open_link"
+    if cmd.get("_from_claude") is True or cmd.get("_via") != "hud":
+        log.warning("open_link refusé : hors du HUD de l'utilisateur (%s)", cmd.get("_via") or "?")
+        return {"ok": False, "error": f"{name} est réservé au HUD de l'utilisateur"}
+    url = lien_ouvrable(cmd.get("url"))
+    if url is None:
+        return {"ok": False, "error": "lien refusé : seules les adresses https:// s'ouvrent"}
+    from ..tools import desktop
+
+    try:
+        desktop.open_url(url)
+    except Exception as exc:  # navigateur absent, système sans « ouvrir »
+        return {"ok": False, "error": str(exc)}
+    log.info("lien ouvert dans le navigateur (HUD)")
+    return {"ok": True}
+
+
 class MediasCoeur:
     """Médias riches du fil, images et vidéos IA : outils `show_media`, `generate_image`,"""
 
@@ -44,10 +90,12 @@ class MediasCoeur:
         `media_playing {playing}` retient le micro pendant qu'un son ou une vidéo joue
         (question 4 du plan : Whisper prendrait la vidéo pour un ordre). Retenue PAR
         connexion (`_conn`, posé par le serveur) : relâchée par la page, à sa déconnexion,
-        ou au bout de `MEDIA_HOLD_MAX_S`."""
+        ou au bout de `MEDIA_HOLD_MAX_S`. 04/11 : `open_link {url}` (lien du fil, `_open_link`)."""
         if cmd.get("_from_claude") is True:
             log.warning("%s refusé : vient de Claude", name)
             return {"ok": False, "error": f"{name} est réservé au HUD de l'utilisateur"}
+        if name == "open_link":
+            return _open_link(cmd)
         if name == "media_open":
             target = medias.open_target(cmd.get("media_id"))
             if target is None:

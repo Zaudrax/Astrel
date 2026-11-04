@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -25,7 +26,7 @@ def coffre(tmp_path, monkeypatch):
 
 
 def _pid(r: dict) -> str:
-    return r["proposition"].rsplit("/", 1)[-1].removesuffix(".json")
+    return Path(r["proposition"]).stem  # 04/11 (CI Windows) : séparateur du système, pas « / »
 
 
 def _une(coffre, kind="nouvelle", notes=("projets/idee.md",), text=NOTE, now=None):

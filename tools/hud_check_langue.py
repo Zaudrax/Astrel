@@ -237,6 +237,44 @@ async def calibrage_en(p: Page) -> None:
     await close_panel(p)
 
 
+async def liens_en(p: Page) -> None:
+    """04/11 (liens du fil, petits détails de la barre) en anglais : description du lien, toast après le clic,
+    Copier sur le message de l'utilisateur, point « nouveaux messages » du bouton ↓, indication ↑ de la barre."""
+    # la séquence de la démo (sa phrase DITE ramène le fil en bas, comme toute phrase de l'utilisateur) d'abord finie
+    await p.until("[...document.querySelectorAll('.msg.astrel')].some(m => m.textContent.includes('Trois mails ce matin'))", 30)
+    await asyncio.sleep(1.5)
+    chan = await p.js("document.querySelector('.channel-tab.on')?.dataset.chan || 'general'")
+    text = "Look at https://example.org/en please"
+    await p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': 'say', 'text': text, 'channel': chan}))}), true")
+    um = f"[...document.querySelectorAll('.msg.user')].filter(m => m.textContent.startsWith({json.dumps(text)})).at(-1)"
+    ok = await p.until(f"!!{um}?.querySelector('a.md-link')", 5)
+    r = await p.js(f"""(() => {{ const m = {um}, a = m.querySelector('a.md-link'), b = m.querySelector('.copy-btn');
+        return {{ desc: a.getAttribute('aria-description'), copy: b.title, aria: b.getAttribute('aria-label'),
+                 ph: document.querySelector('#ask').placeholder }}; }})()""") if ok else {}
+    check(f"liens en anglais : « {r.get('desc')} », Copier « {r.get('copy')} », barre « {r.get('ph')} »",
+          ok and r["desc"] == "opens in your browser" and r["copy"] == "Copy your message (raw text)" and r["aria"] == "Copy"
+          and r["ph"] == "Ask Astrel…  (Shift+Enter: new line · ↑: your last message)")
+    await p.js(f"{um}.querySelector('a.md-link').click(), true")
+    toast = await p.until("[...document.querySelectorAll('.toast')].some(t => t.textContent === 'Link opened in your browser.')", 4)
+    check("clic sur un lien en anglais : « Link opened in your browser. »", toast)
+    await p.js("document.querySelector('#dialog').style.setProperty('--chat-h', '180px'), true")
+    await asyncio.sleep(0.3)
+    await p.js("(() => { const t = document.querySelector('#transcript'); t.scrollTop = 0; t.dispatchEvent(new Event('scroll')); })()")
+    await asyncio.sleep(0.2)
+    await p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': 'demo_report', 'text': 'Report that arrived.', 'channel': chan}))}), true")
+    dot = await p.until("document.querySelector('#jump-btn').classList.contains('has-new')", 4)
+    j = await p.js("""(() => { const t = document.querySelector('#transcript'), last = [...t.querySelectorAll('.msg')].at(-1);
+        return { aria: document.querySelector('#jump-btn').getAttribute('aria-label'), title: document.querySelector('#jump-btn').title,
+                 sh: t.scrollHeight, ch: t.clientHeight, st: t.scrollTop, last: (last?.textContent || '').slice(0, 30),
+                 hidden: !!last?.classList.contains('hidden') }; })()""")
+    check(f"bouton ↓ en anglais avec un nouveau message : « {j['aria']} » ({j})",
+          dot and j["aria"] == "Go to bottom: new messages" and j["title"] == "Go to bottom: new messages")
+    await scan(p, "liens, Copier, bouton ↓ (nouveaux messages)")
+    await p.js("document.querySelector('#jump-btn').click(), true")
+    await p.js("document.querySelector('#dialog').style.removeProperty('--chat-h'), true")
+    await asyncio.sleep(0.2)
+
+
 async def run(url: str) -> None:
     targets = json.load(urllib.request.urlopen(f"http://127.0.0.1:{CDP_PORT}/json"))
     ws_url = next(t["webSocketDebuggerUrl"] for t in targets if t["type"] == "page")
@@ -304,6 +342,7 @@ async def run(url: str) -> None:
         await asyncio.sleep(0.6)
         await scan(p, "HUD (barre, panneaux, fil)")
         await p.shot("apres-en-hud.png")
+        await liens_en(p)  # 04/11 : liens du fil, Copier, bouton ↓
         await p.js("document.querySelector('#activity').classList.add('hidden')")
         # 28/10 (plan P40 lot A5) : panneau « Images » sous la barre, en Auto puis en Manuel
         await click(p, "#images-btn")
