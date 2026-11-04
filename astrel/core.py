@@ -496,10 +496,28 @@ from .coeur.quota import QuotaCoeur
 from .coeur.fiabilite import FiabiliteCoeur
 from .coeur.calibrage import CALIBRAGE_COMMANDS, CalibrageCoeur  # 02/11 : assistant de calibrage du micro
 from .coeur.langue import LangueCoeur  # 02/11 : conversation anglaise
+from .coeur.cycle import CycleCoeur  # 04/11 (T46) : cerveau qui tombe proprement
+from .coeur.propositions import PROPOSITIONS_COMMANDS, PropositionsCoeur  # 04/11 (T49) : mémoire à valider
+
+
+def _erreur_auth(ev: "BrainEvent") -> bool:
+    """04/11 (T46) : Claude Code non connecté ? Cause STRUCTURÉE du CLI (`authentication_failed`, sonde du
+    CLI 2.1.285), stderr d'un CLI non connecté, ou texte d'erreur rangé « auth » par `reprise.classify`."""
+    data = ev.data or {}
+    if data.get("api_error") == "authentication_failed" or data.get("auth"):
+        return True
+    return not data.get("eof") and reprise.classify(ev.text) == "auth"
+
+
+def _erreur_a_proposer(ev: "BrainEvent") -> bool:
+    """04/11 (T46) : erreur après laquelle la demande en cours est PROPOSÉE (« Renvoyer ») : moteur tombé,
+    déconnecté ou limite atteinte. Une erreur ordinaire (ou passagère, rejouée) la tient pour traitée."""
+    data = ev.data or {}
+    return bool(data.get("eof")) or _erreur_auth(ev) or reprise.classify(ev.text) == "limit"
 
 
 class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, ConfirmationsCoeur, TachesCoeur, QuotaCoeur,
-             FiabiliteCoeur, CalibrageCoeur, LangueCoeur):
+             FiabiliteCoeur, CalibrageCoeur, LangueCoeur, CycleCoeur, PropositionsCoeur):
     # Le morceau de réponse en cours vient d'un tour de fond (compte rendu), et
     # a-t-il été dit ? Sinon il est « à lire » : bouton 🔊 dans le HUD.
     _report_chunk = False
@@ -1078,6 +1096,9 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         if name in _PLAN_HUD_COMMANDS:
             # Page « Plans » du HUD (contrat du 15/10) : l'utilisateur seul.
             return self._plan_command(name, cmd)
+        if name in PROPOSITIONS_COMMANDS:
+            # 04/11 (T49) : propositions de mémoire, HUD ou terminal, l'utilisateur seul.
+            return self._propositions_command(name, cmd)
         if name in ("guide_get", "guide_mark"):
             # Guide de démarrage du HUD (18/10, plan P5) : l'utilisateur seul (ou la personne
             # qui installe), comme les réglages.
@@ -2062,7 +2083,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         session sans fin coûte donc de plus en plus cher sur l'abonnement."""
         log.info("nouvelle session Claude")
         with self._turn_lock:
-            self.brain.restart(fresh=True)
+            self._cerveau_relancer(fresh=True)
             self._last_turn = time.time()
             self._end_turn(followup=False)
             with self._tasks_lock:
@@ -2445,6 +2466,9 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                     bus.publish("notice", level="info", channel=ch, text=relief.HELD_NOTICE)
                 return
             held_mid, channel = mid, ch  # la relève vient de finir : envoi normal, sans le réafficher
+        # 04/11 (T46) : moteur en relance, déconnecté ou introuvable : affiché tout de suite, envoyé quand il repart.
+        if not held_mid and self._cycle_garder(text, source, channel, shown, joined):
+            return
         # 02/11 : langue de la conversation changée → session neuve (ou note en attendant les tâches de fond).
         prefix = self._langue_suivre(source) + prefix
         with self._send_lock:
@@ -2765,14 +2789,18 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
                 # léger (plan P8), elle reste : c'est elle qui ramène sur Claude.
                 self._reprise_user_back()
             self._attente_fin_tour(self._turn_source)  # 01/11 : ses messages sont traités
+            self._cycle_reussi()  # 04/11 (T46) : fin d'un épisode de pannes, recul remis à zéro
             self._end_turn()
-            self._mission_turn_end(mission_text, ev.data)
-            self._note_depense(ev.data)
+            # 04/11 (T50) : consommation comptée AVANT le budget de mission, qui lit ses ajouts (sous-agents compris)
+            ajouts = self._note_depense(ev.data)
+            self._mission_turn_end(mission_text, ev.data, ajouts)
         elif ev.kind == "error":
             self._on_turn_error(ev)
-            self._attente_fin_tour(self._turn_source)  # 01/11 : erreur vue (sauf rejeu programmé)
+            # 01/11 : erreur vue (sauf rejeu programmé). 04/11 (T46) : moteur tombé, déconnecté ou limite en plein
+            # tour : la demande est PROPOSÉE (« Renvoyer »), jamais rejouée.
+            self._attente_fin_tour(self._turn_source, garder=_erreur_a_proposer(ev))
             self._end_turn(followup=False)
-            self._mission_turn_end("", ev.data)
+            self._mission_turn_end("", ev.data, self._note_depense(ev.data))  # 04/11 (T50) : comptée aussi
         else:
             if ev.kind in ("tool_pending", "tool_start", "tool_result") and not ev.data.get("agent"):
                 self._turn_acted = True  # quelque chose a peut-être tourné : plus de rejeu (idée 6)
@@ -2941,20 +2969,26 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
 
     def _on_turn_error(self, ev: BrainEvent) -> None:
         log.warning("tour en erreur : %s", ev.text)
-        kind = reprise.classify(ev.text)
-        handled = False
-        if kind == "limit":
-            self._limit_from_error(ev.text)  # jamais rejouée : reprise programmée à la réinitialisation
-        elif kind == "transient" and not ev.data.get("eof"):
-            handled = self._retry_or_warn(ev.text)  # rejoué plus tard, ou prévenu au HUD sans voix
-        if not handled:
-            bus.publish("notice", level="error", text=ev.text)
-            self._chime("error")
-            self.say(ev.text or config.SAY_ERROR, raw=True)
-        if ev.data.get("eof") or not self.brain.alive:
-            log.warning("cerveau mort, redémarrage")
-            time.sleep(config.BRAIN_RESTART_DELAY_S)
-            self.brain.restart()
+        eof = bool(ev.data.get("eof"))
+        if _erreur_auth(ev):
+            # 04/11 (T46) : Claude Code non connecté : une annonce par épisode, plus de relance en boucle.
+            self._cerveau_auth("refusée")
+            return
+        if not eof:
+            kind = reprise.classify(ev.text)
+            handled = False
+            if kind == "limit":
+                self._limit_from_error(ev.text)  # jamais rejouée : reprise programmée à la réinitialisation
+            elif kind == "transient":
+                handled = self._retry_or_warn(ev.text)  # rejoué plus tard, ou prévenu au HUD sans voix
+            if not handled:
+                bus.publish("notice", level="error", text=ev.text)
+                self._chime("error")
+                self.say(ev.text or config.SAY_ERROR, raw=True)
+        if eof:
+            # 04/11 (T46) : relance avec recul (2/5/15/60 s), hors du fil `_pump` ; annonces par épisode. Seule la
+            # fin de flux compte (elle suit toujours la mort du process) : une erreur de tour n'en est pas une.
+            self._cerveau_tombe(ev)
 
     # ------------------------------------------------------------------ reprise après coupure (15/10, idée 6)
 
@@ -3196,6 +3230,10 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         except Exception:
             log.exception("plans illisibles")
         try:
+            self._publish_propositions(force=True)  # 04/11 (T49) : badge « Mémoire » du HUD
+        except Exception:
+            log.exception("propositions de mémoire illisibles")
+        try:
             todo_mod.todo.publish([(c.id, c.label) for c in channels.items()])  # plan P38 : vue « Tâches »
         except Exception:
             log.exception("todo illisible")
@@ -3283,7 +3321,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             log.exception("décision de démarrage impossible : reprise")
             fresh = False
         with self._send_lock:
-            self.brain.start(fresh=fresh)
+            self._cerveau_demarrer(fresh=fresh)  # 04/11 (T46) : un lancement raté ne casse plus le démarrage
             if fresh:
                 relief.set_amorce(True)
         # Plan P19 : le panneau Consommation dès le démarrage (le CLI n'envoie son `init` qu'à la
@@ -3428,5 +3466,6 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         self.hud.stop()
         self.control_server.stop()
         self.confirm_server.stop()
+        self._cerveau_arreter()  # 04/11 (T46) : plus aucune relance programmée
         self.brain.stop()
         self.mic.stop()

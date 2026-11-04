@@ -56,13 +56,31 @@ class FiabiliteCoeur:
         except Exception:
             log.exception("message non noté en attente")
 
-    def _attente_fin_tour(self, source: str) -> None:
+    def _attente_fin_tour(self, source: str, garder: bool = False) -> None:
+        """`garder` (04/11, T46) : le tour a fini sur un moteur tombé, déconnecté ou une limite : ce qui était
+        noté pendant ce démarrage n'a pas abouti. Montré « non envoyé » avec « Renvoyer », gardé sur disque
+        (et reproposé après une relance d'Astrel) ; JAMAIS rejoué."""
         if getattr(self, "_retry_job", None) is not None:
             return  # rejeu programmé (panne passagère) : le message n'est pas encore traité
         try:
-            attente.traites(utilisateur=source in _UTILISATEUR)
+            if not garder:
+                attente.traites(utilisateur=source in _UTILISATEUR)
+                return
+            items = attente.proposer_courants()
         except Exception:
             log.exception("messages en attente")
+            return
+        if not items:
+            return
+        log.warning("%d demande(s) de l'utilisateur interrompue(s) : proposée(s), pas rejouée(s)", len(items))
+        for it in items:
+            mid = it["mid"]
+            bus.update_history(lambda ev, m=mid: ev.get("type") == "transcript" and ev.get("mid") == m, unsent=True)
+            bus.publish("unsent", mid=mid, error="demande interrompue")
+        parts = ["Ta demande n'a pas abouti : « Renvoyer » dans le fil pour la relancer."]
+        if any(it.get("acted") for it in items):
+            parts.append("Des actions avaient peut-être déjà commencé : vérifie avant de renvoyer.")
+        bus.publish("notice", level="warning", text="\n".join(parts))
 
     # --- boucles figées ---
 

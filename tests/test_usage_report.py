@@ -78,3 +78,27 @@ def test_sorties_bash_par_programme_et_periode(tmp_path):
     assert usage_report.main(["--dir", str(tmp_path), "--from", "2026-10-15", "--to", "2026-10-15", "--json"]) == 0
     assert usage_report.main(["--dir", str(tmp_path), "--from", "2026-10-15", "--to", "2026-10-10"]) == 2
     assert usage_report.main(["--dir", str(tmp_path), "--to", "2026-10-15"]) == 2
+
+
+def test_colonne_travail_et_plusieurs_dossiers(tmp_path):
+    """04/11 (T50) : travail = entrée + cache écrit + sortie (le cache relu à part), par ligne, par agent et
+    par jour ; `--dir` répété additionne les dossiers."""
+    recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+    a, b = tmp_path / "a", tmp_path / "b"
+    for folder, mid in ((a, "m1"), (b, "m2")):
+        folder.mkdir()
+        (folder / f"{mid}.jsonl").write_text(entry(mid, "claude-sonnet-5-5", recent, input_tokens=10,
+                                                   cache_read_input_tokens=90_000, cache_creation_input_tokens=1_000,
+                                                   output_tokens=200))
+    sub = a / "m1" / "subagents"
+    sub.mkdir(parents=True)
+    (sub / "agent-x.jsonl").write_text(entry("s1", "claude-opus-5-5", recent, cache_creation_input_tokens=5_000,
+                                             cache_read_input_tokens=40_000, output_tokens=700))
+    rep = usage_report.collect_all([a, b], days=1)
+    row = next(r for r in rep["rows"] if r["kind"] == "principal")
+    assert row["requests"] == 2 and usage_report.travail(row) == 2 * 1_210
+    assert rep["agents"][0]["travail"] == 5_700 and rep["agents"][0]["end_ts"]
+    assert sum(rep["by_day_work"].values()) == 2 * 1_210 + 5_700
+    text = usage_report.render(rep, top=3)
+    assert "travail" in text and "Par jour (travail)" in text
+    assert usage_report.main(["--dir", str(a), "--dir", str(b), "--days", "1", "--json"]) == 0

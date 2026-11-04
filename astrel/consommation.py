@@ -31,6 +31,7 @@ import json
 import logging
 import math
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -409,6 +410,15 @@ compteur = Compteur()
 
 # --------------------------------------------------------------------------- vue
 
+_DATE_CLAUDE = re.compile(r"^(claude-.+)-\d{8}$")
+
+
+def modele_canonique(modele: str) -> str:
+    """Nom d'un modèle Claude sans sa date de version (`-AAAAMMJJ`) ; les autres tels quels."""
+    m = _DATE_CLAUDE.match(modele)
+    return m.group(1) if m else modele
+
+
 def _periode(jours: dict, prefixe: str, tarifs: dict[str, dict], jour: str) -> dict:
     """Lignes et totaux des jours dont la date commence par `prefixe` (un jour ou un mois)."""
     rows: dict[str, dict] = {}
@@ -420,8 +430,12 @@ def _periode(jours: dict, prefixe: str, tarifs: dict[str, dict], jour: str) -> d
         for cle, l in (j.get("lignes") or {}).items():
             if not isinstance(l, dict):
                 continue
-            r = rows.setdefault(cle, {"fournisseur": l.get("fournisseur", ""), "modele": l.get("modele", ""),
-                                      **{t: 0 for t in TOKENS}, "cout_cli_usd": 0.0})
+            # 04/11 (T50) : « claude-haiku-4-5-20251001 » et « claude-haiku-4-5 » = une seule ligne (lecture
+            # seulement, le fichier garde ce qu'a dit le CLI).
+            modele = modele_canonique(str(l.get("modele", "")))
+            fid = str(l.get("fournisseur", ""))
+            r = rows.setdefault(f"{fid}|{modele}" if modele else cle, {"fournisseur": fid, "modele": modele,
+                                **{t: 0 for t in TOKENS}, "cout_cli_usd": 0.0})
             for t in TOKENS:
                 r[t] += int(_n(l.get(t)))
             r["cout_cli_usd"] += _n(l.get("cout_cli_usd"), entier=False)

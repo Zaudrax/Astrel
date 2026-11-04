@@ -333,21 +333,11 @@ PROPOSAL_MAX_CHARS = 12_000
 PROPOSALS_PER_DAY = 10
 
 
-def propose(kind: str, notes: list[str], text: str, reason: str, now: float | None = None,
-            folder: Path | None = None) -> dict:
-    """Dépose UNE proposition de ménage dans `runtime/vault-propositions/` (outil MCP
-    `memory_propose`) : le coffre n'est PAS touché. `fusion` : `notes[0]` est la note
-    gardée (`text` = son nouveau contenu), les autres deviennent un RENVOI vers elle,
-    jamais supprimées. `consolidation` / `perimee` : une note, `text` = sa réécriture.
-    `nouvelle` : une note qui N'EXISTE PAS encore (chemin `.md` dans le coffre), `text` = son contenu.
-    Le texte passe par le filtre de la mémoire (consigne injectée refusée, secrets masqués).
-    L'utilisateur valide, puis Astrel applique avec memory_write (sauvegarde, concurrence)."""
+def _cibles(kind: str, notes: list) -> list[str]:
+    """Notes visées par une proposition, contrôlées (dans le coffre, existantes ou non selon le type),
+    relatives au coffre. Sert au dépôt ET à l'application (04/11, T49 : rejouées au moment d'écrire)."""
     from . import memory
 
-    kind = str(kind or "").strip().lower()
-    if kind not in PROPOSAL_KINDS:
-        raise ValueError(f"type inconnu : {kind!r} (fusion, consolidation, perimee ou nouvelle ; "
-                         "jamais de suppression)")
     notes = [str(n).strip() for n in (notes or []) if str(n).strip()]
     if not notes or (kind == "fusion") != (len(notes) >= 2) or len(notes) > 4:
         raise ValueError("fusion : 2 à 4 notes (la gardée d'abord) ; consolidation, perimee, nouvelle : "
@@ -364,6 +354,31 @@ def propose(kind: str, notes: list[str], text: str, reason: str, now: float | No
         rels.append(str(path.relative_to(memory.VAULT.resolve())))
     if len(set(rels)) != len(rels):
         raise ValueError("la même note deux fois")
+    return rels
+
+
+def _sha(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def propose(kind: str, notes: list[str], text: str, reason: str, now: float | None = None,
+            folder: Path | None = None) -> dict:
+    """Dépose UNE proposition de ménage dans `runtime/vault-propositions/` (outil MCP
+    `memory_propose`) : le coffre n'est PAS touché. `fusion` : `notes[0]` est la note
+    gardée (`text` = son nouveau contenu), les autres deviennent un RENVOI vers elle,
+    jamais supprimées. `consolidation` / `perimee` : une note, `text` = sa réécriture.
+    `nouvelle` : une note qui N'EXISTE PAS encore (chemin `.md` dans le coffre), `text` = son contenu.
+    Le texte passe par le filtre de la mémoire (consigne injectée refusée, secrets masqués).
+    L'utilisateur valide, puis Astrel applique avec memory_write (sauvegarde, concurrence)."""
+    from . import memory
+
+    kind = str(kind or "").strip().lower()
+    if kind not in PROPOSAL_KINDS:
+        raise ValueError(f"type inconnu : {kind!r} (fusion, consolidation, perimee ou nouvelle ; "
+                         "jamais de suppression)")
+    rels = _cibles(kind, notes)
     text, remarks = memory_scan.clean_for_write(str(text or ""))
     reason, _ = memory_scan.clean_for_write(str(reason or ""))
     if not text.strip():
@@ -382,6 +397,9 @@ def propose(kind: str, notes: list[str], text: str, reason: str, now: float | No
         "note": rels[0], "texte_propose": text.strip(), "raison": " ".join(reason.split())[:600],
         "renvois": {r: f"# {Path(r).stem.replace('-', ' ')}\n\nFusionnée dans [[{kept}]] le {day} ; "
                        f"tout le contenu y est.\n" for r in rels[1:]},
+        # 04/11 (T49) : contenu des notes au dépôt ; l'application refuse si elles ont changé depuis
+        "empreinte_note": ({} if kind == "nouvelle" else
+                           {r: _sha((memory.VAULT / r).read_text(encoding="utf-8")) for r in rels}),
         "appliquer": ("après un oui explicite de l'utilisateur seulement : memory_write (create) de la note."
                       if kind == "nouvelle" else
                       "après un oui explicite de l'utilisateur seulement : memory_read puis memory_write "
@@ -407,3 +425,131 @@ def compact(report: dict) -> dict:
         if report[cat]:
             out[cat] = report[cat]
     return out
+
+
+# --- 04/11 (T49) : écran « Propositions » du HUD (commandes du cœur, l'utilisateur seul) ---
+#
+# Les propositions attendaient sans écran depuis le 21/10. L'utilisateur les voit dans le HUD, texte EXACT qui
+# sera écrit, et choisit Appliquer ou Refuser. L'empreinte lie ce qui est affiché à ce qui est appliqué :
+# `runtime/vault-propositions/` n'est pas protégé, un fichier réécrit entre l'affichage et le clic est refusé.
+
+PROPOSITION_ID = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9-]+$")
+EN_ATTENTE = "en attente"
+PROPOSITIONS_MAX = 50
+
+
+def _empreinte(data: dict) -> str:
+    vue = {k: data.get(k) for k in ("type", "note", "texte_propose", "renvois")}
+    return _sha(json.dumps(vue, ensure_ascii=False, sort_keys=True))[:16]
+
+
+def _fichier(pid: str, folder: Path | None = None) -> Path:
+    pid = str(pid or "").strip()
+    if not PROPOSITION_ID.match(pid):
+        raise ValueError("proposition inconnue")
+    base = (folder or PROPOSALS_DIR).resolve()
+    path = (base / f"{pid}.json").resolve()
+    if path.parent != base or not path.is_file():
+        raise ValueError("proposition inconnue")
+    return path
+
+
+def _charger(path: Path) -> dict | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("type") not in PROPOSAL_KINDS or not isinstance(data.get("note"), str):
+        return None
+    if not isinstance(data.get("texte_propose"), str) or not isinstance(data.get("renvois") or {}, dict):
+        return None
+    return data
+
+
+def _texte_ecrit(note: str, texte: str) -> str:
+    """Ce que `memory.write` écrira vraiment (filtre de la mémoire, en-tête YAML en tête, titre)."""
+    from . import memory
+
+    clean, _ = memory_scan.clean_for_write(texte)
+    return memory._avec_titre(memory.VAULT / note, clean)
+
+
+def lister(folder: Path | None = None, toutes: bool = False) -> list[dict]:
+    """Propositions (en attente seulement, sauf `toutes`), la plus récente d'abord. Un fichier abîmé est ignoré."""
+    folder = folder or PROPOSALS_DIR
+    out = []
+    for path in sorted(folder.glob("*.json"), reverse=True) if folder.is_dir() else []:
+        pid = path.stem
+        data = _charger(path) if PROPOSITION_ID.match(pid) else None
+        if data is None or (not toutes and data.get("statut") != EN_ATTENTE):
+            continue
+        out.append({
+            "proposition_id": pid, "date": str(data.get("date") or ""), "type": data["type"],
+            "statut": str(data.get("statut") or ""), "note": data["note"],
+            "renvois": sorted(data.get("renvois") or {}), "raison": str(data.get("raison") or ""),
+            "texte": _texte_ecrit(data["note"], data["texte_propose"]), "empreinte": _empreinte(data),
+            "traitee": data.get("traitee") or None,
+        })
+        if len(out) >= PROPOSITIONS_MAX:
+            break
+    return out
+
+
+def en_attente(folder: Path | None = None) -> int:
+    folder = folder or PROPOSALS_DIR
+    n = 0
+    for path in folder.glob("*.json") if folder.is_dir() else []:
+        data = _charger(path) if PROPOSITION_ID.match(path.stem) else None
+        n += bool(data and data.get("statut") == EN_ATTENTE)
+    return n
+
+
+def _ecrire(path: Path, data: dict) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _a_traiter(pid: str, folder: Path | None) -> tuple[Path, dict]:
+    path = _fichier(pid, folder)
+    data = _charger(path)
+    if data is None:
+        raise ValueError("proposition illisible")
+    if data.get("statut") != EN_ATTENTE:
+        raise ValueError(f"proposition déjà traitée ({data.get('statut')})")
+    return path, data
+
+
+def appliquer(pid: str, empreinte: str, par: str = "utilisateur", folder: Path | None = None) -> dict:
+    """Écrit la proposition dans le coffre (par `memory.write` : versions gardées, texte refiltré), si elle est
+    encore en attente, que son empreinte est celle qu'a vue l'utilisateur et que ses notes n'ont pas changé."""
+    from . import memory
+
+    path, data = _a_traiter(pid, folder)
+    if str(empreinte or "") != _empreinte(data):
+        raise ValueError("la proposition a changé depuis son affichage : relis-la")
+    kind, renvois = data["type"], dict(data.get("renvois") or {})
+    rels = _cibles(kind, [data["note"], *renvois])
+    for rel, sha in (data.get("empreinte_note") or {}).items():
+        try:
+            courant = (memory.VAULT / rel).read_text(encoding="utf-8")
+        except OSError:
+            courant = ""
+        if _sha(courant) != sha:
+            raise ValueError(f"la note {rel} a changé depuis la proposition : elle n'est pas appliquée")
+    ecrites = [memory.write(rels[0], data["texte_propose"], "create" if kind == "nouvelle" else "replace")]
+    for rel in rels[1:]:
+        ecrites.append(memory.write(rel, renvois.get(rel) or "", "replace"))
+    data.update(statut="appliquée", traitee={"le": datetime.now().strftime("%Y-%m-%d %H:%M"), "par": par,
+                                              "resultat": ecrites})
+    _ecrire(path, data)
+    return {"ok": True, "notes": ecrites}
+
+
+def refuser(pid: str, raison: str = "", par: str = "utilisateur", folder: Path | None = None) -> dict:
+    path, data = _a_traiter(pid, folder)
+    raison, _ = memory_scan.clean_for_write(str(raison or ""))
+    data.update(statut="refusée", traitee={"le": datetime.now().strftime("%Y-%m-%d %H:%M"), "par": par,
+                                            "raison": " ".join(raison.split())[:600]})
+    _ecrire(path, data)
+    return {"ok": True}

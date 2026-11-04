@@ -614,9 +614,9 @@ def sans_dir_fd(monkeypatch):
 
 def test_annule_sans_dir_fd(proj, sans_dir_fd):
     f = proj / "a.py"
-    f.write_text("avant\n")
+    f.write_bytes(b"avant\n")  # 04/11 (CI Windows) : octets exacts (write_text y écrit « \r\n »)
     _pre(f)
-    f.write_text("après\n")
+    f.write_bytes("après\n".encode())
     _post()
     assert instantanes.restaurer()["restaures"] == [str(f)] and f.read_bytes() == b"avant\n"
     assert sorted(x.name for x in proj.iterdir()) == ["a.py"]  # aucun temporaire laissé

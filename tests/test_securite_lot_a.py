@@ -353,9 +353,13 @@ def test_mcp_json_secret_et_plafond():
 def test_profil_et_micro_proteges(cible):
     v = ask("Write", {"file_path": str(cible), "content": "x"})
     assert v.needs_confirm and v.guard is True
-    rel = cible.relative_to(config.ROOT)
-    for cmd in (f"echo x > {rel}", f"rm -f {rel}", f"mv {rel} /tmp/", f"touch {rel}"):
-        assert bash(cmd).guard is True, cmd
+    # 04/11 (CI Windows) : « / » partout (Git Bash le lit, et `config\profile.json` NON cité y devient
+    # « configprofile.json », un autre fichier) ; sous Windows, aussi la forme « \ » entre guillemets.
+    rel = cible.relative_to(config.ROOT).as_posix()
+    formes = [rel] + ([f"'{cible.relative_to(config.ROOT)}'"] if os.name == "nt" else [])
+    for forme in formes:
+        for cmd in (f"echo x > {forme}", f"rm -f {forme}", f"mv {forme} /tmp/", f"touch {forme}"):
+            assert bash(cmd).guard is True, cmd
     assert not ask("Read", {"file_path": str(cible)}).needs_confirm
     assert not bash(f"cat {rel}").needs_confirm
 
@@ -394,25 +398,63 @@ def test_meme_marqueur_que_le_cerveau():
     "python3 -c \"import os; os.environ.pop('ASTREL_BRAIN'); os.system('x')\"",
     "bash -c 'unset ASTREL_BRAIN; python3 x.py'",
 ])
-def test_retirer_le_marqueur_est_une_action_sur_le_garde_fou(cmd, monkeypatch):
-    """Là où le marqueur décide (Linux hors service, macOS) : plafond ; en service sous Linux (le cgroup décide) :
-    critique, autorisable (« oui pour 30 min », Total)."""
-    monkeypatch.setattr(guard, "_CGROUP", [False])  # Linux lancé par ./run.sh : descendance et marqueur
-    v = bash(cmd)
-    assert v.needs_confirm and v.guard is True and guard.L_BRAIN_MARK in v.desc, (cmd, v.desc)
-    assert limites.CODE_IDENTITE in v.cats
-    monkeypatch.setattr(guard, "_CGROUP", [True])
-    v = bash(cmd)
-    assert v.needs_confirm and v.level == guard.CRITICAL and guard.L_BRAIN_MARK in v.desc, (cmd, v.desc)
+def test_retirer_le_marqueur_est_une_action_sur_le_garde_fou(cmd, systeme):
+    """Même règle sur chaque système : là où le marqueur DÉCIDE (aucun confinement : macOS, Linux hors service,
+    Windows hors du Job Object), plafond ; là où un confinement reconnaît Claude sans lui (Linux en service :
+    cgroup ; Windows : Job Object du cerveau), critique autorisable (« oui pour 30 min », Total)."""
+    for plateforme, confine in MARQUEUR_PAR_SYSTEME:
+        systeme(plateforme, confine)
+        v = bash(cmd)
+        cas = (cmd, plateforme, confine, v.desc)
+        assert v.needs_confirm and v.level == guard.CRITICAL and guard.L_BRAIN_MARK in v.desc, cas
+        if guard._marqueur_compte():
+            assert v.guard is True and limites.CODE_IDENTITE in v.cats and not v.keys, cas
+        else:
+            assert v.guard is False and v.keys, cas
 
 
-def test_marqueur_decide_selon_le_systeme(monkeypatch):
+# (système du hook, confiné) : Linux en service ou non, Windows dans le Job Object ou non, macOS (jamais confiné).
+MARQUEUR_PAR_SYSTEME = [("linux", False), ("linux", True), ("win32", False), ("win32", True), ("darwin", False),
+                        ("darwin", True)]
+
+
+@pytest.fixture
+def systeme(monkeypatch):
+    """Simule le système du hook (`sys.platform`) et son confinement : cgroup du service (Linux), Job Object du
+    cerveau (Windows) ; macOS n'en a pas, ce qui y est posé ne compte pas."""
+    def poser(plateforme: str, confine: bool) -> None:
+        monkeypatch.setattr(guard.sys, "platform", plateforme)
+        monkeypatch.setattr(guard, "_CGROUP", [confine])
+        monkeypatch.setattr(guard, "_JOB", [confine])
+    return poser
+
+
+def test_marqueur_decide_selon_le_systeme(systeme):
+    attendu = {("linux", False): True, ("linux", True): False, ("win32", False): True, ("win32", True): False,
+               ("darwin", False): True, ("darwin", True): True}
+    for (plateforme, confine), decide in attendu.items():
+        systeme(plateforme, confine)
+        assert guard._marqueur_compte() is decide, (plateforme, confine)
+    assert sorted(attendu) == sorted(MARQUEUR_PAR_SYSTEME)
+
+
+def test_job_object_vu_par_le_hook(monkeypatch):
+    """04/11 (CI Windows) : le hook se sait dans le Job Object du cerveau en l'ouvrant par son nom, tiré du marqueur
+    hérité du CLI. Ici (pas Windows) : jamais trouvé, donc le marqueur décide (vrai Windows : test_guard_windows)."""
+    assert guard.JOB_PREFIXE == proc.JOB_PREFIXE
+    assert proc.nom_du_job() == guard.JOB_PREFIXE + proc.BRAIN_TOKEN and proc.nom_du_job("ab") == guard.JOB_PREFIXE + "ab"
+    assert guard.re.fullmatch(r"[0-9a-f]{32}", proc.BRAIN_TOKEN)  # la forme que `guard._dans_le_job` exige
+    for jeton in ("", "x", "../" + proc.BRAIN_TOKEN, proc.BRAIN_TOKEN.upper() + "\\x"):
+        assert guard._dans_le_job(jeton) is False, jeton
+    monkeypatch.setattr(guard.sys, "platform", "win32")
+    monkeypatch.setattr(guard, "_JOB", [])
+    monkeypatch.setenv(guard.BRAIN_VAR, proc.BRAIN_TOKEN)
+    if sys.platform != "win32":  # aucun Job Object de ce nom ici : le marqueur décide, au plafond
+        assert guard._job_fiable() is False and guard._marqueur_compte() is True
+        assert bash("env -u ASTREL_BRAIN python3 x.py").guard is True
+    monkeypatch.setattr(guard, "_JOB", [])
     monkeypatch.setattr(guard.sys, "platform", "darwin")
-    assert guard._marqueur_compte() is True
-    monkeypatch.setattr(guard.sys, "platform", "linux")
-    for en_service in (True, False):
-        monkeypatch.setattr(guard, "_CGROUP", [en_service])
-        assert guard._marqueur_compte() is (not en_service)
+    assert guard._job_fiable() is False  # hors Windows : jamais lu
 
 
 def test_env_tiret_ne_cache_plus_le_programme():
@@ -511,13 +553,19 @@ def test_msys_applique_la_forme_normale(windows):
 @pytest.mark.parametrize("forme", ["\\\\?\\Volume{0f1e2d3c-0000-0000-0000-000000000000}\\Astrel\\astrel\\guard.py",
                                    "\\\\?\\GLOBALROOT\\Device\\HarddiskVolume3\\Astrel\\astrel\\guard.py",
                                    "\\\\.\\PhysicalDrive0", "\\\\.\\pipe\\x", "\\\\BUREAU-1\\C$\\Astrel\\hooks\\x"])
-def test_forme_incertaine_demandee(windows, forme):
+def test_forme_incertaine_demandee(windows, forme, tmp_path):
     assert guard._win_douteux(forme)
     v = ask("Write", {"file_path": forme, "content": "x"})
     assert v.needs_confirm and v.guard is True
     v = ask("Read", {"file_path": forme})
     assert v.needs_confirm and v.desc == guard.L_SECRET
     assert bash(f"echo x > '{forme}'").needs_confirm
+    # 04/11 (CI Windows) : par Bash, même verdict que Write (doute au plafond), y compris `rm -f` (avant : libre)
+    # et quand le « ? » du préfixe passait pour un joker ; dossier courant sans fichier protégé, nom quelconque.
+    autre = forme.replace("guard.py", "ipc.py")
+    for cmd in (f"echo x > '{autre}'", f"rm -f '{autre}'", f"cp README.md '{autre}'", f"touch '{autre}'"):
+        v = bash(cmd, cwd=str(tmp_path))
+        assert v.needs_confirm and v.guard is True, cmd
 
 
 @pytest.mark.parametrize("forme", ["C:\\Projets\\a.txt", "\\\\serveur\\partage\\a.txt", "\\\\?\\C:\\Projets\\a.txt",
@@ -526,8 +574,27 @@ def test_forme_connue_pas_incertaine(windows, forme):
     assert not guard._win_douteux(forme)
 
 
-def test_hors_windows_rien_ne_change():
+def test_hors_windows_rien_ne_change(monkeypatch):
+    monkeypatch.setattr(guard, "_WINDOWS", False)  # 04/11 (CI Windows) : simulé partout, vrai Windows compris
     assert guard._msys("\\\\?\\C:\\x") == "\\\\?\\C:\\x" and not guard._win_douteux("\\\\?\\Volume{x}\\y")
+    assert guard._win_sans_prefixe("\\\\?\\C:\\x") == "\\\\?\\C:\\x"
+
+
+@pytest.mark.parametrize("prefixe", ["\\\\?\\", "//?/", "\\\\.\\"])
+def test_prefixe_win32_n_est_pas_un_joker(windows, monkeypatch, tmp_path, prefixe):
+    """04/11 (CI Windows) : `echo x > '\\\\?\\D:\\…\\ipc.py'` était libre : le « ? » du préfixe passait pour un joker
+    et, sans « / » à couper, le motif visait le dossier courant. Simulé : la forme normale de ce chemin Windows est
+    le vrai `astrel/ipc.py` (sous Windows, `_win_forme` le fait seul)."""
+    forme = prefixe + "C:\\Astrel\\astrel\\ipc.py"
+    vrai = str(R / "astrel" / "ipc.py")
+    reel = guard._win_forme
+    monkeypatch.setattr(guard, "_win_forme", lambda s: vrai if s == forme else reel(s))
+    assert guard._win_sans_prefixe(forme) == vrai
+    ctx = guard._Ctx(cwds=[tmp_path])
+    assert guard._scopes(forme, ctx) == [(Path(vrai).resolve(), None)]  # un chemin, pas un motif
+    for cmd in (f"echo x > '{forme}'", f"rm -f '{forme}'", f"cp README.md '{forme}'", f"echo x | tee '{forme}'"):
+        v = bash(cmd, cwd=str(tmp_path))  # dossier courant sans fichier protégé : seule la cible compte
+        assert v.needs_confirm and v.guard is True, cmd
 
 
 # ================================================================== 6. vérification des réflexes

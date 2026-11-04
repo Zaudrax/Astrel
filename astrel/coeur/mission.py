@@ -177,7 +177,10 @@ class MissionCoeur:
         elif ev.kind == "tool_result":
             mission.observe_tool_result(ev.tool_id, bool(ev.data.get("is_error")), ev.text, bool(ev.data.get("fond")))
 
-    def _mission_turn_end(self, text: str, data: dict | None) -> None:
+    def _mission_turn_end(self, text: str, data: dict | None, ajouts: list | None = None) -> None:
+        # 04/11 (T50) : tout `result` pendant une mission active compte dans son budget (agents de fond
+        # compris), même hors d'un tour de mission ; `ajouts` = ce que le compteur vient d'ajouter.
+        mission.compter(ajouts, (data or {}).get("usage"))
         if not mission.awaiting:
             return
         status, _reason = mission.after_turn(text, (data or {}).get("usage"),
@@ -282,6 +285,10 @@ class MissionCoeur:
             except Exception:
                 log.exception("mission")
             try:
+                self._cycle_tick()  # 04/11 (T46) : messages gardés pendant une relance, sondes du moteur
+            except Exception:
+                log.exception("cycle du cerveau")
+            try:
                 self._muettes_tick()  # 01/11 : sous-agent sans nouvelles, alerte seule
             except Exception:
                 log.exception("tâches muettes")
@@ -297,6 +304,10 @@ class MissionCoeur:
                 self._todo_tick()  # plan P38 lot 3 : « prêt à clore » suit les fiches de passation
             except Exception:
                 log.exception("todo")
+            try:
+                self._propositions_tick()  # 04/11 (T49) : badge des propositions de mémoire, toutes les 5 s
+            except Exception:
+                log.exception("propositions de mémoire")
             try:
                 self._quota_tick()  # 22/10 : quota relevé hors des tours (Claude Code utilisé ailleurs)
             except Exception:

@@ -51,6 +51,21 @@ def test_graphe_avec_coffre(tmp_path, monkeypatch):
     assert uses["mcp:astrel:set_volume"] == 1
 
 
+
+def test_compteurs_ancien_serveur_fusionnes(tmp_path, monkeypatch):
+    """04/11 (T50) : les appels comptés sous l'ancien nom du serveur MCP rejoignent « astrel », une fois."""
+    import json
+    usage = tmp_path / "usage.json"
+    ancien = "mcp:" + "jar" + "vis:set_volume"  # l'ancien nom, écrit en deux morceaux (test du renommage)
+    usage.write_text(json.dumps({ancien: 5, "mcp:astrel:set_volume": 2, "tool:Bash": 3}))
+    monkeypatch.setattr(graph_mod, "USAGE_FILE", usage)
+    g = graph_mod.Graph()
+    assert g._usage == {"mcp:astrel:set_volume": 7, "tool:Bash": 3}
+    assert json.loads(usage.read_text()) == {"mcp:astrel:set_volume": 7, "tool:Bash": 3}
+    avant = usage.stat().st_mtime_ns
+    assert graph_mod.Graph()._usage["mcp:astrel:set_volume"] == 7  # idempotent : rien de réécrit
+    assert usage.stat().st_mtime_ns == avant
+
 def test_graphe_sans_init_montre_les_outils_natifs(tmp_path, monkeypatch):
     monkeypatch.setattr(graph_mod, "VAULT", tmp_path / "absent")
     monkeypatch.setattr(graph_mod, "USAGE_FILE", tmp_path / "usage.json")

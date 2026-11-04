@@ -683,9 +683,10 @@ ITEMS: dict[str, Item] = {i.key: i for i in (
     Item("plugins", "plugins", "Plugins de Claude Code",
          "Décoché : coupé pour Astrel seul (caveman réécrirait chaque réponse en style télégraphique).",
          "flags", "brain", _plugins_default, env="ASTREL_DISABLED_PLUGINS"),
-    Item("agent_alert_tokens", "seuils", "Alerte agent : tokens",
-         "Une tâche de fond ou un sous-agent qui cumule plus que ça déclenche une alerte, jamais un arrêt.",
-         "int", "hot", lambda: int(getattr(config, "AGENT_ALERT_TOKENS", 5_000_000)),
+    Item("agent_alert_tokens", "seuils", "Alerte agent : tokens de travail",
+         "Une tâche de fond ou un sous-agent qui écrit plus que ça (entrée hors cache, création de cache et "
+         "sortie ; le cache relu ne compte pas) déclenche une alerte, jamais un arrêt.",
+         "int", "hot", lambda: int(getattr(config, "AGENT_ALERT_TOKENS", 1_000_000)),
          env="ASTREL_AGENT_ALERT_TOKENS", min=100_000, max=100_000_000, step=100_000, unit="tokens"),
     Item("agent_alert_s", "seuils", "Alerte agent : durée",
          "Une tâche de fond qui tourne plus longtemps que ça déclenche une alerte, jamais un arrêt.",

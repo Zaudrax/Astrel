@@ -79,6 +79,10 @@ ENDED = (DONE, BLOCKED, STOPPED, BUDGET, ACCEPTED, VERIF_FAILED)
 # hors de la phase « travail » (`take_prompt`).
 TRAVAIL, VERIFICATION, VERIF_BLOCKED = "travail", "verification", "verification_blocked"
 SCHEMA = 2
+# 04/11 (T50) : comment `tokens` est compté. « travail » : entrée hors cache + création de cache + sortie,
+# sous-agents compris (consommation du `result`) ; « ancienne » (mission d'avant) : `usage` de la session
+# principale, cache relu compris, gardé jusqu'à sa fin.
+MESURE_TRAVAIL, MESURE_ANCIENNE = "travail", "ancienne"
 # 04/11 : une mission finie depuis plus longtemps est close à l'affichage (aucune écriture).
 FERMETURE_AUTO_S = 24 * 3600
 # Lot C (03/11) : outils qui n'écrivent rien. Tout AUTRE outil (Bash, Write, Edit, MCP…) lancé après la
@@ -124,10 +128,37 @@ def _abs_paths(value: Any, base: str | Path) -> list[str]:
     return out
 
 
+def travail_de(ajouts: Any) -> tuple[int, int] | None:
+    """04/11 (T50) : (travail, cache relu) des ajouts du compteur de consommation (`Compteur.noter` :
+    une ligne par modèle, sous-agents compris). Travail = entrée hors cache + création de cache +
+    sortie ; le cache relu (tout le contexte, relu à chaque requête) est rendu à part. None : rien
+    d'exploitable."""
+    if not isinstance(ajouts, list) or not ajouts:
+        return None
+    travail = relu = 0
+    for a in ajouts:
+        if isinstance(a, dict):
+            travail += sum(int(a.get(k) or 0) for k in ("entree", "cache_ecriture", "sortie"))
+            relu += int(a.get("cache_lecture") or 0)
+    return travail, relu
+
+
+def travail_usage(usage: Any) -> tuple[int, int]:
+    """Repli sans `modelUsage` : le `usage` du tour (session principale SEULE)."""
+    if not isinstance(usage, dict):
+        return 0, 0
+    def n(k: str) -> int:
+        v = usage.get(k)
+        return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
+    return n("input_tokens") + n("cache_creation_input_tokens") + n("output_tokens"), n("cache_read_input_tokens")
+
+
 def tokens_of(usage: Any) -> int:
     """Tokens traités par la session principale pendant un tour (entrée, cache
     lu et écrit, sortie). Les sous-agents n'y sont pas : leur coût se voit dans
-    la fenêtre de 5 h, d'où l'arrêt sur le quota en plus."""
+    la fenêtre de 5 h, d'où l'arrêt sur le quota en plus.
+    04/11 (T50) : seulement pour une mission d'avant (`mesure` « ancienne ») ; les nouvelles comptent
+    le TRAVAIL, sous-agents compris (`Mission.compter`)."""
     if not isinstance(usage, dict):
         return 0
     total = 0
@@ -332,6 +363,8 @@ class Mission:
             "lancee_par": "astrel" if origine == "claude" else "utilisateur",
             "status": ACTIVE, "started_at": time.time(), "ended_at": 0.0,
             "turns": 0, "tokens": 0, "attempts": 0, "reason": "", "last": "",
+            # 04/11 (T50) : `tokens` = travail (hors cache relu), sous-agents compris ; `cache_lu` à part
+            "mesure": MESURE_TRAVAIL, "cache_lu": 0, "mesure_partielle": False,
             "phase": TRAVAIL, "critere": critere, "critere_sha": preuve.empreinte_critere(critere) if critere else "",
             "origine": origine, "approbation": None, "ancrage": ancrage, "verif_en_cours": None,
             "verifs_ratees": 0, "bloquees": 0, "declaration": None, "preuve": None, "historique_preuves": [],
@@ -453,6 +486,24 @@ class Mission:
         self._save()
         return {"ok": True, "mission": self.describe()}
 
+    def compter(self, ajouts: Any, usage: Any = None) -> None:
+        """04/11 (T50) : un `result` du CLI pendant une mission ACTIVE (tour de mission, de l'utilisateur ou d'un
+        agent de fond) : son travail entre dans le budget, sous-agents compris. Sans ajouts du compteur
+        (pas de `modelUsage`) : repli sur `usage`, session principale seule, mesure notée partielle."""
+        with self.lock:
+            d = self.data
+            if not d or d.get("status") != ACTIVE or d.get("mesure") != MESURE_TRAVAIL:
+                return
+            vu = travail_de(ajouts)
+            if vu is None:
+                vu = travail_usage(usage)
+                if vu == (0, 0):
+                    return
+                d["mesure_partielle"] = True
+            d["tokens"] = int(d.get("tokens") or 0) + vu[0]
+            d["cache_lu"] = int(d.get("cache_lu") or 0) + vu[1]
+        self._save()
+
     # --- le fil de la mission ---
 
     def over_budget(self) -> str:
@@ -498,7 +549,8 @@ class Mission:
                 self._save()  # RLock : réentrant
                 return "", ""
             d = self.data
-            d["tokens"] += tokens_of(usage)
+            if d.get("mesure") != MESURE_TRAVAIL:
+                d["tokens"] += tokens_of(usage)  # mission d'avant le 04/11 : son ancienne mesure
             kind, reason = verdict(text)
             last_line = text.strip().splitlines()[-1] if text.strip() else ""
             d["last"] = (reason or last_line)[:300]
@@ -756,6 +808,7 @@ def _completer(d: dict[str, Any]) -> None:
                        else "utilisateur"), ("approbation", None), ("ancrage", {}), ("verif_en_cours", None),
                        ("verifs_ratees", 0), ("bloquees", 0), ("observations", _observations_vides()), ("declaration", None), ("preuve", None), ("historique_preuves", [])):
         d.setdefault(key, value)
+    d.setdefault("mesure", MESURE_ANCIENNE)  # 04/11 (T50) : une mission d'avant garde sa mesure jusqu'à sa fin
 
 
 def est_close(d: Any, now: float | None = None) -> bool:

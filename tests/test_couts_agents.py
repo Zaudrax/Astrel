@@ -52,6 +52,31 @@ def test_alerte_une_seule_fois_et_sans_arret(astrel, published, monkeypatch):
     assert said == [] and stopped == []  # ni voix, ni arrêt automatique
 
 
+
+def test_alerte_sur_le_travail_pas_sur_le_cache(astrel, published, monkeypatch):
+    """04/11 (T50) : 185 alertes comptaient le cache relu. Le seuil porte sur le TRAVAIL ; le panneau
+    l'affiche (`tokens`), le total reste dans `tokens_total`."""
+    j, said, _ = astrel
+    monkeypatch.setattr(config, "AGENT_ALERT_TOKENS", 1_000_000, raising=False)
+    j._on_task(task(phase="start", desc="Audit du code"))
+    j._on_task(task(tokens=13_000_000, travail=400_000, cache_lu=12_600_000, requests=40))
+    item = of(published, "tasks")[-1]["items"][0]
+    assert item["tokens"] == 400_000 and item["tokens_total"] == 13_000_000 and item["cache_lu"] == 12_600_000
+    assert not item["alert"] and not [n for n in of(published, "notice") if n.get("task_alert")]
+    j._on_task(task(tokens=30_000_000, travail=1_100_000, cache_lu=28_900_000, requests=90))
+    alerts = [n for n in of(published, "notice") if n.get("task_alert")]
+    assert len(alerts) == 1 and "1,1 M tokens de travail" in alerts[0]["text"]
+    assert "hors cache relu" in alerts[0]["text"] and "28,9 M relus" in alerts[0]["text"]
+    assert said == []
+
+
+def test_cerveau_d_avant_sans_travail(astrel, published, monkeypatch):
+    """Un cerveau qui ne donne pas encore `travail` : son `tokens` tel quel (compatibilité)."""
+    j, _, _ = astrel
+    j._on_task(task(phase="start", desc="Ancien"))
+    j._on_task(task(tokens=250_000))
+    assert of(published, "tasks")[-1]["items"][0]["tokens"] == 250_000
+
 def test_alerte_a_la_duree_meme_sans_nouvelles(astrel, published, monkeypatch):
     j, _, _ = astrel
     monkeypatch.setattr(config, "AGENT_ALERT_S", 60, raising=False)
@@ -71,7 +96,7 @@ def test_alerte_a_la_duree_meme_sans_nouvelles(astrel, published, monkeypatch):
 def test_seuils_par_defaut_si_config_ne_les_a_pas(monkeypatch):
     monkeypatch.delattr(config, "AGENT_ALERT_TOKENS", raising=False)
     monkeypatch.delattr(config, "AGENT_ALERT_S", raising=False)
-    assert core._alert_limits() == (5_000_000, 3600.0)
+    assert core._alert_limits() == (1_000_000, 3600.0)  # 04/11 (T50) : tokens de travail
 
 
 # ------------------------------------------------------------------ bouton Stop d'une tâche
@@ -157,3 +182,25 @@ def test_evenement_quota_du_coeur(astrel, published):
     assert ev["forecast"] == "" and [w["name"] for w in ev["windows"]] == ["five_hour", "seven_day"]
     assert ev["limit_type"] == "five_hour"  # « type » du CLI n'écrase plus le type de l'événement
     assert isinstance(data["windows"], dict)  # le format du CLI reste pour brain.quota (réflexes)
+
+
+def test_ligne_de_cout_a_la_fin_d_un_agent(astrel, published):
+    """04/11 (T50) : un sous-agent fini laisse une ligne dans logs/agents-couts.jsonl (rendement par métier)."""
+    import json
+    from astrel.coeur import taches as taches_coeur
+    j, _, _ = astrel
+    j._agent_log["toolu_X"] = {"type": "codeur", "model": "opus", "effort": "high",
+                               "depots": [{"outil": "passation", "mission": "T50", "de": "codeur", "a": "testeur",
+                                           "ok": True, "titre": "x"}]}
+    j._on_task(task(phase="start", desc="Coder T50", tool_use_id="toolu_X"))
+    j._on_task(task(tokens=9_000_000, travail=300_000, cache_lu=8_700_000, requests=30, estime=False))
+    j._on_task(task(phase="end", status="completed"))
+    j._on_task(task("t2", phase="start", kind="local_bash", desc="commande"))
+    j._on_task(task("t2", phase="end", kind="local_bash", status="completed"))
+    lignes = [json.loads(l) for l in taches_coeur.COUTS_LOG.read_text().splitlines()]
+    assert len(lignes) == 1  # une commande de fond n'est pas un agent
+    l = lignes[0]
+    assert (l["type"], l["modele_demande"], l["statut"]) == ("codeur", "opus", "completed")
+    assert (l["travail"], l["cache_lu"], l["total"], l["requetes"]) == (300_000, 8_700_000, 9_000_000, 30)
+    assert l["estime"] is False and l["depots"] == [{"outil": "passation", "mission": "T50", "de": "codeur",
+                                                     "a": "testeur", "ok": True}]

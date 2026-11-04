@@ -12,9 +12,12 @@ type et description de l'agent). Chaque réponse du modèle (un `message.id`,
 répété une fois par bloc de contenu) compte pour UNE requête ; ses compteurs
 sont pris au plus haut des répétitions.
 
-Colonnes : requêtes, entrée (non cachée), cache lu, cache écrit, sortie. Sur
+Colonnes : requêtes, entrée (non cachée), cache lu, cache écrit, sortie, puis TRAVAIL (04/11, T50 :
+entrée + cache écrit + sortie, ce qui a été écrit une fois) et la part du cache lu. Sur
 l'abonnement, le cache lu domine : c'est le contexte relu à chaque tour, que
-les relèves de session et les briefs d'agents serrés font baisser.
+les relèves de session et les briefs d'agents serrés font baisser ; les alertes et les budgets
+de mission d'Astrel comptent le travail, pas le cache relu.
+`--dir` se répète (plusieurs dossiers de transcriptions additionnés).
 « Origine » : `sdk-cli` = Astrel (claude -p), `claude-vscode` = l'utilisateur dans VS
 Code, `cli` = terminal. Mesure, pas facture : aucun prix n'est calculé.
 
@@ -36,6 +39,11 @@ from pathlib import Path
 DEFAULT_DIR = Path.home() / ".claude" / "projects" / "-home-user-Projets"
 FIELDS = ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens")
 LABELS = ("entrée", "cache lu", "cache écrit", "sortie")
+WORK = ("input_tokens", "cache_creation_input_tokens", "output_tokens")  # 04/11 (T50) : le travail
+
+
+def travail(row: dict) -> int:
+    return sum(int(row.get(f) or 0) for f in WORK)
 ORIGINS = {"sdk-cli": "Astrel", "claude-vscode": "VS Code", "cli": "terminal"}
 
 
@@ -165,6 +173,7 @@ def collect(folder: Path, days: float = 7.0, since: datetime | None = None,
     table: dict[tuple[str, str, str], dict] = defaultdict(lambda: {"requests": 0, **{f: 0 for f in FIELDS}})
     agents: list[dict] = []
     by_day: dict[str, int] = defaultdict(int)
+    by_day_work: dict[str, int] = defaultdict(int)
 
     def add(kind: str, origin: str, msgs: dict[str, dict]) -> dict:
         tot = {"requests": 0, **{f: 0 for f in FIELDS}}
@@ -175,7 +184,9 @@ def collect(folder: Path, days: float = 7.0, since: datetime | None = None,
             for f in FIELDS:
                 row[f] += m[f]
                 tot[f] += m[f]
-            by_day[m["ts"].astimezone().strftime("%Y-%m-%d")] += sum(m[f] for f in FIELDS)
+            day = m["ts"].astimezone().strftime("%Y-%m-%d")
+            by_day[day] += sum(m[f] for f in FIELDS)
+            by_day_work[day] += travail(m)
         return tot
 
     for main in sorted(folder.glob("*.jsonl")):
@@ -200,18 +211,47 @@ def collect(folder: Path, days: float = 7.0, since: datetime | None = None,
                 meta = {}
             models = sorted({m["model"] for m in smsgs.values()})
             first = min(m["ts"] for m in smsgs.values())
+            last = max(m["ts"] for m in smsgs.values())
             agents.append({
                 "session": main.stem[:8], "agent": sub.stem.removeprefix("agent-")[:10],
                 "type": meta.get("agentType", "?"), "description": meta.get("description", ""),
                 "model": ",".join(m.replace("claude-", "") for m in models),
                 "start": first.astimezone().strftime("%d/%m %H:%M"),
-                "total": sum(tot[f] for f in FIELDS), **tot,
+                "start_ts": first.isoformat(), "end_ts": last.isoformat(),  # 04/11 : jointure avec les fiches
+                "total": sum(tot[f] for f in FIELDS), "travail": travail(tot), **tot,
             })
     agents.sort(key=lambda a: -a["total"])
     rows = [{"kind": k, "origin": o, "model": m, **v} for (k, o, m), v in sorted(table.items())]
     return {"days": days, "since": since.isoformat(), "until": until.isoformat() if until else "",
             "rows": rows, "agents": agents, "by_day": dict(sorted(by_day.items())),
+            "by_day_work": dict(sorted(by_day_work.items())),
             "bash": dict(sorted(bash.items(), key=lambda kv: -kv[1]["chars"]))}
+
+
+def collect_all(folders: list[Path], days: float = 7.0, since: datetime | None = None,
+                until: datetime | None = None) -> dict:
+    """`collect` sur plusieurs dossiers (04/11, `--dir` répété), additionnés."""
+    reports = [collect(f, days, since=since, until=until) for f in folders]
+    out = dict(reports[0])
+    for other in reports[1:]:
+        rows = {(r["kind"], r["origin"], r["model"]): dict(r) for r in out["rows"]}
+        for r in other["rows"]:
+            cur = rows.setdefault((r["kind"], r["origin"], r["model"]), {**r, "requests": 0, **{f: 0 for f in FIELDS}})
+            for k in ("requests", *FIELDS):
+                cur[k] += r[k]
+        out["rows"] = [rows[k] for k in sorted(rows)]
+        out["agents"] = sorted(out["agents"] + other["agents"], key=lambda a: -a["total"])
+        for key in ("by_day", "by_day_work"):
+            merged = defaultdict(int, out[key])
+            for d, v in other[key].items():
+                merged[d] += v
+            out[key] = dict(sorted(merged.items()))
+        bash = defaultdict(lambda: {"calls": 0, "chars": 0}, {k: dict(v) for k, v in out["bash"].items()})
+        for k, v in other["bash"].items():
+            bash[k]["calls"] += v["calls"]
+            bash[k]["chars"] += v["chars"]
+        out["bash"] = dict(sorted(bash.items(), key=lambda kv: -kv[1]["chars"]))
+    return out
 
 
 def _fmt(n: int) -> str:
@@ -222,6 +262,11 @@ def _fmt(n: int) -> str:
     return str(n)
 
 
+def _work_cols(r: dict) -> str:
+    total = sum(r[f] for f in FIELDS) or 1
+    return f"{_fmt(travail(r)):>12}{100 * r['cache_read_input_tokens'] / total:>8.0f}%"
+
+
 def render(report: dict, top: int) -> str:
     if report.get("until"):
         title = (f"Consommation du {report['since'][:16].replace('T', ' ')} au "
@@ -229,13 +274,14 @@ def render(report: dict, top: int) -> str:
     else:
         title = f"Consommation des {report['days']:g} derniers jours (depuis {report['since'][:16]} UTC)"
     out = [title, ""]
-    head = f"{'':11}{'origine':9}{'modèle':20}{'requêtes':>9}" + "".join(f"{l:>12}" for l in LABELS)
+    head = (f"{'':11}{'origine':9}{'modèle':20}{'requêtes':>9}" + "".join(f"{l:>12}" for l in LABELS)
+            + f"{'travail':>12}{'cache %':>9}")
     out.append(head)
     out.append("-" * len(head))
     totals: dict[str, dict] = defaultdict(lambda: {"requests": 0, **{f: 0 for f in FIELDS}})
     for r in report["rows"]:
         out.append(f"{r['kind']:11}{r['origin']:9}{r['model'].replace('claude-', ''):20}{r['requests']:>9}"
-                   + "".join(f"{_fmt(r[f]):>12}" for f in FIELDS))
+                   + "".join(f"{_fmt(r[f]):>12}" for f in FIELDS) + _work_cols(r))
         for key in (r["kind"], "TOTAL"):
             totals[key]["requests"] += r["requests"]
             for f in FIELDS:
@@ -244,7 +290,8 @@ def render(report: dict, top: int) -> str:
     for key in ("principal", "sous-agent", "TOTAL"):
         t = totals.get(key)
         if t:
-            out.append(f"{key:11}{'':9}{'':20}{t['requests']:>9}" + "".join(f"{_fmt(t[f]):>12}" for f in FIELDS))
+            out.append(f"{key:11}{'':9}{'':20}{t['requests']:>9}" + "".join(f"{_fmt(t[f]):>12}" for f in FIELDS)
+                       + _work_cols(t))
     grand = totals.get("TOTAL")
     if grand:
         alltok = sum(grand[f] for f in FIELDS) or 1
@@ -254,11 +301,14 @@ def render(report: dict, top: int) -> str:
     if report["by_day"]:
         out.append("")
         out.append("Par jour (tous tokens) : " + ", ".join(f"{d[5:]} {_fmt(v)}" for d, v in report["by_day"].items()))
+        work = report.get("by_day_work") or {}
+        out.append("Par jour (travail)     : " + ", ".join(f"{d[5:]} {_fmt(v)}" for d, v in work.items()))
     if report["agents"] and top:
         out.append("")
         out.append(f"Les {min(top, len(report['agents']))} plus gros sous-agents :")
         for a in report["agents"][:top]:
-            out.append(f"  {_fmt(a['total']):>7}  {a['requests']:>4} req.  {a['model']:<22} {a['type']:<16} "
+            out.append(f"  {_fmt(a['total']):>7}  trav. {_fmt(a.get('travail', 0)):>6}  {a['requests']:>4} req.  "
+                       f"{a['model']:<22} {a['type']:<16} "
                        f"{a['start']}  {a['description'][:60]}")
     bash = report.get("bash") or {}
     if bash and top:
@@ -278,12 +328,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--from", dest="date_from", help="premier jour AAAA-MM-JJ (heure locale), au lieu de --days")
     ap.add_argument("--to", dest="date_to", help="dernier jour AAAA-MM-JJ, compris (aujourd'hui par défaut)")
     ap.add_argument("--top", type=int, default=10, help="nombre de gros sous-agents listés")
-    ap.add_argument("--dir", type=Path, default=DEFAULT_DIR, help="dossier des transcriptions")
+    ap.add_argument("--dir", type=Path, action="append",
+                    help="dossier des transcriptions (répétable ; défaut : celui du cerveau d'Astrel)")
     ap.add_argument("--json", action="store_true", help="sortie JSON")
     args = ap.parse_args(argv)
-    if not args.dir.is_dir():
-        print(f"dossier introuvable : {args.dir}", file=sys.stderr)
-        return 1
+    folders = args.dir or [DEFAULT_DIR]
+    for folder in folders:
+        if not folder.is_dir():
+            print(f"dossier introuvable : {folder}", file=sys.stderr)
+            return 1
     since = until = None
     try:
         if args.date_from:
@@ -299,7 +352,7 @@ def main(argv: list[str] | None = None) -> int:
     if since is not None and until <= since:
         print("--to est avant --from", file=sys.stderr)
         return 2
-    report = collect(args.dir, args.days, since=since, until=until)
+    report = collect_all(folders, args.days, since=since, until=until)
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
     else:

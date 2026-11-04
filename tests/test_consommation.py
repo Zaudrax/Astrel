@@ -102,6 +102,21 @@ def test_repli_sur_usage_du_tour(cpt):
     assert cpt.noter("gemini", None, process=1, usage=None) == []
 
 
+
+def test_modele_date_regroupe(cpt, tarifs):
+    """04/11 (T50) : « claude-haiku-4-5-20251001 » et « claude-haiku-4-5 » font UNE ligne à l'affichage ;
+    le fichier garde ce qu'a dit le CLI. Les autres fournisseurs gardent leur nom."""
+    u = {"input_tokens": 100, "output_tokens": 10}
+    for modele in ("claude-haiku-4-5-20251001", "claude-haiku-4-5", "gpt-4o-2024-08-06"):
+        cpt.noter("abonnement" if modele.startswith("claude") else "openai", None, process=1, usage=u,
+                  modele=modele, jour="2026-11-04")
+    v = C.vue("fenetres", cpt.donnees(), tarifs, jour="2026-11-04")
+    lignes = {(l["fournisseur"], l["modele"]): l for l in v["jour"]["lignes"]}
+    assert set(lignes) == {("abonnement", "claude-haiku-4-5"), ("openai", "gpt-4o-2024-08-06")}
+    assert lignes[("abonnement", "claude-haiku-4-5")]["entree"] == 200
+    assert "abonnement|claude-haiku-4-5-20251001" in cpt.donnees()["jours"]["2026-11-04"]["lignes"]
+    assert C.modele_canonique("claude-opus-4-1-20250805") == "claude-opus-4-1"
+
 def test_valeurs_invalides_ignorees(cpt):
     mu = {"gpt-5": {"inputTokens": -5, "outputTokens": True, "costUSD": float("nan")}, "x": "pas un dict"}
     assert cpt.noter("openai", mu, process=1, jour="2026-10-22") == []

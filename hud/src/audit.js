@@ -23,6 +23,7 @@ const el = (tag, cls, text) => {
 const KINDS = [
   ["confirmation", "audit.k_confirmation"], ["refus", "audit.k_refus"], ["whatsapp", "audit.k_whatsapp"],
   ["plan", "audit.k_plan"], ["total", "audit.k_total"], ["agent", "audit.k_agent"], ["levee", "audit.k_levee"],  // 18/10 (plan P7)
+  ["memoire", "audit.k_memoire"],  // 04/11 (T49) : propositions de mémoire appliquées ou refusées
 ];
 const LABEL = Object.fromEntries(KINDS);
 const PAGE = 60;

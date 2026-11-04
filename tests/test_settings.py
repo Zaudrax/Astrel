@@ -509,3 +509,14 @@ def test_nom_affiche_reglage_et_source_unique(monkeypatch):
     assert i18n.tr("réponse illisible d'Astrel : réponds dans le HUD", "en") == "unreadable reply from Astrel: reply in the HUD"
     monkeypatch.setenv("ASTREL_ASSISTANT_NAME", "Vega")
     assert items(reglages.describe())["assistant_name"]["locked"] and i18n.assistant_name() == "Vega"
+
+
+def test_memoire_automatique_du_cli_coupee_pour_le_cerveau(monkeypatch, tmp_path):
+    """04/11 (T49) : le MEMORY.md du CLI (sessions de l'utilisateur dans le même dossier, périmé) n'est pas injecté au
+    cerveau d'Astrel : réglage `autoMemoryEnabled` ET variable d'environnement (interrupteur non documenté)."""
+    monkeypatch.setattr(config, "SETTINGS_FILE", tmp_path / "claude-settings.json")
+    assert json.loads(brain.write_settings().read_text(encoding="utf-8"))["autoMemoryEnabled"] is False
+    env = brain._sans_memoire_auto({"PATH": "/usr/bin"})
+    assert env == {"PATH": "/usr/bin", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+    src = (config.ROOT / "astrel" / "brain.py").read_text(encoding="utf-8")
+    assert src.count("env=_sans_memoire_auto(fournisseurs.env_cerveau(") == 2  # cerveau et passerelle

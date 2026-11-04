@@ -513,6 +513,7 @@ def test_cd_incertain_garde_les_plans_en_jeu(cmd):
                                  r"tar czf /tmp/p.tgz C:\x\runtime\imagegen\profils"])
 def test_chemin_windows_non_cite_juge_aussi_en_slash(monkeypatch, cmd):
     # Bash seul (Git Bash) lit « C:Usersmoi…hud-token » : aucun secret désigné, rien n'est demandé.
+    monkeypatch.setattr(guard, "_LECTURE_WINDOWS", False)  # 04/11 (CI Windows) : = hors Windows, partout
     assert not asks("Bash", command=cmd)
     monkeypatch.setattr(guard, "_LECTURE_WINDOWS", True)  # = sous Windows
     v = guard.assess("Bash", {"command": cmd}, mode="autonome")

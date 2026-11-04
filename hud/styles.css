@@ -788,10 +788,10 @@ textarea.choice-other { font: inherit; font-size: 13px; color: inherit; resize: 
    reste lu par le lecteur d'écran (texte masqué à l'œil, pas display:none) et dans l'infobulle (title).
    Mesuré : une ligne dès 1440 en FR et en EN ; 1280 restait déjà sur deux lignes avant P38. */
 @media (max-width: 1599px) {
-  :is(#todo-chip, #audit-chip) { position: relative; min-width: 30px; padding: 3px 8px; gap: 4px; justify-content: center; }
-  :is(#todo-chip, #audit-chip) > span[data-i18n] {
+  :is(#todo-chip, #audit-chip, #propositions-chip) { position: relative; min-width: 30px; padding: 3px 8px; gap: 4px; justify-content: center; }
+  :is(#todo-chip, #audit-chip, #propositions-chip) > span[data-i18n] {
     position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  #todo-chip .chip-count { margin-left: 0; }
+  :is(#todo-chip, #propositions-chip) .chip-count { margin-left: 0; }
 }
 /* === P38 todo : fin === */
 .channel-tab.add { font-weight: 700; padding: 2px 9px; }
@@ -1458,6 +1458,46 @@ body.dropping #composer { border-color: var(--green); box-shadow: 0 0 18px rgba(
 .audit-auth { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .audit-more { align-self: center; flex: none; }
 .audit-more[hidden] { display: none; }
+
+/* --- page « Mémoire » (04/11, T49 ; hud/src/propositions.js) : propositions de mémoire à valider --- */
+.modal.wide.propositions { width: min(980px, calc(100vw - 40px)); height: min(820px, calc(100vh - 60px)); padding: 20px 22px 18px; gap: 12px; }
+.modal.propositions .modal-body { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden; }
+.prop-intro { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; flex: none; }
+.prop-filters { display: flex; flex-wrap: wrap; gap: 6px; flex: none; }
+.prop-filter, .prop-apply, .prop-refuse {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--panel-border); background: none; color: var(--muted); font-size: 12px;
+}
+.prop-filter:hover, .prop-refuse:hover:not(:disabled) { color: var(--ink-hi); border-color: rgba(var(--rgb-line), 0.35); }
+.prop-filter.on { color: var(--ink-hi); border-color: var(--accent); background: rgba(var(--rgb-accent), 0.1); }
+.prop-apply { color: var(--ink-hi); border-color: var(--accent); background: rgba(var(--rgb-accent), 0.12); }
+.prop-apply:hover:not(:disabled) { background: rgba(var(--rgb-accent), 0.2); }
+.prop-apply:disabled, .prop-refuse:disabled { opacity: 0.5; }
+.prop-filter:focus-visible, .prop-apply:focus-visible, .prop-refuse:focus-visible, .prop-texte:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; }
+.prop-apply .ico, .prop-refuse .ico { width: 14px; height: 14px; }
+.prop-status { margin: 0; color: var(--muted); flex: none; }
+.prop-status.err { color: var(--red); }
+.prop-list {
+  flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 2px 4px 2px 0; list-style: none; display: grid;
+  align-content: start; gap: 8px; scrollbar-width: thin; scrollbar-color: rgba(var(--rgb-line), 0.2) transparent;
+}
+.prop-item {
+  padding: 10px 12px; border-radius: 10px; border: 1px solid var(--panel-border); background: rgba(var(--rgb-hi), 0.03);
+  border-left: 3px solid var(--accent); display: grid; gap: 6px; min-width: 0;
+}
+.prop-item.done { border-left-color: var(--panel-border); opacity: 0.8; }
+.prop-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 12px; color: var(--muted); }
+.prop-type { color: var(--ink); font-weight: 600; }
+.prop-note { font-family: var(--mono); overflow-wrap: anywhere; }
+.prop-date { margin-left: auto; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.prop-raison, .prop-renvois, .prop-done { font-size: 12px; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
+.prop-texte {
+  margin: 0; max-height: 280px; overflow: auto; padding: 8px 10px; border-radius: 8px; font-family: var(--mono);
+  font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text;
+  background: rgba(var(--rgb-hi), 0.04); border: 1px solid var(--panel-border); color: var(--ink);
+}
+.prop-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .audit-more:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* --- 18/10 (plan P5) : appairage WhatsApp dans les Réglages, guide de démarrage --- */

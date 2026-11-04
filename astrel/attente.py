@@ -157,13 +157,28 @@ class Attente:
 
     def traites(self, utilisateur: bool = False) -> None:
         """Fin d'un tour : messages de ce démarrage pris en charge. Tour de l'utilisateur : les
-        propositions d'un démarrage précédent ont été vues (fil du HUD, voix), oubliées aussi."""
+        propositions (d'un démarrage précédent, ou d'un tour interrompu de celui-ci) ont été vues
+        (fil du HUD, voix), oubliées aussi."""
         with self._lock:
             items = self._charger()
-            keep = [it for it in items if it.get("boot") != BOOT and not (utilisateur and it.get("propose"))]
+            keep = [it for it in items if (it.get("boot") != BOOT or it.get("propose"))
+                    and not (utilisateur and it.get("propose"))]
             if len(keep) != len(items):
                 self._items = keep
                 self._ecrire(keep)
+
+    def proposer_courants(self) -> list[dict]:
+        """04/11 (T46) : le tour a fini sur un moteur tombé, déconnecté ou une limite : les messages de ce
+        démarrage pas encore proposés le deviennent (gardés, montrés « non envoyé »). Rend ceux-là."""
+        with self._lock:
+            items = self._charger()
+            nouveaux = [it for it in items if it.get("boot") == BOOT and not it.get("propose")]
+            if not nouveaux:
+                return []
+            for it in nouveaux:
+                it["propose"] = True
+            self._ecrire(items)
+            return [dict(it) for it in nouveaux]
 
     def oublier(self, mid: str) -> None:
         """Renvoyé depuis le HUD (`resend_of`) : il repart comme un nouveau message."""

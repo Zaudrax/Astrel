@@ -5,9 +5,12 @@ Mixin de `Astrel` (core.py), découpé du cœur le 29/10/2026 : méthodes dépla
 """
 from __future__ import annotations
 
+import json
+import os
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 from .. import agents as agents_mod
@@ -25,6 +28,34 @@ from ..channels import channels
 from ..events import bus
 from ..reports import reports
 from ..core import TODO_POINT_ATTENTE_S, TODO_POINT_S, _AGENT_LOG_MAX, _AWAITED_TOOLS, _DEPOTS, _WRITE_TOOLS, _alert_limits, _count, _todo_refs, _tokens_phrase, log  # aides du cœur (le paquet charge core d'abord)
+
+
+# 04/11 (T50) : une ligne par sous-agent fini (coût, modèle, dépôts) : rendement par métier
+# (`tools/rendement_metiers.py`), jointure exacte avec les fiches par `depots`. Comme `route.jsonl`.
+COUTS_LOG = Path(os.environ.get("ASTREL_COUTS_LOG") or config.LOGS / "agents-couts.jsonl")
+COUTS_LOG_MAX = 5 * 1024 * 1024
+
+
+def noter_cout(done: dict, entry: dict, status: str) -> None:
+    """Ligne de `COUTS_LOG` à la fin d'un sous-agent ; rotation en `.1` au-delà de 5 Mo. Jamais d'échec."""
+    ligne = {
+        "at": time.strftime("%Y-%m-%dT%H:%M:%S"), "fin": time.time(), "tuid": str(done.get("tool_use_id") or ""),
+        "type": str(entry.get("type") or ""), "desc": str(done.get("desc") or "")[:120],
+        "modele_demande": str(entry.get("model") or ""), "effort": str(entry.get("effort") or ""),
+        "statut": status, "requetes": int(done.get("requests") or 0),
+        "travail": int(done.get("tokens") or 0), "cache_lu": int(done.get("cache_lu") or 0),
+        "total": int(done.get("tokens_total") or done.get("tokens") or 0), "estime": bool(done.get("estime", True)),
+        "duree_s": float(done.get("elapsed_s") or 0.0),
+        "depots": [{k: d.get(k) for k in ("outil", "mission", "de", "a", "ok")} for d in entry.get("depots") or []],
+    }
+    try:
+        COUTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+        if COUTS_LOG.exists() and COUTS_LOG.stat().st_size > COUTS_LOG_MAX:
+            COUTS_LOG.replace(COUTS_LOG.with_name(COUTS_LOG.name + ".1"))
+        with COUTS_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(ligne, ensure_ascii=False) + "\n")
+    except OSError:
+        log.debug("coût d'agent non noté", exc_info=True)
 
 
 class TachesCoeur:
@@ -199,6 +230,7 @@ class TachesCoeur:
                     "step": t.get("step", ""), "tool_uses": t.get("tool_uses") or 0,
                     "channel": channels.task_started(tid),
                     "tokens": 0, "requests": 0, "elapsed_s": 0.0, "alert": False,
+                    "tokens_total": 0, "cache_lu": 0,  # 04/11 (T50) : `tokens` = travail, le total à part
                     "tool_use_id": t.get("tool_use_id") or "",  # clé du journal d'agent (plan P9)
                 }
             else:
@@ -214,10 +246,18 @@ class TachesCoeur:
                 if consigne:
                     cur["refs"] = _todo_refs(str(consigne))
             if cur is not None and done is None:
-                for key in ("tokens", "requests"):
-                    n = _count(t.get(key))
+                # 04/11 (T50, mesures honnêtes) : `tokens` affiché et comparé au seuil = le TRAVAIL (entrée hors
+                # cache + création de cache + sortie) ; le total, cache relu compris, reste dans `tokens_total`.
+                # Un cerveau d'avant (sans `travail`) : son `tokens` tel quel.
+                travail = _count(t.get("travail"))
+                fields = {"tokens": travail if travail is not None else _count(t.get("tokens")),
+                          "tokens_total": _count(t.get("tokens")), "cache_lu": _count(t.get("cache_lu")),
+                          "requests": _count(t.get("requests"))}
+                for key, n in fields.items():
                     if n is not None:
                         cur[key] = max(cur.get(key, 0), n)  # des cumuls : jamais en arrière
+                if "estime" in t:
+                    cur["estime"] = bool(t["estime"])
                 reported = t.get("elapsed_s")
                 if isinstance(reported, (int, float)) and not isinstance(reported, bool):
                     cur["elapsed_s"] = max(cur.get("elapsed_s", 0.0), float(reported))
@@ -247,6 +287,8 @@ class TachesCoeur:
                 failed = t.get("status") not in ("", "completed")
                 bus.publish("notice", level="error" if failed else "info", channel=seen_in,
                             text=f"{'Échec' if failed else 'Terminé'} : {done['desc']}")
+            if done is not None and done.get("kind") == "agent":
+                noter_cout(done, self._agent_log.get(done.get("tool_use_id") or "") or {}, str(t.get("status") or ""))
             if done is not None and not stopped:
                 self._equipe_after(done, str(t.get("status") or ""), channel)
 
@@ -287,7 +329,9 @@ class TachesCoeur:
         de l'utilisateur, comme `boucles.py`) : il décide lui-même de l'arrêter (Stop)."""
         for task in crossed:
             minutes = round(task["elapsed_s"] / 60)
-            text = (f"Agent qui s'emballe ? « {task['desc']} » : {_tokens_phrase(task.get('tokens', 0))} tokens, "
+            travail, relus = _tokens_phrase(task.get("tokens", 0)), _tokens_phrase(task.get("cache_lu", 0))
+            text = (f"Agent qui s'emballe ? « {task['desc']} » : {travail} tokens de travail (hors cache relu ; "
+                    f"{relus} relus), "
                     f"{task.get('requests', 0)} requêtes, {minutes} min. Rien n'est arrêté : bouton Stop du "
                     f"panneau « en cours » si besoin.")
             log.warning("%s", text)

@@ -168,8 +168,11 @@ def test_assistant_de_cle_imprime_la_cle_seule():
     out = subprocess.run(helper, shell=True, capture_output=True, text=True, timeout=30)
     assert out.returncode == 0 and out.stdout == CLE
     _secrets(AUTRE="x")
-    out = subprocess.run(helper, shell=True, capture_output=True, text=True, timeout=30)
+    # 04/11 (CI Windows) : lu en UTF-8 strict, comme le CLI ; un message accentué en cp1252 rendait stderr illisible
+    # (None : le fil de lecture de subprocess mourait sur l'erreur de décodage).
+    out = subprocess.run(helper, shell=True, capture_output=True, encoding="utf-8", errors="strict", timeout=30)
     assert out.returncode == 1 and out.stdout == "" and CLE not in out.stderr
+    assert "aucune clé enregistrée" in out.stderr
     config.PASSERELLE_JETON_FILE.write_text("jeton-local-de-test")
     out = subprocess.run(fournisseurs.helper("passerelle"), shell=True, capture_output=True, text=True, timeout=30)
     assert out.stdout == "jeton-local-de-test"
@@ -185,7 +188,8 @@ def test_assistant_de_cle_sous_windows_entre_guillemets_doubles(monkeypatch):
     monkeypatch.setattr(config, "VENV_PYTHON", PureWindowsPath(r"D:\a\Astrel\.venv\Scripts\python.exe"))
     monkeypatch.setattr(config, "CLE_API_SCRIPT", PureWindowsPath(r"D:\a\Astrel\astrel\cle_api.py"))
     monkeypatch.setattr(config, "SECRETS_FILE", PureWindowsPath(r"C:\Users\Jean Dupont\secrets.json"))
-    assert fournisseurs.helper("cle_claude") == (r'"D:\a\Astrel\.venv\Scripts\python.exe" -I '
+    # 04/11 (CI Windows) : `-X utf8`, sinon le message d'erreur de cle_api.py part en cp1252 (-I ignore PYTHONUTF8).
+    assert fournisseurs.helper("cle_claude") == (r'"D:\a\Astrel\.venv\Scripts\python.exe" -I -X utf8 '
                                                  r'"D:\a\Astrel\astrel\cle_api.py" anthropic '
                                                  r'"C:\Users\Jean Dupont\secrets.json"')
 

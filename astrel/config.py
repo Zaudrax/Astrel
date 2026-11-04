@@ -391,6 +391,17 @@ CLAUDE_SKILL_OVERRIDES = _skill_overrides(os.environ.get("ASTREL_SKILL_OVERRIDES
 # façon dans des sous-agents). Vide = laisser le réglage du CLI.
 CLAUDE_EFFORT = os.environ.get("ASTREL_CLAUDE_EFFORT", "high")
 BRAIN_RESTART_DELAY_S = 2.0
+# 04/11 (carte T46, `astrel/cycle_cerveau.py`) : cerveau tombé = relance avec recul ; le premier palier est
+# BRAIN_RESTART_DELAY_S. Un process qui a vécu RELANCE_STABLE_S repart au premier palier. Messages arrivés pendant la
+# relance : gardés RELANCE_GARDE_S ou RELANCE_GARDE_AUTO_S (réflexes, équipe…), puis « non envoyé ».
+BRAIN_RESTART_BACKOFF_S = (5.0, 15.0, 60.0)
+RELANCE_STABLE_S = 600.0
+RELANCE_GARDE_S = 60.0
+RELANCE_GARDE_AUTO_S = 600.0
+# Claude Code déconnecté : `claude auth status` relu toutes les AUTH_SONDE_S (jamais .credentials.json).
+AUTH_SONDE_S = 30.0
+# Connecté selon `auth status` mais toujours refusé : une relance au plus toutes les AUTH_ESSAI_S.
+AUTH_ESSAI_S = 300.0
 # Une tâche qui ne produit plus rien pendant ce temps est abandonnée.
 BRAIN_TURN_TIMEOUT_S = 900.0
 
@@ -504,7 +515,9 @@ RELIEF_MAX_RELAUNCH = int(_env_float("ASTREL_RELIEF_MAX_RELAUNCH", 2))
 RELIEF_NOTE_MAX_BYTES = int(_env_float("ASTREL_RELIEF_NOTE_MAX_BYTES", 8_000))
 # Alerte « agent qui s'emballe » (lue par le cœur, idée 10, ALERTE seule) : tokens
 # cumulés d'une tâche de fond ou d'un sous-agent, et durée en secondes.
-AGENT_ALERT_TOKENS = int(_env_float("ASTREL_AGENT_ALERT_TOKENS", 5_000_000))
+# 04/11 (T50) : tokens de TRAVAIL (entrée hors cache + création de cache + sortie), plus le total relu :
+# sur 14 jours, 21 % des sous-agents passaient 5 M à cause du seul cache relu ; 1 M de travail = 1,6 %.
+AGENT_ALERT_TOKENS = int(_env_float("ASTREL_AGENT_ALERT_TOKENS", 1_000_000))
 AGENT_ALERT_S = _env_float("ASTREL_AGENT_ALERT_S", 3600.0)
 # --- Fiabilité (01/11, idée « gardée pour plus tard » n° 5) : ALERTES seules, rien n'est arrêté ---
 # Enfants du cœur (cerveau, passerelle, worker images/vidéo) tués avec lui (PR_SET_PDEATHSIG, Linux).

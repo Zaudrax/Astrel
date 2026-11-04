@@ -67,6 +67,46 @@ _JOB_EXTENDED_LIMITS = 9
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _job_handle = None
 
+# 04/11/2026 (CI Windows, accord de l'utilisateur) : le Job Object porte un NOM tiré du marqueur, pour que le hook
+# du garde-fou (descendant du CLI, qui hérite du marqueur) sache s'il y est (`guard._job_fiable`, même préfixe,
+# vérifié par les tests) : là, le Job Object reconnaît Claude sans le marqueur, et retirer le marqueur n'est
+# plus une action sur le garde-fou (comme le cgroup du service sous Linux). Le nom ne se devine pas avant le
+# premier cerveau (jeton tiré au démarrage du cœur) ; déjà pris : Job Object SANS nom (le hook, qui ne le
+# trouve pas, juge alors comme si le marqueur décidait). Ouvert par un autre process : LECTURE seule (DACL
+# protégée, droits implicites du propriétaire retirés) ; ni ajout de limites (`BREAKAWAY_OK` pour en sortir),
+# ni réécriture de la DACL. Le handle du cœur, ouvert avant la DACL, garde tous ses droits.
+JOB_PREFIXE = "Local\\astrel-cerveau-"
+_JOB_DACL = "D:P(A;;0x4;;;OW)(A;;0x4;;;WD)"  # JOB_OBJECT_QUERY pour le propriétaire et pour tous, rien d'autre
+_ERROR_ALREADY_EXISTS = 183
+
+
+def nom_du_job(jeton: str | None = None) -> str:
+    """Nom du Job Object du cerveau (préfixe + marqueur de ce démarrage du cœur)."""
+    return JOB_PREFIXE + (BRAIN_TOKEN if jeton is None else jeton)
+
+
+def _dacl_lecture_seule(k, h) -> bool:
+    """Pose `_JOB_DACL` sur le Job Object `h` ; False si le système la refuse."""
+    import ctypes
+    from ctypes import wintypes
+
+    adv = ctypes.WinDLL("advapi32", use_last_error=True)
+    conv = adv.ConvertStringSecurityDescriptorToSecurityDescriptorW
+    conv.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p),
+                     ctypes.POINTER(wintypes.ULONG))
+    conv.restype = wintypes.BOOL
+    adv.SetKernelObjectSecurity.argtypes = (wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p)
+    adv.SetKernelObjectSecurity.restype = wintypes.BOOL
+    k.LocalFree.argtypes = (ctypes.c_void_p,)
+    sd = ctypes.c_void_p()
+    if not conv(_JOB_DACL, 1, ctypes.byref(sd), None):  # SDDL_REVISION_1
+        return False
+    try:
+        # DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION : rien d'hérité.
+        return bool(adv.SetKernelObjectSecurity(h, 0x80000004, sd))
+    finally:
+        k.LocalFree(sd)
+
 
 def _kernel32():
     import ctypes
@@ -91,7 +131,19 @@ def _job():
         import ctypes
 
         k = _kernel32()
-        h = k.CreateJobObjectW(None, None)
+        ctypes.set_last_error(0)
+        h = k.CreateJobObjectW(None, nom_du_job())
+        deja = bool(h) and ctypes.get_last_error() == _ERROR_ALREADY_EXISTS
+        try:
+            protege = bool(h) and not deja and _dacl_lecture_seule(k, h)
+        except (OSError, AttributeError, ValueError, TypeError):
+            protege = False
+        if h and not protege:
+            # Nom déjà pris (jamais vu : le jeton ne se devine pas), ou DACL refusée : Job Object sans nom.
+            log.warning("Job Object du cerveau sans nom (%s) : le garde-fou jugera comme si le marqueur décidait",
+                        "nom déjà pris" if deja else "DACL refusée")
+            k.CloseHandle(h)
+            h = k.CreateJobObjectW(None, None)
         if not h:
             raise OSError(ctypes.get_last_error(), "CreateJobObjectW")
 

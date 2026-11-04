@@ -14,6 +14,7 @@ est refusé (Obsidian, autre session : on ne perd pas leur modification).
 """
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 import threading
@@ -66,12 +67,38 @@ def list_notes(folder: str = "") -> list[dict]:
     return out
 
 
+# 04/11 (T49) : en-tête YAML (« front-matter ») en TÊTE de note, comme le veut Obsidian.
+_FM = re.compile(r"\A---\n.*?\n---\n", re.S)
+
+
+def _sans_entete(text: str) -> str:
+    """Le texte sans son en-tête YAML de tête (un « # commentaire » YAML n'est pas un titre)."""
+    m = _FM.match(text if text.endswith("\n") else text + "\n")
+    return text[m.end():] if m else text
+
+
 def _title(p: Path) -> str:
     try:
-        m = re.search(r"^#\s+(.+)$", p.read_text(encoding="utf-8"), re.M)
+        m = re.search(r"^#\s+(.+)$", _sans_entete(p.read_text(encoding="utf-8")), re.M)
     except OSError:
         m = None
     return m.group(1).strip() if m else p.stem
+
+
+def _titre_auto(path: Path) -> str:
+    """Titre posé par `write` quand le texte n'en a pas."""
+    return path.stem.replace("-", " ").capitalize()
+
+
+def _avec_titre(path: Path, content: str) -> str:
+    """Le texte prêt à écrire : en-tête YAML gardé EN TÊTE, titre automatique après lui, seulement si le corps
+    n'a pas de titre (04/11, T49 : il était posé AVANT le YAML, qu'Obsidian et le rappel ne voyaient plus)."""
+    body = content.strip()
+    m = _FM.match(body + "\n")
+    head, rest = (m.group(0), body[m.end():].lstrip("\n")) if m else ("", body)
+    if not rest.startswith("#"):
+        rest = f"# {_titre_auto(path)}\n\n{rest}"
+    return f"{head}\n{rest}" if head else rest
 
 
 # --- recherche : index FTS5 (bm25) du coffre ---
@@ -89,7 +116,9 @@ _index_lock = threading.Lock()
 # 04/11 (lot de sécurité B, T45) : version 3 = textes masqués à l'indexation (une note écrite hors de
 # `write`, par Obsidian, n'était pas masquée) ; base en 0600, `secure_delete`, ancienne version vidée puis
 # compactée (VACUUM), une fois (`history.ouvrir`).
-_SCHEMA_VERSION = "3"
+# 04/11 (T49) : version 4 = « When to use » indexé (les notes ne sont relues que si elles changent : seul un
+# changement de version réindexe tout).
+_SCHEMA_VERSION = "4"
 _INDEX_SCHEMA = """
 CREATE TABLE IF NOT EXISTS notes (path TEXT PRIMARY KEY, mtime_ns INTEGER, size INTEGER);
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
@@ -102,7 +131,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
 # `quand` (ligne « Quand l'utiliser » des procédures) est déjà dans le texte.
 _BM25 = "bm25(notes_fts, 0.0, 5.0, 3.0, 0.0, 1.0)"
 _BM25_PROC = "bm25(notes_fts, 0.0, 5.0, 0.0, 3.0, 0.0)"  # procédures : titre et « Quand l'utiliser »
-_QUAND_RE = re.compile(r"^\W*Quand l['’]utiliser\W*:\s*(.+)$", re.M | re.I)
+_QUAND_RE = re.compile(r"^\W*(?:Quand l['’]utiliser|When to use)\W*:\s*(.+)$", re.M | re.I)  # 04/11 : anglais
 
 # Mots trop courants pour départager deux notes (la phrase dite est longue,
 # l'ancien score les comptait tous). Comparés sans accents.
@@ -310,10 +339,7 @@ def write(rel: str, content: str, mode: str = "append") -> str:
     else:
         if path.exists():
             vault_backup.save_version(VAULT, path)
-        body = content.strip()
-        if not body.startswith("#"):
-            body = f"# {path.stem.replace('-', ' ').capitalize()}\n\n{body}"
-        path.write_text(body + "\n", encoding="utf-8")
+        path.write_text(_avec_titre(path, content) + "\n", encoding="utf-8")
     if up_to_date:
         _seen[key] = _sig(path)
     out = path.relative_to(VAULT).as_posix()
@@ -329,6 +355,64 @@ def versions(rel: str, restore: str = "") -> list[dict] | str:
         _seen[str(path)] = _sig(path)
         return msg
     return vault_backup.list_versions(VAULT, path)
+
+
+# --- 04/11 (T49) : notes écrites avec le titre AVANT l'en-tête YAML ---
+
+def _a_migrer(path: Path, text: str) -> str | None:
+    """Texte corrigé d'une note de la forme exacte « # <titre automatique> / ligne vide / --- YAML --- / reste »,
+    sinon None (une note dont le titre n'est pas le titre automatique n'est jamais touchée)."""
+    prefix = f"# {_titre_auto(path)}\n\n"
+    if not text.startswith(prefix):
+        return None
+    m = _FM.match(text[len(prefix):])
+    if not m:
+        return None
+    return f"{m.group(0)}\n{prefix}{text[len(prefix) + m.end():].lstrip(chr(10))}"
+
+
+def migrer_entete(vault: Path | None = None, appliquer: bool = False) -> list[dict]:
+    """Remet l'en-tête YAML en tête des notes écrites avec le titre devant. Sans `appliquer` : liste seulement.
+    Avec : un instantané du coffre d'abord, une version par note, écriture atomique, date de la note gardée ;
+    une note qui change pendant la passe est laissée (« changee »). Idempotente.
+    Rend `[{note, etat}]`, etat ∈ a_migrer | migree | changee."""
+    vault = vault or VAULT
+    out: list[dict] = []
+    trouvees = []
+    for p in sorted(vault.rglob("*.md")):
+        rel = p.relative_to(vault).as_posix()
+        if rel.startswith("."):
+            continue
+        try:
+            sig, text = _sig(p), p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        neuf = _a_migrer(p, text)
+        if neuf is not None:
+            trouvees.append((rel, p, sig, neuf))
+    if not appliquer:
+        return [{"note": rel, "etat": "a_migrer"} for rel, *_ in trouvees]
+    if trouvees:
+        vault_backup.snapshot(vault, "migration de l'en-tête YAML (T49)")
+    for rel, p, sig, neuf in trouvees:
+        try:
+            st = p.stat()
+            if _sig(p) != sig:
+                out.append({"note": rel, "etat": "changee"})
+                continue
+            vault_backup.save_version(vault, p)
+            tmp = p.with_name(f".{p.name}.migration")
+            tmp.write_text(neuf, encoding="utf-8")
+            os.utime(tmp, ns=(st.st_atime_ns, st.st_mtime_ns))  # date gardée : le ménage s'y fie
+            if _sig(p) != sig:  # changée pendant la copie
+                tmp.unlink(missing_ok=True)
+                out.append({"note": rel, "etat": "changee"})
+                continue
+            os.replace(tmp, p)
+            out.append({"note": rel, "etat": "migree"})
+        except OSError:
+            out.append({"note": rel, "etat": "changee"})
+    return out
 
 
 def ensure_vault() -> None:

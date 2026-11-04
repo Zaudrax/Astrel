@@ -34,6 +34,8 @@ log = logging.getLogger("astrel.graph")
 VAULT = config.ROOT / "vault"
 CLAUDE_HOME = Path.home() / ".claude"
 USAGE_FILE = config.RUNTIME / "graph-usage.json"
+# Serveur MCP d'Astrel sous son nom actuel ou l'ancien (renommage du 29/10) : `_load_usage` les fusionne.
+_MCP_ASTREL = re.compile(r"^mcp:(?:astrel|jarvis):(.+)$")
 MCP_TOOLS_MAX = 30
 
 # Outils natifs connus, présents même avant l'`init` du CLI.
@@ -334,9 +336,24 @@ class Graph:
     @staticmethod
     def _load_usage() -> dict[str, int]:
         try:
-            return {k: int(v) for k, v in json.loads(USAGE_FILE.read_text(encoding="utf-8")).items()}
+            usage = {k: int(v) for k, v in json.loads(USAGE_FILE.read_text(encoding="utf-8")).items()}
         except (OSError, ValueError):
             return {}
+        # 04/11 (T50) : les appels comptés sous l'ancien nom du serveur MCP rejoignent ceux d'« astrel »
+        # (la page des capacités sous-comptait) ; fichier réécrit une fois, idempotent.
+        fusion: Counter[str] = Counter()
+        for key, n in usage.items():
+            m = _MCP_ASTREL.match(key)
+            fusion[f"mcp:astrel:{m.group(1)}" if m else key] += n
+        if dict(fusion) != usage:
+            try:
+                tmp = USAGE_FILE.with_name(USAGE_FILE.name + ".tmp")
+                tmp.write_text(json.dumps(dict(fusion)), encoding="utf-8")
+                tmp.replace(USAGE_FILE)
+                log.info("compteurs d'outils : entrées de l'ancien nom du serveur MCP fusionnées dans « astrel »")
+            except OSError:
+                pass
+        return dict(fusion)
 
 
 graph = Graph()

@@ -66,7 +66,7 @@ class CerveauCoeur:
                                               "réessaie quand elle sera finie"}
             with self._turn_lock:
                 self.brain.model = model
-                self.brain.restart()  # reprend la session (--resume) avec --model et --effort
+                self._cerveau_relancer()  # reprend la session (--resume) avec --model et --effort
         else:
             if was_haiku:
                 self._effort_after_haiku()
@@ -168,7 +168,7 @@ class CerveauCoeur:
                     self._publish_effort()
                     return
                 with self._turn_lock:
-                    self.brain.restart()  # reprend la session (--resume) avec --effort
+                    self._cerveau_relancer()  # reprend la session (--resume) avec --effort
             if notify:
                 bus.publish("notice", level="info", text=f"Effort de réflexion : {label}. "
                                                          "Le prochain échange peut relire la conversation sans cache.")
@@ -196,16 +196,18 @@ class CerveauCoeur:
                                                      "démarrage du cerveau.")
         return {"ok": True, "agent": agent, "effort": now, "applique": applied, **agents_mod.effort_info(agent)}
 
-    def _note_depense(self, data: dict | None) -> None:
+    def _note_depense(self, data: dict | None) -> list[dict] | None:
         """Fin d'un tour. Plan P19 : consommation comptée pour TOUTE connexion (`_note_consommation`).
         Clé API (plan P11) : dépense estimée du jour, ALERTE seule au-delà du seuil, jamais d'arrêt ;
-        facturé à l'usage seulement (Grok par abonnement, forfait, n'est jamais compté en dollars)."""
+        facturé à l'usage seulement (Grok par abonnement, forfait, n'est jamais compté en dollars).
+        04/11 (T50) : rend les ajouts du compteur (sous-agents compris), None si rien n'a été compté :
+        le budget de mission les lit."""
         if not isinstance(data, dict):
-            return
+            return None
         eff = getattr(getattr(self, "brain", None), "fournisseur", None)
-        self._note_consommation(eff, data)
+        ajouts = self._note_consommation(eff, data)
         if eff is None or eff.facturation != "usage" or self._local_active():
-            return
+            return ajouts
         pid = getattr(getattr(self.brain, "_proc", None), "pid", 0) or 0
         try:
             seuil = float(reglages.value("depense_alerte_usd"))
@@ -217,6 +219,7 @@ class CerveauCoeur:
             bus.publish("notice", level="warning",
                         text=f"Dépense estimée aujourd'hui avec ta clé API : environ {spent:.2f} $ (seuil {seuil:.2f} $). "
                              "Rien n'est arrêté ; le seuil se règle dans Réglages › Fournisseur.")
+        return ajouts
 
     def _compteur(self) -> consommation.Compteur:
         """Compteur du cœur (seul écrivain de `runtime/consommation.json`). Chemin : celui de
@@ -229,7 +232,7 @@ class CerveauCoeur:
             cpt = self._conso = consommation.Compteur(path)
         return cpt
 
-    def _note_consommation(self, eff: "fournisseurs.Effectif | None", data: dict) -> None:
+    def _note_consommation(self, eff: "fournisseurs.Effectif | None", data: dict) -> list[dict] | None:
         """`modelUsage` du `result` (cumulé par process) ET `usage` du tour, toujours passés : c'est
         `Compteur.noter` qui arbitre (modelUsage prime ; `usage` SEULEMENT si modelUsage n'a aucune
         ligne exploitable ou un cumul nul, donc jamais compté deux fois, fiches 6 et 9 du journal
@@ -248,9 +251,10 @@ class CerveauCoeur:
                 usage=data.get("usage"), modele=modele)
         except Exception:  # noqa: BLE001 — le compteur est un affichage, pas une raison d'échouer
             log.exception("consommation non comptée")
-            return
+            return None
         if ajouts:
             self._publish_consommation()
+        return ajouts
 
     def _seuil_mois(self) -> float:
         """Réglage `depense_alerte_mois_usd` (lot suivant, settings.py) ; absent ou illisible : 0."""
@@ -480,7 +484,7 @@ class CerveauCoeur:
                     if on and (self._total or self._lift):
                         return unsafe_error
                     self.brain.local = name  # dès ici, `_local_active()` : TOTAL et levée refusés
-                self.brain.restart(fresh=on)
+                self._cerveau_relancer(fresh=on)  # 04/11 (T46) : périme une relance programmée
                 self._end_turn(followup=False)
         finally:
             if on:

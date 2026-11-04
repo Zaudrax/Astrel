@@ -115,3 +115,44 @@ def test_nom_court_8_3_developpe():
         pytest.skip("pas de nom court 8.3 pour ce dossier (désactivés sur ce volume)")
     court = buf.value + "\\astrel\\guard.py"
     assert guard.assess("Write", {"file_path": court, "content": "x"}, mode="autonome").guard
+
+
+_HOOK_SIMULE = (
+    "import sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "sys.stdin.readline()\n"  # attend d'être rattaché (ou non) avant de juger
+    "from astrel import guard\n"
+    "v = guard.assess('Bash', {'command': 'env -u ASTREL_BRAIN x'}, mode='autonome')\n"
+    "print(guard._job_fiable(), v.needs_confirm, v.guard is True, bool(v.keys))\n"
+)
+
+
+def _juge_dans_un_enfant(rattacher: bool, env: dict) -> list[str]:
+    import subprocess
+
+    from astrel.platform import proc, systeme
+
+    p = subprocess.Popen([sys.executable, "-I", "-X", "utf8", "-c", _HOOK_SIMULE, str(config.ROOT)],
+                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env)
+    try:
+        if rattacher:
+            assert proc.rattacher_au_cerveau(p)
+        out, _ = p.communicate("go\n", timeout=60)
+    finally:
+        if p.poll() is None:
+            systeme.tuer_arbre(p.pid, systeme.SIGKILL)
+            p.wait(timeout=10)
+    return out.split()
+
+
+def test_hook_dans_le_job_object_du_cerveau():
+    """04/11 : comme un hook (descendant du CLI rattaché, marqueur hérité), l'enfant se sait dans le Job Object du
+    cerveau (nommé d'après le marqueur) : retirer le marqueur y est critique AUTORISABLE (le Job Object reconnaît
+    Claude sans lui). Hors du Job Object, ou sans le marqueur pour le retrouver : le marqueur décide, plafond."""
+    from astrel.platform import proc
+
+    env = proc.brain_env()
+    assert _juge_dans_un_enfant(True, env) == ["True", "True", "False", "True"]
+    assert _juge_dans_un_enfant(False, env) == ["False", "True", "True", "False"]
+    sans = {k: v for k, v in env.items() if k != proc.BRAIN_VAR}
+    assert _juge_dans_un_enfant(True, sans) == ["False", "True", "True", "False"]

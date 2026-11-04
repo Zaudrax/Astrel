@@ -4,7 +4,7 @@ Appelé par le hook `UserPromptSubmit` (`hooks/memory_hook.py`) ; idée 5 de
 `docs/idees/TRI-TOP-IDEES.md`. Le hook ajoute au message, en contexte
 (`additionalContext`), une ligne courte : les notes du coffre dont le TITRE
 correspond à ce qu'il dit, et « procédure pertinente : X » quand une note de
-`vault/procedures/` le concerne (titre et ligne « Quand l'utiliser »). Claude
+`vault/procedures/` le concerne (titre et ligne « Quand l’utiliser » / « When to use »). Claude
 n'a plus à penser à `memory_search` pour Boutique, Studio, une procédure apprise.
 
 Mesure et réglage du seuil sur ses vraies phrases : `docs/RAPPEL-MEMOIRE.md`

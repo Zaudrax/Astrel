@@ -41,7 +41,7 @@ KEEP = 2                     # fichiers tournés gardés (.1, .2)
 WHAT_MAX = 300
 READ_MAX_BYTES = 2_000_000   # octets lus au plus par source (fin du fichier)
 LIMIT_MAX = 200
-KINDS = ("confirmation", "whatsapp", "plan", "refus", "total", "agent", "levee")
+KINDS = ("confirmation", "whatsapp", "plan", "refus", "total", "agent", "levee", "memoire")  # 04/11 : T49
 _lock = threading.Lock()
 
 

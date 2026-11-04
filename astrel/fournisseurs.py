@@ -495,7 +495,10 @@ def helper(genre: str) -> str:
         args = ("passerelle", config.PASSERELLE_JETON_FILE)
     else:
         return ""
-    mots = (config.VENV_PYTHON, "-I", config.CLE_API_SCRIPT, *args)
+    # 04/11 (CI Windows) : -I ignore PYTHONUTF8 ; sans `-X utf8`, les messages de `cle_api.py` (« aucune clé
+    # enregistrée (Réglages › …) ») partaient en cp1252 et le CLI, comme tout lecteur UTF-8, ne les lisait pas.
+    # Mêmes options que `config.hook_python_args` sous Windows.
+    mots = (config.VENV_PYTHON, "-I", *(("-X", "utf8") if os.name == "nt" else ()), config.CLE_API_SCRIPT, *args)
     if os.name == "nt":
         # 03/11 (CI Windows) : cmd.exe ne connaît pas les « '…' » de shlex (« syntaxe du nom de fichier
         # incorrecte ») ; entre « "…" », un chemin à « \\ » se lit pareil dans cmd.exe et dans Git Bash.

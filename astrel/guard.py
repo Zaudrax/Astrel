@@ -1726,6 +1726,16 @@ def _win_douteux(raw: str) -> bool:
     return bool(_WIN_PREFIXE.match(s) or _WIN_PARTAGE_ADMIN.match(s))
 
 
+def _win_sans_prefixe(c: str) -> str:
+    """04/11 (CI Windows) : `\\\\?\\C:\\…`, `//?/C:/…`, `\\\\.\\C:\\…`, `\\\\?\\UNC\\…` ramenés à leur forme normale
+    AVANT d'y chercher un joker : le « ? » du préfixe n'en est pas un. Avant, `echo x > '\\\\?\\C:\\…\\ipc.py'`
+    était lu comme un motif du dossier courant (aucun « / » à couper) : écriture libre d'un fichier protégé.
+    Hors Windows, ou sans ce préfixe : tel quel (une forme incertaine est jugée à part, `_win_douteux`)."""
+    if _WINDOWS and (_WIN_PREFIXE_UNC.match(c) or _WIN_PREFIXE_LECTEUR.match(c)):
+        return _win_forme(c)
+    return c
+
+
 def _msys(raw: str) -> str:
     if not _WINDOWS:
         return raw
@@ -3217,6 +3227,9 @@ def _paths(c: str, ctx: _Ctx) -> list[Path] | None:
 def _scopes(c: str, ctx: _Ctx) -> list[tuple[Path, str | None]] | None:
     """(dossier, motif) visés : avec un joker, le dossier qui le contient et le
     motif du premier niveau (« .* » peut viser le dossier parent)."""
+    if _win_douteux(c):
+        return None  # 04/11 (CI Windows) : `\\?\Volume{…}\…` : inconnu (son « ? » n'est pas un joker)
+    c = _win_sans_prefixe(c)  # 04/11 (CI Windows) : le « ? » de `\\?\C:\…` n'est pas un joker
     if not _GLOB.search(c):
         ps = _paths(c, ctx)
         return None if ps is None else [(p, None) for p in ps]
@@ -3797,13 +3810,19 @@ _PREFIXES: dict[str, tuple[str, set, int]] = {
 # vérifié par les tests ; pas d'import : le garde-fou ne dépend que de `config` et `limites`).
 BRAIN_VAR = "ASTREL_BRAIN"
 _CGROUP: list[bool] = []
+# 04/11 (CI Windows, accord de l'utilisateur) : nom du Job Object du cerveau = ce préfixe + la valeur du marqueur
+# (même règle que `platform.proc.nom_du_job`, vérifiée par les tests ; pas d'import, comme `BRAIN_VAR`).
+JOB_PREFIXE = "Local\\astrel-cerveau-"
+_JOB: list[bool] = []
 
 
 def _brain_mark(out: list) -> None:
     """Le marqueur du cerveau retiré, vidé ou remplacé : un process ainsi lancé passerait pour l'utilisateur là où
     la descendance et le marqueur font foi (`state.from_claude`). Toujours critique ; action sur le garde-fou
-    (plafond) là où le marqueur DÉCIDE (Linux hors service, macOS). En service sous Linux, le cgroup décide :
-    critique autorisable (rejeu du corpus : `env -u … -u ASTREL_BRAIN` pour lancer les tests du dépôt public)."""
+    (plafond) là où le marqueur DÉCIDE (aucun confinement : macOS, Linux hors service, Windows hors du Job
+    Object). Là où un confinement reconnaît Claude sans le marqueur (Linux en service : cgroup ; Windows : Job
+    Object du cerveau) : critique autorisable (rejeu du corpus : `env -u … -u ASTREL_BRAIN` pour lancer les
+    tests du dépôt public)."""
     if _marqueur_compte():
         _add(out, L_BRAIN_MARK, guard=True, cat=_L.CODE_IDENTITE)
     else:
@@ -3811,21 +3830,64 @@ def _brain_mark(out: list) -> None:
 
 
 def _marqueur_compte() -> bool:
-    """04/11 : `state.from_claude` consulte-t-il le marqueur ? Non sous Windows (Job Object du cerveau, qui tient
-    même environnement vidé) ni sous Linux en service (cgroup) ; oui ailleurs."""
-    if os.name == "nt":
+    """04/11 : le marqueur DÉCIDE-t-il (`state.from_claude`) ? Même règle partout : oui, sauf là où un
+    confinement reconnaît Claude sans lui, vu depuis le hook lui-même (l'équivalent de `state.confinement_actif`
+    du cœur) : Linux, le cgroup du service (`_cgroup_fiable`) ; Windows, le Job Object du cerveau
+    (`_job_fiable`). macOS et tout autre système : aucun confinement, le marqueur décide. Avant : Windows
+    rendait toujours « non », même cerveau hors du Job Object (rattachement raté) où le marqueur décide."""
+    if sys.platform.startswith("linux"):
+        return not _cgroup_fiable()
+    if sys.platform == "win32":
+        return not _job_fiable()
+    return True
+
+
+def _job_fiable() -> bool:
+    """04/11 (CI Windows) : le hook est-il DANS le Job Object du cerveau ? Le cœur le nomme d'après la valeur
+    du marqueur (`platform.proc._job`) ; le hook, descendant du CLI dont il hérite l'environnement (que Claude
+    ne change pas), l'ouvre par ce nom (droit de lecture seul, `proc` n'en donne pas d'autre) et demande s'il
+    y est. Oui : tout ce que Claude lance y naît sans pouvoir en sortir, et `state.from_claude` le reconnaît
+    sans le marqueur. Non ou illisible (rattachement raté, hook hors d'Astrel, autre système) : non, le marqueur
+    décide. Lu une fois par process (le hook en est un par appel)."""
+    if not _JOB:
+        _JOB.append(sys.platform == "win32" and _dans_le_job(os.environ.get(BRAIN_VAR, "")))
+    return _JOB[0]
+
+
+def _dans_le_job(jeton: str) -> bool:
+    """Windows : ce process est-il dans le Job Object nommé `JOB_PREFIXE + jeton` ? Faux dans le doute."""
+    if not re.fullmatch(r"[0-9a-f]{32}", jeton or ""):
+        return False  # le marqueur du cœur : 32 chiffres hexadécimaux (`proc.BRAIN_TOKEN`)
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        k = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        k.OpenJobObjectW.restype = wintypes.HANDLE
+        k.OpenJobObjectW.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR)
+        k.GetCurrentProcess.restype = wintypes.HANDLE
+        k.IsProcessInJob.restype = wintypes.BOOL
+        k.IsProcessInJob.argtypes = (wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL))
+        k.CloseHandle.argtypes = (wintypes.HANDLE,)
+        h = k.OpenJobObjectW(0x0004, False, JOB_PREFIXE + jeton)  # JOB_OBJECT_QUERY
+        if not h:
+            return False
+        try:
+            dedans = wintypes.BOOL()
+            return bool(k.IsProcessInJob(k.GetCurrentProcess(), h, ctypes.byref(dedans))) and bool(dedans.value)
+        finally:
+            k.CloseHandle(h)
+    except (OSError, AttributeError, ValueError, TypeError):
         return False
-    if not sys.platform.startswith("linux"):
-        return True
-    return not _cgroup_fiable()
 
 
 def _cgroup_fiable() -> bool:
     """04/11 (lot A) : un process DÉTACHÉ (setsid, nohup, disown) reste-t-il reconnu comme venant de Claude ?
     Oui sous Linux quand le cœur tourne en service (le hook, son descendant, est dans le cgroup du service :
-    `state.from_claude` le lit), sous Windows (Job Object du cerveau) et sous macOS (le marqueur `ASTREL_BRAIN`
-    survit au détachement ; le retirer est jugé à part). Non sous Linux hors service (`./run.sh` d'un
-    terminal) : seule la descendance compte. Lu une fois par process (le hook en est un par appel)."""
+    `state.from_claude` le lit), sous Windows (Job Object du cerveau, sinon le marqueur, qui survit au
+    détachement) et sous macOS (le marqueur `ASTREL_BRAIN` survit au détachement ; le retirer est jugé à part,
+    `_marqueur_compte`). Non sous Linux hors service (`./run.sh` d'un terminal) : seule la descendance compte.
+    Lu une fois par process (le hook en est un par appel)."""
     if not _CGROUP:
         if not sys.platform.startswith("linux"):
             _CGROUP.append(True)
@@ -5510,6 +5572,10 @@ def _judge_write(x: _X, ctx: _Ctx, out: list) -> None:
     for c in x.cands:
         if not c:
             continue
+        if _win_douteux(c):  # 04/11 (CI Windows) : `\\?\Volume{…}\…` : destination inconnue, comme pour Write
+            _add(out, D_WRITE, guard=True, cat=_L.DOUTES)
+            continue
+        c = _win_sans_prefixe(c)  # 04/11 (CI Windows) : le « ? » de `\\?\C:\…` n'est pas un joker
         if _FOUND in c:  # find -exec sed -i {}, grep -rl … | xargs sed -i : n'importe quel fichier de ces dossiers
             if ctx.found is None:
                 _doubt(out, D_WRITE)
@@ -5698,6 +5764,9 @@ def _judge_plain_delete(x: _X, ctx: _Ctx, out: list) -> None:
             _add(out, L_GUARD, guard=True)
             continue
         if not c or _DYN in c:
+            continue
+        if _win_douteux(c):  # 04/11 (CI Windows) : `rm -f '\\?\Volume{…}\…'` : cible inconnue (avant : libre)
+            _add(out, D_WRITE, guard=True, cat=_L.DOUTES)
             continue
         for p, pattern in _scopes(c, ctx) or []:
             _judge_fence(p, out, pattern)

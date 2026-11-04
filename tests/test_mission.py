@@ -607,3 +607,88 @@ def test_outil_mcp_mission_start(monkeypatch):
     with pytest.raises(Exception, match="verification"):
         mcp_server.mission_start("migrer", "npm test rend 0", f"{chemins_machine.PROJETS}/Site")
     assert len(sent) == n
+
+
+# ------------------------------------------------------------------ budget en tokens de travail (T50, 04/11)
+
+AJOUTS = [  # ce que `consommation.Compteur.noter` rend : une ligne par modèle, sous-agents compris
+    {"fournisseur": "abonnement", "modele": "claude-sonnet", "entree": 1_000, "sortie": 4_000,
+     "cache_lecture": 900_000, "cache_ecriture": 20_000},
+    {"fournisseur": "abonnement", "modele": "claude-opus", "entree": 500, "sortie": 30_000,
+     "cache_lecture": 2_000_000, "cache_ecriture": 60_000},
+    {"fournisseur": "abonnement", "modele": "claude-haiku", "entree": 200, "sortie": 800,
+     "cache_lecture": 50_000, "cache_ecriture": 5_000},
+]
+
+
+def test_budget_compte_les_sous_agents_hors_cache_relu():
+    m = Mission()
+    assert m.start({**SPEC, "scope": [str(PROJ)]})["ok"]
+    assert m.data["mesure"] == mission_mod.MESURE_TRAVAIL
+    m.compter(AJOUTS, {"input_tokens": 1, "output_tokens": 1})
+    assert m.data["tokens"] == 1_000 + 4_000 + 20_000 + 500 + 30_000 + 60_000 + 200 + 800 + 5_000
+    assert m.data["cache_lu"] == 2_950_000 and m.data["mesure_partielle"] is False
+    d = json.loads(config.MISSION_FILE.read_text())
+    assert d["tokens"] == m.data["tokens"] and d["cache_lu"] == 2_950_000
+
+
+def test_result_hors_tour_de_mission_compte_et_after_turn_ne_recompte_pas():
+    m = Mission()
+    assert m.start({**SPEC, "scope": [str(PROJ)]})["ok"]
+    m.compter(AJOUTS[:1])  # un agent de fond qui finit pendant la mission, hors de son tour
+    avant = m.data["tokens"]
+    assert avant == 25_000
+    assert m.take_prompt()
+    m.after_turn("fait\nMISSION : CONTINUE", {"input_tokens": 9, "cache_read_input_tokens": 999_999})
+    assert m.data["tokens"] == avant  # le `usage` du tour n'est plus ajouté (déjà dans les ajouts)
+
+
+def test_repli_sans_modelusage_partiel():
+    m = Mission()
+    assert m.start({**SPEC, "scope": [str(PROJ)]})["ok"]
+    m.compter(None, {"input_tokens": 10, "cache_creation_input_tokens": 90, "output_tokens": 100,
+                     "cache_read_input_tokens": 50_000})
+    assert m.data["tokens"] == 200 and m.data["cache_lu"] == 50_000 and m.data["mesure_partielle"] is True
+    m.compter(None, None)  # rien d'exploitable : rien ne change
+    assert m.data["tokens"] == 200
+
+
+def test_rien_compte_hors_mission_active():
+    m = Mission()
+    assert m.start({**SPEC, "scope": [str(PROJ)]})["ok"]
+    m.pause()
+    m.compter(AJOUTS)
+    assert m.data["tokens"] == 0
+
+
+def test_mission_ancienne_garde_sa_mesure():
+    """Une mission d'avant le 04/11 (sans `mesure`) relue au démarrage : `usage` du tour, cache compris,
+    jusqu'à sa fin ; les ajouts du compteur ne s'y ajoutent pas."""
+    m = Mission()
+    assert m.start({**SPEC, "scope": [str(PROJ)]})["ok"]
+    d = json.loads(config.MISSION_FILE.read_text())
+    del d["mesure"], d["cache_lu"], d["mesure_partielle"]
+    config.MISSION_FILE.write_text(json.dumps(d))
+    m2 = Mission()
+    m2.load()
+    assert m2.data["mesure"] == mission_mod.MESURE_ANCIENNE
+    m2.data["status"] = mission_mod.ACTIVE  # relue en pause : on la relance comme l'utilisateur
+    m2.compter(AJOUTS)
+    assert m2.data["tokens"] == 0
+    m2.awaiting = True  # un tour de mission en cours
+    m2.after_turn("fait\nMISSION : CONTINUE", {"input_tokens": 10, "cache_read_input_tokens": 1_000})
+    assert m2.data["tokens"] == 1_010
+
+
+def test_conso_avant_mission_et_sur_erreur():
+    """Le cœur compte la consommation AVANT le budget de mission, et aussi sur une erreur."""
+    src = Path(core.__file__).read_text(encoding="utf-8")
+    assert "ajouts = self._note_depense(ev.data)\n            self._mission_turn_end(mission_text, ev.data, ajouts)" in src
+    assert 'self._mission_turn_end("", ev.data, self._note_depense(ev.data))' in src
+
+
+def test_tour_hors_mission_compte_dans_le_budget(jm):
+    assert jm.on_command({"cmd": "mission", "action": "start", "spec": SPEC, "_via": "hud"})["ok"]
+    assert not core.mission.awaiting
+    jm._mission_turn_end("réponse à l'utilisateur", {"usage": {}}, AJOUTS[:1])
+    assert core.mission.data["tokens"] == 25_000

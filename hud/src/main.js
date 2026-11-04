@@ -19,6 +19,7 @@ import { initCapacites } from "./capacites.js";
 import { initPlans } from "./plans.js";
 import { initTodo } from "./todo.js";
 import { initAudit } from "./audit.js";
+import { initPropositions } from "./propositions.js";
 import { hydrateIcons, icon, setIcon, setLabel, stripEmoji } from "./icons.js";
 import { applyI18n, assistantName, locale, t, tx } from "./i18n.js";
 import { msgTime } from "./heure.js";
@@ -1983,6 +1984,7 @@ initCapacites({
 initPlans(toast); // Plans (15/10, mode plan) : hud/src/plans.js
 initTodo(toast); // Tâches par projet (26/10, plan P38 lot 2) : hud/src/todo.js
 initAudit(); // Journal d'audit (plan P3, lot F) : hud/src/audit.js
+initPropositions(toast); // Propositions de mémoire (04/11, T49) : hud/src/propositions.js
 
 // ------------------------------------------------------------------ activité
 

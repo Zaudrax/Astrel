@@ -107,6 +107,39 @@ def test_cout_exact_si_les_messages_du_sous_agent_passent():
     assert t["requests"] == 2 and t["tokens"] == 2 * 41_205
 
 
+
+def test_cout_sous_agent_separe_travail_et_cache():
+    """04/11 (T50) : le TRAVAIL (entrée hors cache + création de cache + sortie) fait les seuils ; le
+    cache relu, presque tout le contexte relu à chaque requête, est rendu à part."""
+    b = Brain()
+    list(b._translate(_task("task_started", tool_use_id="toolu_C"), {}, False))
+    usages = [{"input_tokens": 5, "cache_read_input_tokens": 40_000, "cache_creation_input_tokens": 1_000,
+               "output_tokens": 200},
+              {"input_tokens": 3, "cache_read_input_tokens": 41_200, "cache_creation_input_tokens": 600,
+               "output_tokens": 150}]
+    for mid, usage in zip(("m1", "m2"), usages):
+        list(b._translate({"type": "assistant", "parent_tool_use_id": "toolu_C",
+                           "message": {"id": mid, "usage": usage, "content": [], "model": "claude-opus"}},
+                          {}, False))
+    t = list(b._translate(_task("task_progress", tool_use_id="toolu_C", usage={"total_tokens": 42_000}),
+                          {}, False))[0].data
+    assert t["travail"] == 5 + 1_000 + 200 + 3 + 600 + 150
+    assert t["cache_lu"] == 81_200 and t["estime"] is False
+    assert t["tokens"] == t["travail"] + t["cache_lu"]  # le total, gardé pour la compatibilité
+
+
+def test_sans_messages_travail_estime():
+    """Sans les messages du sous-agent : travail ≈ `total_tokens` du dernier évènement (ce qui a été écrit
+    une fois), le reste du total = cache relu ; marqué estimé."""
+    b = Brain()
+    seen = []
+    for ev in (_task("task_started", tool_use_id="toolu_D"),
+               _task("task_progress", tool_use_id="toolu_D", usage={"total_tokens": 20_000, "tool_uses": 1}),
+               _task("task_progress", tool_use_id="toolu_D", usage={"total_tokens": 30_000, "tool_uses": 2})):
+        seen += [e.data for e in b._translate(ev, {}, False) if e.kind == "task"]
+    assert seen[-1]["travail"] == 30_000 and seen[-1]["tokens"] == 50_000
+    assert seen[-1]["cache_lu"] == 20_000 and seen[-1]["estime"] is True
+
 def test_commande_de_fond_sans_tokens():
     """Fixture réelle (commande de fond) : 0 token, 0 requête, champs présents."""
     b = Brain()

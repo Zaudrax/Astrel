@@ -525,7 +525,7 @@ def demo_details(now: float) -> dict[str, dict]:
         "d2": base("d2", "local_bash", "commande", "Copier les photos sur le disque externe", now - 18,
                    consigne="rsync -a ~/Images/Vacances/ /media/disque-externe/Photos/"),
         "d3": base("d3", "agent", "auditeur", "Relire tous les contrats d'assurance", now - 2400, effort="high",
-                   tokens=101_000_000, requests=162, tool_uses=162, step="Lire le contrat n° 7",
+                   tokens=1_400_000, requests=162, tool_uses=162, step="Lire le contrat n° 7",
                    consigne="Relis tous les contrats d'assurance et repère les doublons.",
                    actions=[act("Read", f"~/Documents/Assurances/contrat-{n}.pdf", True, 30 - n) for n in range(12)],
                    truncated=True),
@@ -1152,6 +1152,51 @@ DEMO_PLAN_REVISED = DEMO_PLAN_BODY.replace(
     "\n\n## Lots", "\n- Une version révisée renumérote les points : les remarques d'avant vont au fil général.\n\n## Lots")
 
 
+class DemoPropositions:
+    """04/11 (T49) : propositions de mémoire de la démo (`propositions_get`, `proposition_appliquer`,
+    `proposition_refuser`), comme le cœur ; l'une cite une balise, qui doit rester du texte."""
+
+    def __init__(self) -> None:
+        self.items = [
+            {"proposition_id": "2026-11-03-utilisateur-contraintes-nouvelle", "date": "2026-11-03 21:40",
+             "type": "nouvelle", "statut": "en attente", "note": "utilisateur-contraintes-pour-choisir-un-projet.md",
+             "renvois": [], "raison": "Contraintes durables dites en conversation, sans note dédiée.",
+             "texte": "---\nname: utilisateur-contraintes\ndescription: critères de choix d'un projet\n---\n\n"
+                      "# l'utilisateur contraintes pour choisir un projet\n\nUn projet doit tenir en 3 mois <img src=x>.",
+             "empreinte": "a1b2c3d4e5f60718", "traitee": None},
+            {"proposition_id": "2026-10-26-procedure-note-chantiers-consolidation", "date": "2026-10-26 18:02",
+             "type": "consolidation", "statut": "en attente", "note": "procedures/procedure-note-chantiers.md",
+             "renvois": [], "raison": "Deux ajouts empilés disent la même chose.",
+             "texte": "# Procédure note chantiers\n\nQuand l'utiliser : avant de modifier la note CHANTIERS.",
+             "empreinte": "0f1e2d3c4b5a6978", "traitee": None},
+        ]
+
+    def publish(self) -> None:
+        bus.publish("propositions", en_attente=sum(it["statut"] == "en attente" for it in self.items))
+
+    def command(self, name: str, cmd: dict) -> dict:
+        if name == "propositions_get":
+            toutes = cmd.get("toutes") is True
+            return {"ok": True, "propositions": [it for it in self.items if toutes or it["statut"] == "en attente"]}
+        it = next((x for x in self.items if x["proposition_id"] == cmd.get("proposition_id")), None)
+        if not it:
+            return {"ok": False, "error": "proposition inconnue"}
+        if it["statut"] != "en attente":
+            return {"ok": False, "error": f"proposition déjà traitée ({it['statut']})"}
+        if name == "proposition_appliquer" and cmd.get("empreinte") != it["empreinte"]:
+            return {"ok": False, "error": "la proposition a changé depuis son affichage : relis-la"}
+        quand = time.strftime("%Y-%m-%d %H:%M")
+        if name == "proposition_appliquer":
+            it.update(statut="appliquée", traitee={"le": quand, "par": "utilisateur"})
+        else:
+            it.update(statut="refusée", traitee={"le": quand, "par": "utilisateur", "raison": str(cmd.get("raison") or "")})
+        self.publish()
+        return {"ok": True}
+
+
+demo_propositions = DemoPropositions()
+
+
 def demo_audit(cmd: dict) -> dict:
     """`audit_get` de la démo (plan P3, lot F) : 75 entrées fictives, filtrées et paginées
     comme le cœur (`astrel/audit.py`) ; l'une cite une balise, qui doit rester du texte."""
@@ -1429,6 +1474,8 @@ def main() -> int:
                                      [(c.id, c.label) for c in channels.items()])
         elif cmd.get("cmd") == "audit_get":  # page « Journal » (plan P3, lot F)
             return demo_audit(cmd)
+        elif cmd.get("cmd") in ("propositions_get", "proposition_appliquer", "proposition_refuser"):  # 04/11 (T49)
+            return demo_propositions.command(str(cmd["cmd"]), cmd)
         elif cmd.get("cmd") == "demo_plan":  # tests du HUD : un nouveau plan déposé en direct
             return demo_plans.new_plan()
         elif cmd.get("cmd") == "demo_plans_offline":  # tests du HUD : cœur injoignable pour les plans
@@ -1790,6 +1837,7 @@ def main() -> int:
     demo_plans.seed()  # P1 à relire (une remarque, une réponse), P2 validé (auto), P3 rejeté
     seed_demo_todo(scratch, demo_plans)  # 26/10 (plan P38 lot 2) : vue « Tâches »
     reports.publish()
+    demo_propositions.publish()  # 04/11 (T49) : pastille « Mémoire »
     bus.publish("autonomy", mode="autonome")
     bus.publish("usage", mode="conversation", followup=8.0)
     bus.publish("grants", items=[{"key": "bash:une tâche planifiée", "until": time.time() + 1500}])
@@ -1812,14 +1860,16 @@ def main() -> int:
          "started": now - 18, "step": "", "tool_uses": 0, "channel": "maison"},
         {"id": "d3", "kind": "agent", "desc": "Relire tous les contrats d'assurance", "background": True,
          "started": now - 2400, "step": "Lire le contrat n° 7", "tool_uses": 162, "channel": "general",
-         "tokens": 101_000_000, "requests": 162, "elapsed_s": 2400.0, "alert": True},
+         # 04/11 (T50) : `tokens` = travail (hors cache relu), le total à part
+         "tokens": 1_400_000, "tokens_total": 101_000_000, "cache_lu": 99_600_000,
+         "requests": 162, "elapsed_s": 2400.0, "alert": True},
     ]
     details.update(demo_details(now))
     publish_demo_tasks(demo_tasks)
     # L'alerte du cœur (`_task_alerts`) : une `notice` sans voix qui porte `task_id` et `task_alert`.
     bus.publish("notice", level="warning", channel="general", task_id="d3", task_alert=True,
-                text="Agent qui s'emballe ? « Relire tous les contrats d'assurance » : 101 millions de tokens, 162 requêtes, "
-                     "40 min. Rien n'est arrêté : bouton Stop du panneau « en cours » si besoin.")
+                text="Agent qui s'emballe ? « Relire tous les contrats d'assurance » : 1,4 M tokens de travail (hors cache "
+                     "relu ; 99,6 M relus), 162 requêtes, 40 min. Rien n'est arrêté : bouton Stop du panneau « en cours » si besoin.")
     publish_demo_quota()
     if os.environ.get("ASTREL_DEMO_SANS_MEMOIRE") != "1":  # captures « avant » de hud_check_theme --compare
         memory_now[:] = [publish_demo_memory()]  # plan P20 : ligne « Mémoire » sous « Contexte »

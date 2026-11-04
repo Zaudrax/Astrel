@@ -26,6 +26,7 @@ sortirait en style télégraphique.
 """
 from __future__ import annotations
 
+import collections
 import json
 import logging
 import os
@@ -44,6 +45,12 @@ from . import passerelle as passerelle_mod
 from . import xai_oauth
 from .platform import enfants, proc
 from .settings import reglages
+
+# 04/11 (T46) : stderr d'un CLI non connecté (motifs STRICTS : une ligne d'un serveur MCP qui parle d'« oauth »
+# ou de « 403 » n'est pas une authentification de Claude Code) ; reprise d'une session qui n'existe plus.
+_AUTH_CLI_RE = re.compile(r"^(?!.*\bMCP\b).*(?:not logged in|please run /login|invalid api key|oauth token has expired"
+                          r"|authentication_error|authentication_failed)", re.I | re.M)
+_SESSION_PERDUE_RE = re.compile(r"no conversation found with session id", re.I)
 
 log = logging.getLogger("astrel.brain")
 
@@ -635,8 +642,16 @@ def write_settings(eff: "fournisseurs.Effectif | None" = None) -> Path:
         settings["hooks"]["PreToolUse"] = [h for h in settings["hooks"]["PreToolUse"] if h.get("matcher") != "Agent|Task"]
     if helper:
         settings["apiKeyHelper"] = helper
+    settings["autoMemoryEnabled"] = False  # 04/11 (T49) : voir `_sans_memoire_auto`
     config.SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     return config.SETTINGS_FILE
+
+
+def _sans_memoire_auto(env: dict[str, str]) -> dict[str, str]:
+    """04/11 (T49) : la mémoire automatique du CLI (`~/.claude/projects/<dossier>/memory/MEMORY.md`, celle des
+    sessions de l'utilisateur dans le même dossier, périmée) n'est pas injectée au cerveau : sa mémoire, c'est le
+    coffre. Deux verrous, l'interrupteur n'étant pas documenté : cette variable et `autoMemoryEnabled`."""
+    return {**env, "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
 
 
 def _en_fond(ev: dict[str, Any]) -> bool:
@@ -709,6 +724,7 @@ def task_info(sub: str, ev: dict) -> dict[str, Any]:
         "status": status,
         "summary": " ".join(str(ev.get("summary") or "").split())[:300],
         "tokens": int(total) if _is_num(total) else 0,
+        "travail": 0, "cache_lu": 0,  # 04/11 (T50) : remplis par `Brain._task_cost`
         "requests": 0,
         "elapsed_s": round(duration / 1000, 1) if _is_num(duration) else 0.0,
     }
@@ -846,7 +862,7 @@ class Brain:
         # Coût cumulé des tâches (`_task_cost`) : par id de tâche, et messages
         # des sous-agents vus dans le flux, par outil Agent parent.
         self._task_stats: dict[str, dict[str, Any]] = {}
-        self._agent_msgs: dict[str, dict[str, int]] = {}
+        self._agent_msgs: dict[str, dict[str, dict[str, Any]]] = {}
 
     def apply_rate_limit(self, info: dict) -> dict[str, Any]:
         """`rate_limit_info` du CLI → `self.quota` (rendu). Appelé par le flux (`rate_limit_event`)
@@ -969,7 +985,7 @@ class Brain:
             # Plan P6 : marqueur du cerveau, hérité par son Bash et ses scripts ; sous
             # macOS et Windows il remplace le cgroup du service (`state.from_claude`).
             # Plan P11 : sans aucune variable Anthropic ni clé de la machine (`env_cerveau`).
-            env=fournisseurs.env_cerveau(proc.brain_env(), eff.genre, url=url, modele=eff.modele),
+            env=_sans_memoire_auto(fournisseurs.env_cerveau(proc.brain_env(), eff.genre, url=url, modele=eff.modele)),
         )
         proc.rattacher_au_cerveau(self._proc)  # 03/11 : Windows, Job Object (platform/proc.py)
         reglages.mark_applied("brain")  # réglages « au prochain redémarrage » : pris
@@ -1029,7 +1045,7 @@ class Brain:
             stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace",
             bufsize=1,
-            env=fournisseurs.env_cerveau(proc.brain_env(), eff.genre, url=url, modele=eff.modele),
+            env=_sans_memoire_auto(fournisseurs.env_cerveau(proc.brain_env(), eff.genre, url=url, modele=eff.modele)),
         )
         proc.rattacher_au_cerveau(self._proc)  # 03/11 : Windows, Job Object (platform/proc.py)
         reglages.mark_applied("brain")
@@ -1058,9 +1074,23 @@ class Brain:
         self._start_readers()
 
     def _start_readers(self) -> None:
-        events = self._events
-        threading.Thread(target=self._read_stdout, args=(self._proc, events, self._on_control), name="brain-out", daemon=True).start()
-        threading.Thread(target=self._read_stderr, args=(self._proc,), name="brain-err", daemon=True).start()
+        events, p = self._events, self._proc
+        tail: collections.deque = collections.deque(maxlen=20)  # 04/11 (T46) : fin de stderr, jointe au `_eof`
+        t0 = time.monotonic()
+        err = threading.Thread(target=self._read_stderr, args=(p, tail), name="brain-err", daemon=True)
+
+        def fin() -> dict:
+            err.join(1.0)  # les dernières lignes de stderr arrivent souvent juste après la fin de stdout
+            rc = None
+            try:
+                rc = p.wait(timeout=1.0) if hasattr(p, "wait") else None
+            except Exception:  # noqa: BLE001 — encore vivant (stdout fermé seul) : code inconnu
+                rc = None
+            return {"rc": rc, "stderr": "\n".join(tail)[-2000:], "vecu_s": round(time.monotonic() - t0, 1)}
+
+        err.start()
+        threading.Thread(target=self._read_stdout, args=(p, events, self._on_control, fin), name="brain-out",
+                         daemon=True).start()
 
     def _start_local(self) -> None:
         """Cerveau du mode léger (plan P8) : `local_command`, env `local_env`, session neuve."""
@@ -1182,7 +1212,9 @@ class Brain:
     # --- lecture ---
 
     @staticmethod
-    def _read_stdout(proc: subprocess.Popen, events: queue.Queue, on_control=None) -> None:
+    def _read_stdout(proc: subprocess.Popen, events: queue.Queue, on_control=None, fin=None) -> None:
+        """`fin` (04/11, T46) : rend la cause d'une fin de flux (code de sortie, fin de stderr, durée de vie),
+        jointe au `_eof` pour que le cœur décide (recul, authentification, CLI introuvable)."""
         assert proc.stdout is not None
         for line in proc.stdout:
             line = line.strip()
@@ -1200,7 +1232,13 @@ class Brain:
                 on_control(msg.get("response") or {})
                 continue
             events.put(msg)
-        events.put({"type": "_eof"})
+        extra = {}
+        if fin is not None:
+            try:
+                extra = fin() or {}
+            except Exception:  # noqa: BLE001 — la fin de flux part toujours, même sans sa cause
+                log.exception("cause de l'arrêt du cerveau illisible")
+        events.put({"type": "_eof", **extra})
 
     def _on_control(self, response: dict) -> None:
         with self._control_lock:
@@ -1210,11 +1248,13 @@ class Brain:
             waiter[0].set()
 
     @staticmethod
-    def _read_stderr(proc: subprocess.Popen) -> None:
+    def _read_stderr(proc: subprocess.Popen, tail: "collections.deque | None" = None) -> None:
         assert proc.stderr is not None
         for line in proc.stderr:
             if line.strip():
                 log.warning("claude: %s", line.strip())
+                if tail is not None:
+                    tail.append(line.strip()[:500])
 
     # --- écriture ---
 
@@ -1307,8 +1347,15 @@ class Brain:
         mid = str(message.get("id") or "")
         if not parent or not mid or not isinstance(usage, dict):
             return
-        out = usage.get("output_tokens")
-        self._agent_msgs.setdefault(parent, {})[mid] = self.context_of(usage) + (int(out) if _is_num(out) else 0)
+        # 04/11 (T50) : les parts gardées séparées ; le TRAVAIL (entrée hors cache + création de cache +
+        # sortie) fait les seuils, le cache relu (presque tout le contexte, à chaque requête) est montré à part.
+        def n(key: str) -> int:
+            v = usage.get(key)
+            return int(v) if _is_num(v) else 0
+        self._agent_msgs.setdefault(parent, {})[mid] = {
+            "entree": n("input_tokens"), "cache_ecriture": n("cache_creation_input_tokens"),
+            "cache_lu": n("cache_read_input_tokens"), "sortie": n("output_tokens"),
+            "modele": str(message.get("model") or "")}
 
     def _task_cost(self, sub: str, ev: dict, info: dict[str, Any]) -> dict[str, Any]:
         """`tokens` (cumul), `requests`, `elapsed_s` d'une tâche, croissants d'un
@@ -1340,12 +1387,24 @@ class Brain:
         elif sub == "task_notification" and last:
             st["requests"] += 1
             st["tokens"] += last
-        seen = self._agent_msgs.get(st["parent"]) or {}
-        st["tokens"] = max(st["tokens"], last, sum(seen.values()))
+        seen = (self._agent_msgs.get(st["parent"]) or {}).values()
+        total_vu = sum(m["entree"] + m["cache_ecriture"] + m["cache_lu"] + m["sortie"] for m in seen)
+        st["tokens"] = max(st["tokens"], last, total_vu)
         st["requests"] = max(st["requests"], len(seen))
+        if seen:
+            st["travail"] = sum(m["entree"] + m["cache_ecriture"] + m["sortie"] for m in seen)
+            st["cache_lu"] = sum(m["cache_lu"] for m in seen)
+            st["estime"] = False
+        else:
+            # 04/11 (T50) : sans les messages du sous-agent, le contexte du dernier message + les sorties
+            # (`total_tokens`) ≈ ce qui a été écrit une fois (chaque requête met en cache ce qui est neuf).
+            st["travail"] = max(st.get("travail", 0), last)
+            st["cache_lu"] = max(0, st["tokens"] - st["travail"])
+            st["estime"] = True
         clock = (st.get("ended") or now) - st["t0"]
         st["elapsed_s"] = round(max(st["elapsed_s"], info["elapsed_s"], clock), 1)
-        info.update(tokens=st["tokens"], requests=st["requests"], elapsed_s=st["elapsed_s"])
+        info.update(tokens=st["tokens"], requests=st["requests"], elapsed_s=st["elapsed_s"],
+                    travail=st["travail"], cache_lu=st["cache_lu"], estime=st["estime"])
         if info["phase"] == "end":
             st.setdefault("ended", now)
         return info
@@ -1515,13 +1574,19 @@ class Brain:
             return
 
         if etype == "_eof":
-            if self._resuming and self.session_id != self._resuming:
+            stderr = str(ev.get("stderr") or "")
+            # 04/11 (T46) : jamais pour une authentification refusée (la session reste bonne : elle reprendra
+            # une fois Claude Code reconnecté) ; « No conversation found » = la session n'existe plus.
+            if (self._resuming and self.session_id != self._resuming and not _AUTH_CLI_RE.search(stderr)) \
+                    or _SESSION_PERDUE_RE.search(stderr):
                 # La reprise a échoué avant même l'init : l'oublier, sinon chaque
                 # redémarrage retenterait la même session morte.
                 log.warning("reprise de la session %s impossible, on repartira à neuf", self._resuming)
                 forget_session()
                 self._resuming = ""
-            yield BrainEvent("error", text="Le moteur s'est arrêté.", data={"eof": True})
+            yield BrainEvent("error", text="Le moteur s'est arrêté.", data={
+                "eof": True, "rc": ev.get("rc"), "stderr": stderr, "vecu_s": ev.get("vecu_s"),
+                "init": bool(self.session_id), "auth": bool(_AUTH_CLI_RE.search(stderr))})
             return
 
         if etype == "system":
@@ -1565,6 +1630,12 @@ class Brain:
             return
 
         if etype == "assistant":
+            if ev.get("error") and ev.get("is_api_error_message"):
+                # 04/11 (T46, sonde du CLI 2.1.285) : message SYNTHÉTIQUE d'erreur d'API (« Not logged in · Please
+                # run /login », `error: authentication_failed`) : pas une réponse à dire ; le `result` en erreur
+                # qui suit porte le même texte, et le cœur le traite (auth, limite, panne).
+                self._api_error = str(ev.get("error"))
+                return
             yield from self._note_context((ev.get("message") or {}).get("usage"))
             for block in (ev.get("message") or {}).get("content", []):
                 btype = block.get("type")
@@ -1616,6 +1687,15 @@ class Brain:
             if isinstance(pid, int) and pid > 0:
                 usage["process"] = pid
             if ev.get("is_error"):
-                yield BrainEvent("error", text=final or "La tâche a échoué.", data=usage)
+                # 04/11 (T46) : cause structurée (`authentication_failed`…) et erreurs sans texte de résultat
+                # (« No conversation found with session ID … » d'une reprise impossible).
+                api_error, self._api_error = getattr(self, "_api_error", ""), ""
+                if api_error:
+                    usage["api_error"] = api_error
+                errors = [str(e) for e in ev.get("errors") or [] if e]
+                if errors and any(_SESSION_PERDUE_RE.search(e) for e in errors):
+                    forget_session()
+                    self._resuming = ""
+                yield BrainEvent("error", text=final or " ".join(errors)[:500] or "La tâche a échoué.", data=usage)
             else:
                 yield BrainEvent("turn_end", text=final, data=usage)

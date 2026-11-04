@@ -180,9 +180,16 @@ def test_refuse_a_claude(j, published):
     assert res["ok"] is False and j.whatsapp.calls == []
 
 
-def test_la_page_suit_l_evenement(j, published):
+def test_la_page_suit_l_evenement(j, published, monkeypatch):
+    from astrel import compte
+
+    # 04/11 (CI Windows) : décrire la page peut relancer la lecture du compte, qui republie la page à la fin ;
+    # avec une page lente (Windows), cette 2e publication tombait au hasard dans la fenêtre du 2e contrôle.
+    monkeypatch.setattr(compte.compte, "on_change", None)
     j._settings_follow({"type": "whatsapp", "linked": True})
-    deadline = time.time() + 2
+    # 04/11 (CI Windows) : la page se décrit en ~2,6 s sous Windows sans Ollama (connexion refusée à 127.0.0.1 :
+    # le système réessaie jusqu'aux délais de `modeles_locaux`, 1 s puis 1,5 s) ; ce test vérifie le suivi, pas la vitesse.
+    deadline = time.time() + 15
     while not of(published, "settings") and time.time() < deadline:
         time.sleep(0.02)
     assert of(published, "settings")

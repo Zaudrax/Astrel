@@ -46,7 +46,7 @@ CONTENT = ", ".join((
     ".msg .md", ".msg > span:not([class])", ".choice-question", ".choice-label", ".choice-status",
     "#confirm-cmd", ".task b", ".task .step", ".plan-title", ".plan-section > h3", ".plan-intro",
     ".plan-point-text", ".plan-request-text", ".plan-entry-text", ".plan-item-title", ".plan-note",
-    ".audit-what", ".audit-auth", "#mission b", ".mission-last", ".mission-reason", "#activity-list .muted",
+    ".audit-what", ".audit-auth", ".prop-texte", ".prop-note", ".prop-raison", "#mission b", ".mission-last", ".mission-reason", "#activity-list .muted",
     ".att-name", ".report-file", ".wa-code", "#mission-banner-info", ".choice-btn",
     "pre", "code", ".setting-block",
     ".ad-data",  # 21/10 (plan P18) : détail d'agent, consigne, actions, erreurs, passation
@@ -419,6 +419,11 @@ async def run(url: str) -> None:
         await p.until("!!document.querySelector('.modal.audit .audit-status')", 6)
         await asyncio.sleep(0.6)
         await scan(p, "Journal")
+        await close_panel(p)
+        await click(p, "#propositions-chip")  # 04/11 (T49) : page « Memory »
+        await p.until("!!document.querySelector('.modal.propositions .prop-item')", 6)
+        await asyncio.sleep(0.4)
+        await scan(p, "Memory")
         await close_panel(p)
         await click(p, "#guide-chip")
         await p.until("!!document.querySelector('.modal.guide .guide-topic')", 8)

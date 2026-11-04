@@ -7,6 +7,7 @@
     .venv/bin/python tools/vault.py restore-snapshot ID # remet tout le coffre (état actuel gardé avant)
     .venv/bin/python tools/vault.py versions NOTE       # anciennes versions d'une note
     .venv/bin/python tools/vault.py restore NOTE ID     # rétablit une version (actuelle gardée avant)
+    .venv/bin/python tools/vault.py frontmatter [--apply]  # en-tête YAML remis en tête (04/11, T49)
 
 Aucun appel de modèle. Un retour arrière ne supprime jamais de note.
 """
@@ -36,6 +37,8 @@ def main(argv: list[str] | None = None) -> int:
     rn = sub.add_parser("restore", help="rétablit une version d'une note")
     rn.add_argument("note")
     rn.add_argument("id")
+    fm = sub.add_parser("frontmatter", help="notes au titre écrit AVANT l'en-tête YAML (liste ; --apply corrige)")
+    fm.add_argument("--apply", action="store_true", help="corriger (instantané et versions gardés avant)")
     args = ap.parse_args(argv)
 
     if args.cmd == "review":
@@ -57,6 +60,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{v['id']}  {v['date']}  {v['caracteres']} octets")
     elif args.cmd == "restore":
         print(memory.versions(args.note, args.id))
+    elif args.cmd == "frontmatter":
+        rows = memory.migrer_entete(appliquer=args.apply)
+        for r in rows:
+            print(f"{r['etat']:9}  {r['note']}")
+        print(f"{len(rows)} note(s)" + ("" if args.apply else " à corriger : relance avec --apply"))
     return 0
 
 

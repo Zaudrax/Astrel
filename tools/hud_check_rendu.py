@@ -503,6 +503,7 @@ async def run(url):
         await check_fournisseur(p)  # 20/10 (plan P11)
         await check_plans(p)
         await check_audit(p)
+        await check_propositions(p)  # 04/11 (T49)
         await check_barre_du_haut(p)  # 19/10
         await check_mise_en_page(p)
         await check_composer(p)  # 19/10
@@ -872,7 +873,7 @@ async def check_lots_15_10(p: Page) -> None:
     check(f"3 tâches dans « en cours » ({[x['title'] for x in t]})", len(t) == 3)
     if len(t) == 3:
         check(f"ligne de coût : « {t[0]['cost']} » et « {t[2]['cost']} », rien sans coût",
-              t[0]["cost"] == "12 requêtes · 1,2 M tokens" and t[2]["cost"] == "162 requêtes · 101 M tokens"
+              t[0]["cost"] == "12 requêtes · 1,2 M tokens" and t[2]["cost"] == "162 requêtes · 1,4 M tokens"
               and not t[1]["costShown"])
         check(f"alerte (pastille rouge) sur l'agent qui s'emballe seulement, durée {t[2]['time']}",
               t[2]["alert"] and t[2]["dot"] and not t[0]["alert"] and not t[0]["dot"] and " min " in t[2]["time"])
@@ -2277,8 +2278,14 @@ async def check_affichage_simple(p: Page) -> None:
                      {"value": "dark", "label": "Sombre"}]},
         {"key": "theme_accent", "label": "Couleur d'accent", "kind": "choice", "value": "vert", "display": "swatches",
          "applies": "hot", "choices": [{"value": v, "label": v} for v in ("bleu", "graphite", "vert", "orange")]}]}]}
-    await fake_event(p, apparence)
-    await asyncio.sleep(0.3)
+    # 04/11 (CI de main) : une republication des réglages de la démo pouvait écraser l'évènement injecté
+    # après 0,3 s fixes ; on attend les lignes injectées, et on réinjecte une fois si elles ont été remplacées.
+    injecte = ("[...document.querySelectorAll('.modal.wide details[data-group=\"apparence\"] .setting')]"
+               ".map(r => r.dataset.key).join() === 'theme_mode,theme_accent'")
+    for _ in range(2):
+        await fake_event(p, apparence)
+        if await p.until(injecte, 3):
+            break
     ap = await p.js("""(() => { const m = document.querySelector('.modal.wide');
         const keys = [...m.querySelectorAll('details[data-group="apparence"] .setting')].map(r => r.dataset.key);
         const d = document.documentElement.dataset;
@@ -2999,9 +3006,9 @@ async def check_audit(p: Page) -> None:
         ok: __au('.audit-item .audit-ok')?.textContent, auth: __au('.audit-item .audit-auth')?.textContent,
         bad: document.querySelector('.modal.audit').querySelectorAll('img, script, iframe').length,
         more: !__au('.audit-more').hidden, status: __au('.audit-status').textContent }))()""")
-    check(f"Journal : fenêtre « {o['title']} », 60 entrées, 7 filtres actifs (Levée, 18/10), audit_get {{kinds, limit}}",
-          opened and o["title"] == "Journal" and len(o["filters"]) == 7 and all(a == "true" for _, a in o["filters"])
-          and first.get("limit") == 60 and len(first.get("kinds") or []) == 7)
+    check(f"Journal : fenêtre « {o['title']} », 60 entrées, 8 filtres actifs (Levée 18/10, Mémoire 04/11), audit_get {{kinds, limit}}",
+          opened and o["title"] == "Journal" and len(o["filters"]) == 8 and all(a == "true" for _, a in o["filters"])
+          and first.get("limit") == 60 and len(first.get("kinds") or []) == 8)
     check("Journal : balise citée affichée en texte, jamais en élément",
           o["bad"] == 0 and "<img src=x onerror=alert(1)>" in o["first"] and o["kind"] == "Confirmations"
           and o["ok"] == "permis" and o["auth"] == "voix (oui pour 30 min)")
@@ -3016,10 +3023,56 @@ async def check_audit(p: Page) -> None:
     await p.until("__aus('.audit-item').length === 60", 3)
     q = (await sent("audit_get"))[-1]
     check("Journal : un filtre retiré relance audit_get sans ce type",
-          "refus" not in (q.get("kinds") or []) and len(q.get("kinds") or []) == 6 and not await p.js(
+          "refus" not in (q.get("kinds") or []) and len(q.get("kinds") or []) == 7 and not await p.js(
               "__aus('.audit-kind').some(k => k.textContent === 'Refus')"))
     await p.js("document.querySelector('.modal.audit .modal-x').click()")
     check("Journal : fermeture", await p.until("!document.querySelector('.modal.audit')", 2))
+
+
+async def check_propositions(p: Page) -> None:
+    """04/11 (T49) : page « Mémoire » sur la démo (`DemoPropositions`) : pastille visible seulement avec des
+    propositions en attente, texte exact en textContent (YAML tel quel, balise inerte), Appliquer avec l'empreinte
+    reçue, Refuser par la boîte du HUD (jamais prompt()), pastille cachée quand il n'en reste plus."""
+    sent = lambda cmd: p.js(f"window.__sent.filter(m => m.cmd === {json.dumps(cmd)})")
+    chip = await p.js("""(() => { const c = document.querySelector('#propositions-chip');
+        return { shown: !c.classList.contains('hidden') && c.getClientRects().length > 0,
+                 badge: c.querySelector('#propositions-badge').textContent, icon: c.querySelector('svg.ico')?.dataset.icon }; })()""")
+    check(f"Mémoire : pastille visible avec {chip['badge']} propositions en attente, icône livre",
+          chip["shown"] and chip["badge"] == "2" and chip["icon"] == "book")
+    await p.js("document.querySelector('#propositions-chip').click()")
+    opened = await p.until("document.querySelectorAll('.modal.propositions .prop-item').length === 2", 4)
+    o = await p.js("""(() => { const m = document.querySelector('.modal.propositions');
+        const pre = m.querySelector('.prop-item .prop-texte');
+        return { title: m.querySelector('.modal-title').textContent, text: pre.textContent,
+                 bad: m.querySelectorAll('img, script, iframe').length, yaml: pre.textContent.startsWith('---\\nname:'),
+                 add: m.querySelector('.prop-apply').textContent.trim(), apply: m.querySelectorAll('.prop-apply')[1].textContent.trim(),
+                 type: m.querySelector('.prop-type').textContent, status: m.querySelector('.prop-status').textContent }; })()""")
+    check(f"Mémoire : fenêtre « {o['title']} », 2 propositions, YAML et balise en texte inerte, « {o['add']} » / « {o['apply']} »",
+          opened and o["title"] == "Propositions de mémoire" and o["yaml"] and "<img src=x>" in o["text"] and o["bad"] == 0
+          and o["add"] == "Ajouter à la mémoire" and o["apply"] == "Appliquer" and o["type"] == "Nouvelle note")
+    await p.shot("18b-memoire.png")
+    await p.js("document.querySelector('.modal.propositions .prop-apply').click()")
+    applied = await p.until("document.querySelectorAll('.modal.propositions .prop-item').length === 1", 4)
+    a = (await sent("proposition_appliquer"))[-1] if await sent("proposition_appliquer") else {}
+    check("Mémoire : Appliquer envoie proposition_appliquer avec proposition_id et l'empreinte affichée, la liste suit",
+          applied and a.get("proposition_id") == "2026-11-03-utilisateur-contraintes-nouvelle"
+          and a.get("empreinte") == "a1b2c3d4e5f60718" and a.get("id") != a.get("proposition_id"))
+    await p.js("document.querySelector('.modal.propositions .prop-refuse').click()")
+    modal = await p.until("!!document.querySelector('.modal:not(.wide) textarea[name=raison]')", 3)
+    await p.js("""(() => { const ta = document.querySelector('.modal:not(.wide) textarea[name=raison]');
+        ta.value = 'déjà dans la note'; ta.dispatchEvent(new Event('input')); return true; })()""")
+    await p.js("document.querySelector('.modal:not(.wide) .modal-ok').click()")
+    gone = await p.until("document.querySelectorAll('.modal.propositions .prop-item').length === 0", 4)
+    r = (await sent("proposition_refuser"))[-1] if await sent("proposition_refuser") else {}
+    hidden = await p.until("document.querySelector('#propositions-chip').classList.contains('hidden')", 3)
+    check("Mémoire : Refuser par la boîte du HUD (motif), liste vide, pastille cachée",
+          modal and gone and hidden and r.get("raison") == "déjà dans la note")
+    await p.js("document.querySelector('.prop-filter:not(.on)').click()")
+    both = await p.until("document.querySelectorAll('.modal.propositions .prop-item.done').length === 2", 4)
+    check("Mémoire : « Toutes » montre les deux propositions traitées, sans bouton", both and not await p.js(
+        "!!document.querySelector('.modal.propositions .prop-apply')"))
+    await p.js("document.querySelector('.modal.propositions .modal-x').click()")
+    check("Mémoire : fermeture", await p.until("!document.querySelector('.modal.propositions')", 2))
 
 
 async def check_plans(p: Page) -> None:
@@ -3273,7 +3326,7 @@ async def check_icones(p: Page) -> None:
         return { n: all.length, left: document.querySelectorAll('i[data-icon]').length,
                  stroke: all.filter(s => s.getAttribute('stroke') !== 'currentColor' || s.getAttribute('fill') !== 'none'
                                          || s.getAttribute('viewBox') !== '0 0 24 24').length,
-                 composer: [...new Set(size('#composer .round svg.ico'))], chips: [...new Set(size('#topbar .chip:not([hidden]) svg.ico'))],
+                 composer: [...new Set(size('#composer .round svg.ico'))], chips: [...new Set(size('#topbar .chip:not([hidden], .hidden) svg.ico'))],  // 04/11 : « Mémoire » caché sans proposition
                  html: [...document.querySelectorAll('svg.ico')].some(s => s.querySelector(':not(path, rect, circle)')) };
     })()""")
     check(f"{ic['n']} icônes SVG (trait currentColor, grille 24), plus aucune marque i[data-icon] ({ic['left']})",

@@ -377,7 +377,7 @@ class ReglagesCoeur:
         try:
             with self._turn_lock:
                 mcp_config.write()
-                self.brain.restart()  # reprend la session : la conversation reste
+                self._cerveau_relancer()  # reprend la session : la conversation reste
                 self._end_turn(followup=False)
                 with self._tasks_lock:
                     self._tasks.clear()

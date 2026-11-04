@@ -36,6 +36,17 @@ def _canal_de_controle_isole(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONTROL_SOCKET", tmp_path / "control-isole.sock")
 
 
+@pytest.fixture(autouse=True)
+def relances_cerveau(monkeypatch):
+    """04/11 (T46) : aucune relance réelle du cerveau programmée par un test (`cycle_cerveau.planifier`) :
+    un minuteur qui partirait après le test lancerait un VRAI CLI. Rend la liste des (délai, fonction)."""
+    from astrel import cycle_cerveau
+
+    out: list = []
+    monkeypatch.setattr(cycle_cerveau, "planifier", lambda delai, fn: out.append((delai, fn)))
+    return out
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _filet_de_session_images_videos(tmp_path_factory):
     """30/10 : filet pour TOUTE la session. Un fil de génération (images, vidéos) qui finit APRÈS son
@@ -151,6 +162,8 @@ def _economie_isolee(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "HISTORY_DB", tmp_path / "history.db")
     monkeypatch.setattr(agents, "AGENTS_FILE", tmp_path / "agents.json")
     monkeypatch.setattr(agents, "ROUTE_LOG", tmp_path / "route.jsonl")
+    from astrel.coeur import taches as taches_coeur  # 04/11 (T50) : coût par agent, jamais le vrai journal
+    monkeypatch.setattr(taches_coeur, "COUTS_LOG", tmp_path / "agents-couts.jsonl")
     # Plan P28 : effort par métier choisi par l'utilisateur, et ce que le CLI en marche a reçu.
     monkeypatch.setattr(agents, "EFFORT_FILE", tmp_path / "agent-effort.json")
     monkeypatch.setattr(agents, "_written", None)
