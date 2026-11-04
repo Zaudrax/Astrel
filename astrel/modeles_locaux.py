@@ -456,15 +456,16 @@ class ModelesLocaux:
             else:
                 log.warning("téléchargement de %s : %s", tag, exc)
                 status, error = "échec", str(exc) or type(exc).__name__
+        if status == "fini":
+            log.info("modèle local %s installé", tag)
+            # 04/11 : choisi AVANT d'afficher « fini » (sinon la page voyait un modèle fini et non choisi)
+            if not self.chosen:
+                self._save(model=tag)  # le premier modèle installé devient celui du mode léger
         with self._lock:
             if self._dl and self._dl["tag"] == tag:
                 self._dl.update(status=status, error=error)
             self._installed = (0.0, None)
         materiel.forget()
-        if status == "fini":
-            log.info("modèle local %s installé", tag)
-            if not self.chosen:
-                self._save(model=tag)  # le premier modèle installé devient celui du mode léger
         self._changed(force=True)
 
     def cancel(self) -> dict:
