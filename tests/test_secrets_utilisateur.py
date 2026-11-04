@@ -10,6 +10,7 @@ Windows et macOS : simulés ici (dossier personnel factice ou `PureWindowsPath`)
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
@@ -175,15 +176,18 @@ def test_chaque_systeme_a_sa_liste():
 
 # ================================================================== lecture : plafond, sous toutes ses formes
 
+SOUS_LINUX = sys.platform.startswith("linux")  # 04/11 : le trousseau GNOME n'existe que sous Linux
+
+
 def test_le_trou_du_04_11_est_bouche():
     """Les sept lectures du constat (machine de l'utilisateur : vrai dossier personnel)."""
     for cmd in ("cat ~/.ssh/id_rsa", "cat ~/.ssh/id_ed25519", "cat ~/.aws/credentials", "cat ~/.netrc",
                 "cat ~/.gnupg/private-keys-v1.d/*", "cat \"$HOME/.config/google-chrome/Default/Login Data\"",
-                "cat ~/.local/share/keyrings/*.keyring"):
+                *(("cat ~/.local/share/keyrings/*.keyring",) if SOUS_LINUX else ())):  # 04/11 : trousseau GNOME = Linux
         assert plafond(bash(cmd)), cmd
     home = Path.home()
     for p in (".ssh/id_ed25519", ".aws/credentials", ".netrc", ".config/google-chrome/Default/Login Data",
-              ".local/share/keyrings/login.keyring"):
+              *((".local/share/keyrings/login.keyring",) if SOUS_LINUX else ())):
         assert plafond(ask("Read", {"file_path": str(home / p)})), p
 
 
