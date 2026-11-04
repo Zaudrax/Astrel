@@ -56,6 +56,7 @@ EXEMPLES = {
     L.IDENTIFIANTS_CLAUDE: ("Bash", "claude mcp add x y", "autonome"),
     L.SECRETS: ("Bash", "cat config/secrets.json", "autonome"),
     L.SECRETS_LARGES: ("Bash", "grep -rn token runtime", "autonome"),
+    L.SECRETS_UTILISATEUR: ("Bash", "cat ~/.ssh/id_ed25519", "autonome"),  # 04/11 : secrets du compte
     L.FICHIERS_HUD: ("Edit", R / "hud" / "src" / "main.js", "autonome"),
     L.FICHIERS_BULLE: ("Edit", R / "astrel" / "bubble.py", "autonome"),
     L.FICHIERS_WHATSAPP: ("Edit", R / "astrel" / "whatsapp.py", "autonome"),

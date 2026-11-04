@@ -132,13 +132,17 @@ ETAT_GARDE_FOU = "etat_garde_fou"
 CODE_IDENTITE = "code_identite"
 CITATION = "citation_garde_fou"
 MISSION_INTERDIT = "mission_interdit"
+# 04/11 (secrets du compte, autorisation de l'utilisateur) : clés SSH et GPG, jetons du cloud, mots de passe et cookies
+# des navigateurs, trousseaux (`guard.SecretsCompte`). Lus : plafond, comme un secret d'Astrel.
+SECRETS_UTILISATEUR = "secrets_utilisateur"
 PLAFONDS = frozenset({IDENTIFIANTS_CLAUDE, SECRETS, SECRETS_LARGES, JOURNAUX, ETAT_GARDE_FOU, CODE_IDENTITE,
-                      CITATION, MISSION_INTERDIT})
+                      CITATION, MISSION_INTERDIT, SECRETS_UTILISATEUR})
 
 # Ligne d'information du plafond (lecture seule dans les Réglages).
 PLAFOND_TEXTES = (
     "identifiants et serveurs MCP de Claude Code",
     "secrets (jeton du HUD, clés API, identifiants WhatsApp)",
+    "secrets de ton compte (clés SSH, mots de passe, jetons, profils des navigateurs)",  # 04/11
     "journaux (audit, Sans confirmation, levée)",
     "arrêt d'urgence, autonomie, autorisations, mission, plans, réglages et limites",
     "code qui dit qui est Claude (totalgate, state, ipc, proc, server, limites)",
@@ -276,6 +280,8 @@ CASES: tuple[Case, ...] = (
     Case(IDENTIFIANTS_CLAUDE, "garde_fou", "Compte, réglages et serveurs MCP de Claude Code", True),
     Case(SECRETS, "secrets", "Lire ou modifier un secret nommé (jeton du HUD, clés API, WhatsApp, clé qui signe ces cases)", True),
     Case(SECRETS_LARGES, "secrets", "Recherche récursive dans un dossier qui contient un secret", True),
+    Case(SECRETS_UTILISATEUR, "secrets", "Lire un secret de ton compte (clés SSH et GPG, jetons du cloud, mots de "
+                                         "passe, profils des navigateurs)", True),  # 04/11
     Case(FICHIERS_HUD, "fichiers", "Fichiers du HUD (hud/src, hud/dist, hud/index.html)", True),
     Case(FICHIERS_BULLE, "fichiers", "Fichiers de la bulle (bubble.py, minichat.py)", True),
     Case(FICHIERS_WHATSAPP, "fichiers", "Fichiers de WhatsApp (whatsapp.py, whatsapp/)", True),

@@ -5704,7 +5704,7 @@ def main() -> int:
                                     f"--user-data-dir={profile}", "--no-first-run", "--disable-gpu",
                                     "--window-size=1600,1000", "about:blank"],
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for _ in range(100):
+        for _ in range(300):  # 04/11 (CI) : Chrome headless peut mettre plus de 10 s à ouvrir son port
             try:
                 urllib.request.urlopen(f"http://127.0.0.1:{CDP_PORT}/json", timeout=1)
                 break

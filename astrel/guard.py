@@ -130,6 +130,12 @@ doctor, la preuve et la levée (`PROTECTED_CODE`) ; `runtime/mcp.json` (secret),
 connu jugé sur son nom (plus jamais libre d'office). Sources audio : critiques ; retrait du marqueur
 `ASTREL_BRAIN` : garde-fou ; détachement hors cgroup du service : question. Windows : formes `\\\\?\\`,
 flux NTFS, point final, 8.3, casse ramenées au chemin (`_win_forme`). Aucun verdict desserré.
+
+04/11 (secrets du compte, autorisation explicite de l'utilisateur) : clés SSH et GPG, jetons du cloud (aws, gcloud,
+azure, kube, docker, gh, npm, pypi), .netrc, coffres, trousseaux, mots de passe et cookies des navigateurs, par
+système (`SecretsCompte`, `_secrets_compte`). Les LIRE (Read, Grep, toute commande qui les cite, joker, lecteur
+récursif sur un dossier parent, programme lancé dans ~/.ssh, CLI qui sort un jeton) : plafond, case « secrets du
+compte » ; les modifier ou les supprimer : critique. Aucun verdict desserré.
 """
 from __future__ import annotations
 
@@ -137,6 +143,7 @@ import contextvars
 import dataclasses
 import fnmatch
 import getpass
+import glob as _glob_mod  # 04/11 : jokers développés sur le disque (secrets du compte)
 import json
 import os
 import re
@@ -253,6 +260,13 @@ L_DETACH = "le lancement d'un process détaché de Claude (setsid, nohup, disown
 # (Read, Grep, Glob, une commande qui cite le chemin) dans une ZONE CONFIDENTIELLE de l'utilisateur (Réglages ›
 # Confidentialité, `zones_confidentielles` de runtime/settings.json, écrit par le cœur seul) est demandée.
 L_ZONE = "une lecture dans une zone confidentielle"
+# 04/11 (secrets du compte, autorisation explicite de l'utilisateur ; trou confirmé le 04/11) : seuls les secrets
+# d'Astrel et `~/.claude/.credentials.json` étaient protégés ; `cat ~/.ssh/id_rsa`, `~/.aws/credentials`,
+# `~/.netrc`, les mots de passe et cookies des navigateurs se lisaient sans question, et une injection (page
+# web, mail) pouvait les faire lire puis envoyer. Lire un secret du COMPTE (`_secrets_compte`, par système) :
+# plafond (ni Total ni « oui pour 30 min »), case « secrets du compte » ; le modifier : critique.
+L_SECRET_UTILISATEUR = "la lecture d'un secret de ton compte (clé, mot de passe, jeton)"
+L_SECRET_UTILISATEUR_MODIF = "une modification d'un secret de ton compte (clé, mot de passe, jeton)"
 
 # Code d'un AUTRE langage (python -c, heredoc lu par python, awk…) : illisible pour
 # l'analyse du shell, on y cherche seulement ces motifs-là. Un `sudo` caché dans un
@@ -413,9 +427,105 @@ if os.name == "nt":
                        Path.home() / "Documents" / "WindowsPowerShell", Path.home() / "Documents" / "PowerShell"]
 else:
     WINDOWS_SYSTEM = []
+
+
+# 04/11 (secrets du compte, voir `L_SECRET_UTILISATEUR`) : la liste UNIQUE des secrets du compte, par système.
+@dataclass(frozen=True)
+class SecretsCompte:
+    """Chemins absolus, chacun sous sa forme écrite ET résolue (dossier personnel ou `~/.ssh` derrière un lien)."""
+    ssh: tuple[Path, ...] = ()          # ~/.ssh : tout, sauf `_SSH_LIBRES` et les *.pub
+    dossiers: tuple[Path, ...] = ()     # secrets en entier (trousseaux, coffres, jetons du cloud)
+    fichiers: tuple[Path, ...] = ()     # fichiers secrets (.netrc, .aws/credentials…)
+    navigateurs: tuple[Path, ...] = ()  # profils Chromium : `_NOMS_PARTOUT` dedans ; racines pour les parcours
+    mozilla: tuple[Path, ...] = ()      # profils Firefox et Thunderbird : en plus `_NOMS_MOZILLA`
+
+    @property
+    def racines(self) -> tuple[Path, ...]:
+        return self.ssh + self.dossiers + self.fichiers + self.navigateurs + self.mozilla
+
+
+_SSH_LIBRES = ("known_hosts", "known_hosts.old", "known_hosts2", "config", "config.d", "authorized_keys",
+               "authorized_keys2")
+_SSH_CLES = ("id_rsa", "id_dsa", "id_ecdsa", "id_ecdsa_sk", "id_ed25519", "id_ed25519_sk", "id_xmss")
+# Secrets par leur NOM, où qu'ils soient : fichiers des navigateurs Chromium et des applications Electron
+# (mots de passe, cookies de session, clé qui les chiffre), clés et cookies de Firefox, coffres KeePass,
+# trousseaux macOS, clés PuTTY. Sous Windows sans casse (`_fn_nom`).
+_NOMS_PARTOUT = ("Login Data", "Login Data-journal", "Login Data For Account", "Login Data For Account-journal",
+                 "Cookies", "Cookies-journal", "Extension Cookies", "Extension Cookies-journal",
+                 "Safe Browsing Cookies", "Safe Browsing Cookies-journal", "Web Data", "Web Data-journal",
+                 "Local State", "key3.db", "key4.db", "cookies.sqlite", "cookies.sqlite-wal", "cookies.sqlite-shm",
+                 "signons.sqlite", "*.kdbx", "*.keychain", "*.keychain-db", "*.ppk")
+_NOMS_MOZILLA = ("logins.json", "logins-backup.json", "signedInUser.json")  # sous un profil Mozilla seulement
+# Un nom représentatif par règle de nom, pour un joker dont le dossier est inconnu (`cat $X/*`).
+_NOMS_TYPES = ("Login Data", "Cookies", "Web Data", "Local State", "key4.db", "cookies.sqlite", "x.kdbx",
+               "x.keychain-db", "x.ppk")
+
+
+def _secrets_compte(systeme: str, home: Path, env=None) -> SecretsCompte:
+    """Secrets du compte pour `systeme` (« linux », « darwin », « nt ») ; `env` : variables (APPDATA…).
+    `home` peut être un `PureWindowsPath` (tests : Windows simulé, comparaisons sans casse comme sous Windows)."""
+    env = os.environ if env is None else env
+    P = type(home)
+
+    def h(*ps: str) -> list[Path]:
+        return [home / p for p in ps]
+
+    ssh = h(".ssh")
+    dossiers = h(".gnupg/private-keys-v1.d", ".password-store", ".aws", ".azure", ".config/gcloud")
+    fichiers = h(".gnupg/secring.gpg", ".kube/config", ".docker/config.json", ".netrc", ".git-credentials",
+                 ".config/git/credentials", ".npmrc", ".pypirc", ".config/gh/hosts.yml", ".cargo/credentials",
+                 ".cargo/credentials.toml", ".gem/credentials")
+    nav: list[Path] = []
+    moz: list[Path] = []
+    if systeme == "nt":
+        roaming = P(env.get("APPDATA") or home / "AppData" / "Roaming")
+        local = P(env.get("LOCALAPPDATA") or home / "AppData" / "Local")
+        dossiers += [roaming / "Microsoft" / "Credentials", local / "Microsoft" / "Credentials",
+                     roaming / "Microsoft" / "Protect", roaming / "Microsoft" / "Vault", local / "Microsoft" / "Vault",
+                     roaming / "gcloud", roaming / "gnupg" / "private-keys-v1.d"]
+        fichiers += [home / "_netrc", roaming / "GitHub CLI" / "hosts.yml", roaming / "gnupg" / "secring.gpg"]
+        nav += [local / "Google" / "Chrome" / "User Data", local / "Chromium" / "User Data",
+                local / "BraveSoftware" / "Brave-Browser" / "User Data", local / "Microsoft" / "Edge" / "User Data",
+                local / "Vivaldi" / "User Data", roaming / "Opera Software"]
+        moz += [roaming / "Mozilla", roaming / "Thunderbird"]
+    elif systeme == "darwin":
+        lib = home / "Library"
+        sup = lib / "Application Support"
+        dossiers += [lib / "Keychains", lib / "Cookies",
+                     lib / "Containers" / "com.apple.Safari" / "Data" / "Library" / "Cookies"]
+        nav += [sup / "Google" / "Chrome", sup / "Chromium", sup / "BraveSoftware", sup / "Microsoft Edge",
+                sup / "Vivaldi", sup / "com.operasoftware.Opera"]
+        moz += [sup / "Firefox", lib / "Thunderbird"]
+    else:  # Linux et autres Unix
+        dossiers += h(".local/share/keyrings", ".local/share/kwalletd", ".pki")
+        nav += h(".config/google-chrome", ".config/google-chrome-beta", ".config/google-chrome-unstable",
+                 ".config/chromium", ".config/BraveSoftware", ".config/microsoft-edge", ".config/vivaldi",
+                 ".config/opera", "snap/chromium/common/chromium", ".var/app/com.google.Chrome",
+                 ".var/app/org.chromium.Chromium", ".var/app/com.brave.Browser", ".var/app/com.microsoft.Edge")
+        moz += h(".mozilla", "snap/firefox/common/.mozilla", ".var/app/org.mozilla.firefox/.mozilla", ".thunderbird",
+                 "snap/thunderbird/common/.thunderbird", ".var/app/org.mozilla.Thunderbird/.thunderbird")
+
+    def deux(ps: list[Path]) -> tuple[Path, ...]:
+        out: list[Path] = []
+        for p in ps:
+            if not isinstance(p, Path):  # chemin « pur » d'un autre système (tests) : tel quel
+                out.append(p)
+                continue
+            out.append(Path(os.path.normpath(p)))
+            try:
+                out.append(p.resolve())
+            except (OSError, RuntimeError, ValueError):
+                pass
+        return tuple(dict.fromkeys(out))
+
+    return SecretsCompte(deux(ssh), deux(dossiers), deux(fichiers), deux(nav), deux(moz))
+
+
+_SYSTEME = "nt" if os.name == "nt" else ("darwin" if sys.platform == "darwin" else "linux")
+_US = _secrets_compte(_SYSTEME, Path.home())
 CRITICAL_WRITE_ROOTS = [Path(p).expanduser() for p in (
     *_UNIX_SYSTEM, "~/.ssh", "~/.gnupg", "~/.config/systemd", "~/.local/share/keyrings",
-)] + WINDOWS_SYSTEM + SENSITIVE_HOME
+)] + WINDOWS_SYSTEM + SENSITIVE_HOME + list(_US.racines)  # 04/11 : + les secrets du compte (écriture critique)
 
 
 # 24/10 (P29 lot B, demande de l'utilisateur) : cases de confirmation (Réglages › Garde-fou), écrites et
@@ -667,11 +777,13 @@ def _cited_ceiling(texts: list[str], ctx, code: bool = False) -> str:
     return ""
 
 
-def _reaches_secret(c: str, cwds: list | None, glob: bool) -> bool:
+def _reaches_secret(c: str, cwds: list | None, glob: bool, secrets: list | None = None) -> bool:
     """15/10 : un argument (valeur développée) qui PEUT désigner le jeton, la clé de
     session ou le profil du HUD sans les nommer : joker (`glob`), partie inconnue
     (`_DYN`, prise comme un joker), accolades ou guillemets déjà développés. Début
-    inconnu (`$X/…`) ou dossier courant inconnu : n'importe quel dossier."""
+    inconnu (`$X/…`) ou dossier courant inconnu : n'importe quel dossier.
+    04/11 : `secrets` = autre liste concrète (secrets du compte, `_cibles_compte`)."""
+    cibles = SECRET_PATHS if secrets is None else secrets
     if c.startswith("-"):
         c = c.split("=", 1)[1] if "=" in c else ""  # --fichier=…
     if not c or "://" in c:
@@ -692,7 +804,7 @@ def _reaches_secret(c: str, cwds: list | None, glob: bool) -> bool:
         rest = [x for x in pat.split("/")[1 if unknown_start else 0:] if x not in ("", ".")]
         return any(len(rest) >= len(s.parts) - k and rest
                    and all(match(x, y) for x, y in zip(s.parts[k:], rest))
-                   for s in SECRET_PATHS for k in range(1, len(s.parts)))
+                   for s in cibles for k in range(1, len(s.parts)))
     for b in ([_racine()] if _abs_txt(pat) else cwds):
         parts = Path(os.path.normpath(Path(b) / pat)).parts
         # 01/11 (relecture, accord de l'utilisateur) : `cat w/creds.json` avec `w` → runtime/whatsapp-auth
@@ -700,7 +812,7 @@ def _reaches_secret(c: str, cwds: list | None, glob: bool) -> bool:
         # (avant tout joker ou partie inconnue) résolue sur le disque, le reste tel quel.
         for cand in (parts, _resolved_parts(parts)):
             if cand and any(len(cand) >= len(s.parts) and all(match(x, y) for x, y in zip(s.parts, cand))
-                            for s in SECRET_PATHS):
+                            for s in cibles):
                 return True
     return False
 
@@ -1155,6 +1267,349 @@ def _judge_secret_tree(prog: str, xs: list, ctx, out: list) -> None:
             if hit:
                 _add(out, L_SECRET, guard=True, cat=wide)
                 return
+
+
+# --- 04/11 : secrets du COMPTE (`SecretsCompte`, `L_SECRET_UTILISATEUR`) ---
+# Lire = plafond : Read/NotebookRead du fichier, Grep (et tout lecteur récursif : grep -r, rg, cp -r, tar, zip,
+# rsync…) sur lui ou sur un dossier qui le contient, toute commande qui le cite (cat, base64, cp, curl -F @…,
+# script en ligne), joker qui l'atteint (développé sur le disque), lien vers lui, programme lancé DANS ~/.ssh,
+# commandes qui sortent un secret (`_imprime_secret`). Restent libres : les noms (ls, stat, find sans -exec,
+# Glob), known_hosts, config, authorized_keys, *.pub, ssh/sftp/ssh-add qui UTILISENT la clé, `ssh-keygen -l/-y`.
+
+def secret_du_compte(p: Path, us: SecretsCompte | None = None) -> bool:
+    """`p` (absolu, normalisé, liens résolus) est-il un secret du compte ?"""
+    us = us or _US
+    if _under(p, us.dossiers) or _under(p, us.fichiers):
+        return True
+    nom = p.name
+    if any(_fn_nom(nom, m) for m in _NOMS_PARTOUT):
+        return True
+    for s in us.ssh:
+        if s in p.parents:
+            rel = p.parts[len(s.parts):]
+            return not (any(_fn_nom(rel[0], n) for n in _SSH_LIBRES) or _fn_nom(rel[-1], "*.pub"))
+    return any(m in p.parents for m in us.mozilla) and any(_fn_nom(nom, n) for n in _NOMS_MOZILLA)
+
+
+def _cibles_compte() -> list[Path]:
+    """Secrets du compte en chemins CONCRETS, pour un mot à partie inconnue (`$H/.ssh/id_rsa`) : dossiers et
+    fichiers de la liste, clés usuelles de ~/.ssh et les autres fichiers secrets qui y sont."""
+    us = _US
+    out = list(us.dossiers) + list(us.fichiers)
+    for s in us.ssh:
+        out += [s / n for n in _SSH_CLES]
+        try:
+            with os.scandir(s) as it:
+                noms = [e.name for k, e in zip(range(500), it)]
+        except OSError:
+            noms = []
+        out += [s / n for n in noms if secret_du_compte(s / n)]
+    return list(dict.fromkeys(out))
+
+
+def _ancetres_compte() -> frozenset:
+    return frozenset(a for r in _US.racines for a in (r, *r.parents))
+
+
+def _compte_saute(r: Path, rel: tuple, filt: tuple, is_file: bool) -> bool:
+    """Comme `_secret_skipped` : la racine `r` (chemin `rel` sous le dossier parcouru) écartée par les filtres ?"""
+    inc, exc, exd = filt
+    if any(fnmatch.fnmatchcase(d, g) for d in (rel[:-1] if is_file else rel) for g in exd):
+        return True
+    if not is_file:
+        return bool(inc) and all(_code_glob(g) for g in inc)
+    if inc:
+        return not any(fnmatch.fnmatchcase(r.name, g) for g in inc)
+    return any(fnmatch.fnmatchcase(r.name, g) for g in exc)
+
+
+def _parcours_compte(p: Path, filt: tuple = _NO_FILTER) -> bool:
+    """Parcourir RÉCURSIVEMENT `p` (dossier ou fichier) lit-il un secret du compte malgré les filtres ?"""
+    us = _US
+    if secret_du_compte(p):
+        return True
+    for r in us.racines:
+        if r == p or r in p.parents:  # dans ~/.ssh ou un profil : un dossier qui existe peut contenir des secrets
+            if _is_dir(p):
+                return True
+            continue
+        if p in r.parents and not _compte_saute(r, r.parts[len(p.parts):], filt, r in us.fichiers):
+            return True
+    return False
+
+
+_JOKER_MAX = 5000  # chemins lus au plus pour développer un joker (au-delà : son dossier fixe, parcouru)
+
+
+def _developpe(c: str, bases: list) -> list[Path] | None:
+    """Ce que le joker `c` désigne sur le disque, liens résolus ; None : trop de chemins."""
+    pat = _msys(os.path.expanduser(c))
+    out: list[Path] = []
+    for b in ([None] if _abs_txt(pat) else bases):
+        full = pat if b is None else os.path.join(_glob_mod.escape(str(b)), pat)
+        try:
+            for k, r in enumerate(_glob_mod.iglob(full)):
+                if k >= _JOKER_MAX:
+                    return None
+                out.append(Path(r).resolve())
+        except (OSError, RuntimeError, ValueError, re.error):
+            return None
+    return out
+
+
+def _joker_compte(c: str, bases: list, recursif: bool, filt: tuple = _NO_FILTER) -> bool:
+    """Le joker `c` (dossier connu) atteint-il un secret du compte : sur le disque, ou une clé usuelle absente ?"""
+    trouve = _developpe(c, bases)
+    if trouve is None:  # trop de chemins : le dossier avant le joker, parcouru
+        parts = c.split("/")
+        k = next((i for i, x in enumerate(parts) if _GLOB.search(x)), len(parts))
+        head = "/".join(parts[:k]) or ("/" if c.startswith("/") else ".")
+        return any(_parcours_compte(p) for p in _paths(head, _Ctx(cwds=list(bases))) or [])
+    if any(_parcours_compte(p, filt) if recursif else secret_du_compte(p) for p in trouve):
+        return True
+    return _reaches_secret(c, bases, True, _cibles_compte())
+
+
+def _inconnu_compte(c: str, cwds: list | None, glob: bool) -> bool:
+    """Mot à partie inconnue (`$H/.ssh/id_rsa`, `cat $X/Cookies`) ou dossier courant inconnu : les secrets
+    concrets, et les noms secrets où qu'ils soient (dernier morceau)."""
+    if _reaches_secret(c, cwds, glob, _cibles_compte()):
+        return True
+    last = c.rstrip("/").rsplit("/", 1)[-1]
+    if not glob:
+        last = re.sub(r"([*?\[])", r"[\1]", last)
+    if not last.replace(_DYN, "") or (_DYN in c and "/" not in c):  # `cat $F`, `curl -r $B-$E` : pas un chemin
+        return False
+    return any(_dir_part_match(n, last.replace(_DYN, "*")) for n in _NOMS_TYPES)
+
+
+def _marques_compte() -> tuple[str, ...]:
+    """Morceaux de texte sans lesquels un mot ne peut pas nommer un secret du compte (tri rapide)."""
+    noms = {r.name for r in _US.racines if r.name} | {"Login Data", "Cookies", "Web Data", "Local State", "key3.db",
+                                                      "key4.db", "cookies.sqlite", "signons", "logins",
+                                                      "signedInUser", ".kdbx", ".keychain", ".ppk", "id_"}
+    return tuple(n.lower() for n in noms)
+
+
+def _cite_compte(c: str, glob: bool, ctx, decoupe: bool = True, entier: bool = True) -> bool:
+    """La valeur `c` d'un mot peut-elle désigner un secret du compte ? `decoupe` : aussi les chemins écrits
+    DANS le mot (`f=@~/.ssh/id_rsa` de curl, `if=…` de dd, code d'awk, de python -c) ; `entier` : le mot
+    lui-même est un chemin possible (pas pour un texte de code)."""
+    if not c:
+        return False
+    whole = c.split("=", 1)[1] if c.startswith("-") and "=" in c else ("" if c.startswith("-") else c)
+    if not entier or len(whole) > 4096 or "\n" in whole:
+        whole = ""
+    if whole and "://" not in whole:
+        if _DYN in whole or (ctx.cwds is None and not _abs_txt(_msys(os.path.expanduser(whole)))):
+            if _inconnu_compte(whole, ctx.cwds, glob):
+                return True
+        elif glob and _GLOB.search(whole):
+            if _joker_compte(whole, ctx.cwds, False):
+                return True
+        elif any(secret_du_compte(p) for p in _paths(whole, ctx) or []):
+            return True
+    if not decoupe:
+        return False
+    marques = _marques_compte()
+    for w in _PATH_WORD.findall(c):
+        w = w.lstrip("@<")
+        if w == whole or _DYN in w or "/" not in w and "\\" not in w or not any(m in w.lower() for m in marques):
+            continue
+        w = re.sub(r"^(?:\$HOME|\$\{HOME\}|%USERPROFILE%)(?=[\\/])", lambda _m: str(Path.home()), w)
+        for piece in [w] + [x for x in w.split(":")[1:] if "/" in x]:  # `-v ~/.ssh:/root/.ssh`, `HEAD:chemin`
+            if any(secret_du_compte(p) for p in _paths(piece, ctx) or []):
+                return True
+    return False
+
+
+# Programmes qui ne LISENT pas le contenu des fichiers cités (noms, tailles, droits, empreintes) ou qui
+# UTILISENT une clé sans la sortir (ssh, sftp, ssh-add ; scp : ses opérandes restent lus) ; suppressions :
+# `_rm` ; shells, eval, trap : leur code est jugé à part.
+_COMPTE_LIBRES = _DIR_LISTERS | _NO_CONTENT | {
+    "fd", "fdfind", "ssh", "sftp", "ssh-add", "ssh-copy-id", "md5sum", "sha1sum", "sha224sum", "sha256sum",
+    "sha384sum", "sha512sum", "b2sum", "cksum", "popd", "eval", "trap", "true", "false", ":", "export", "local",
+    "declare", "typeset", "readonly", "unset", "set", "type", "which", "command"} - {"shred"}
+_COMPTE_MODIFIE = {"shred", "truncate"}
+_SSH_DANS_MOT = re.compile(r"(?:^|[\s=;|&'\"/])ssh\s")
+_SSH_KEYGEN_LIT = set("lyeLFRBHYs")  # empreinte, clé publique, certificat, known_hosts, signature : libres
+
+
+def _imprime_secret(prog: str, a: list[str]) -> bool:
+    """Commande qui SORT un secret du compte sans nommer de fichier (trousseau, coffre, jeton d'un CLI)."""
+    ops = _operands(a)
+    s = set(a)
+    if prog in ("gpg", "gpg2"):
+        return bool(s & {"--export-secret-keys", "--export-secret-subkeys"})
+    if prog == "secret-tool":
+        return ops[:1] in (["lookup"], ["search"])
+    if prog == "security":  # macOS
+        return ops[:1] in (["dump-keychain"], ["export"]) or (
+            ops[:1] in (["find-generic-password"], ["find-internet-password"]) and bool(s & {"-w", "-g"}))
+    if prog == "pass":
+        return bool(ops) and ops[0] not in ("ls", "list", "find", "search", "init", "insert", "generate", "git",
+                                            "help", "version", "rm", "mv", "cp", "edit")
+    if prog == "gh":
+        return ops[:2] == ["auth", "token"] or (ops[:2] == ["auth", "status"] and bool(s & {"-t", "--show-token"}))
+    if prog == "gcloud":
+        return any(o in ("print-access-token", "print-identity-token", "print-refresh-token") for o in ops)
+    if prog == "aws":
+        return ops[:2] in (["configure", "export-credentials"], ["ecr", "get-login-password"]) or (
+            ops[:2] == ["configure", "get"] and any(re.search(r"secret|token|access_key", o) for o in ops[2:]))
+    if prog == "az":
+        return ops[:2] == ["account", "get-access-token"]
+    if prog == "kubectl":
+        return ops[:2] == ["config", "view"] and bool(s & {"--raw", "--flatten"})
+    if prog == "git":
+        return ops[:2] in (["credential", "fill"], ["credential-store", "get"], ["credential-cache", "get"])
+    if prog.startswith("docker-credential-"):
+        return ops[:1] == ["get"]
+    if prog == "keepassxc-cli":
+        return ops[:1] in (["show"], ["export"], ["clip"])
+    if prog == "op":  # 1Password
+        return ops[:1] in (["read"], ["inject"]) or ops[:2] == ["item", "get"]
+    if prog == "bw":  # Bitwarden
+        return ops[:1] in (["get"], ["export"])
+    return False
+
+
+def _judge_compte(prog: str, xs: list, ctx, out: list) -> None:
+    """Lecture (plafond) ou modification (critique) d'un secret du compte par un programme et ses mots.
+    `prog` vide : programme inconnu ; « < » : fichier lu par une redirection d'entrée."""
+    if ctx.remote:
+        return
+    a = [x.text for x in xs]
+
+    def lu() -> None:
+        _add(out, L_SECRET_UTILISATEUR, guard=True, cat=_L.SECRETS_UTILISATEUR)
+
+    if prog and _imprime_secret(prog, a):
+        lu()
+        return
+    # lancé DANS ~/.ssh, un profil, un coffre : un interpréteur ou un programme inconnu lit ce dossier
+    dedans = [r for r in _US.racines if r not in _US.fichiers]
+    if (not prog or _INTERP.fullmatch(prog)) and any(_under(c, dedans) for c in ctx.cwds or []):
+        lu()
+        return
+    _judge_compte_arbre(prog, xs, ctx, out)
+    if prog in _COMPTE_LIBRES and not (prog == "find" and _FIND_NAME_FILES & set(a)):
+        return
+    if prog == "ssh-keygen":
+        flags = {ch for t in a if t.startswith("-") and not t.startswith("--") for ch in t[1:]}
+        if not flags & _SSH_KEYGEN_LIT and any(_cite_compte(c, x.glob, ctx) for x in xs for c in x.cands):
+            _add(out, L_SECRET_UTILISATEUR_MODIF)  # -p, -c, génération sur -f : la clé réécrite
+        return
+    if prog == "git":
+        xs = _without_commit_message(xs)
+        a = [x.text for x in xs]
+    pattern = -1  # motif de grep/rg (`grep -rn "\.ssh/id_rsa" docs`) : pas un chemin
+    if prog in _GREPS | _SEARCHERS:
+        flags_ = [k for k, t in enumerate(a[:-1]) if t in ("-e", "--regexp", "--expression")]
+        pattern = flags_[0] + 1 if flags_ else next((k for k, t in enumerate(a) if not t.startswith("-")), -1)
+    skip: set[int] = set()
+    if prog == "scp":  # valeurs d'options (`-i clé`, `-F config`) : la clé UTILISÉE ; les opérandes restent lus
+        skip = {k + 1 for k, t in enumerate(a) if len(t) == 2 and t[0] == "-" and t[1] in _COPY_ARG["scp"]}
+    shell = prog in _SHELLS  # `bash -c '…'` : son code est jugé à part (`_code`), pas découpé ici
+    for k, x in enumerate(xs):
+        if k in skip or (k == pattern and not x.glob and not x.dyn):
+            continue
+        for c in x.cands:
+            if _FOUND in c:  # « {} » d'un find -exec, liste donnée à xargs : les fichiers de ces dossiers
+                hit = any(_parcours_compte(r) for r in ctx.found or [])
+            else:  # une commande ssh dans un mot (`rsync -e 'ssh -i clé'`, `core.sshCommand=ssh -i clé`) UTILISE la clé
+                hit = _cite_compte(c, x.glob, ctx, decoupe=not shell and not _SSH_DANS_MOT.search(c))
+            if hit:
+                if prog in _COMPTE_MODIFIE:
+                    _add(out, L_SECRET_UTILISATEUR_MODIF)
+                else:
+                    lu()
+                return
+    # un lien (symbolique ou dur) vers un dossier qui CONTIENT un secret du compte se lit ensuite sans le nommer
+    if prog == "ln" or (prog == "cp" and any(t in ("--link", "--symbolic-link")
+                                             or re.fullmatch(r"-[A-Za-z]*[ls][A-Za-z]*", t) for t in a)):
+        for x in xs:
+            for c in x.cands:
+                if c and not c.startswith("-") and _DYN not in c and not x.glob and any(
+                        _parcours_compte(p) for p in _paths(c, ctx) or []):
+                    lu()
+                    return
+
+
+def _judge_compte_arbre(prog: str, xs: list, ctx, out: list) -> None:
+    """Lecteur RÉCURSIF (grep -r, rg, cp -r, tar, zip, rsync, scp -r…) sur un secret du compte ou un dossier
+    qui en contient un (`grep -r x ~`, `tar czf /tmp/s.tgz ~/.ssh`, `cd ~ && rg token`) : plafond."""
+    if prog in _DIR_LISTERS or prog in _NO_CONTENT:
+        return
+    tree = _tree_sources(prog, [x.text for x in xs])
+    if tree is None:
+        return
+    ops, in_cwd, c_dirs, filt = tree
+    if any(len(x.cands) > 1 or x.dyn for x in xs):
+        filt = _NO_FILTER
+    bases = ctx.cwds
+    for d in c_dirs:
+        ps = None if (_DYN in d or _FOUND in d) else _paths(d, ctx)
+        bases = None if ps is None or bases is None else bases + ps
+    hit = False
+    if in_cwd and not ops:  # `grep -r motif`, `rg motif` : le dossier courant
+        hit = any(_parcours_compte(c, filt) for c in ctx.cwds or [])
+    for k in ops:
+        if hit or k >= len(xs):
+            break
+        x = xs[k]
+        for c in x.cands:
+            if _FOUND in c:
+                continue
+            if _DYN in c or bases is None:
+                hit = _designates_claude_dir(c, bases, x.glob, _ancetres_compte()) or _inconnu_compte(c, bases,
+                                                                                                    x.glob)
+            elif x.glob and _GLOB.search(c):
+                hit = _joker_compte(c, bases, True, filt)
+            else:
+                hit = any(_parcours_compte(p, filt) for p in _paths(c, ctx.child(cwds=bases)) or [])
+            if hit:
+                break
+    if hit:
+        _add(out, L_SECRET_UTILISATEUR, guard=True, cat=_L.SECRETS_UTILISATEUR)
+
+
+# Noms des secrets du compte dans du CODE (python -c, heredoc, node -e, awk), où un chemin se construit sans
+# s'écrire en entier (`Path.home() / ".ssh" / "id_rsa"`).
+_CODE_COMPTE = re.compile(
+    r"(?<![\w.-])(?:id_(?:rsa|dsa|ecdsa|ed25519|xmss)(?:_sk)?(?!\.pub)(?![\w-])|\.git-credentials|_?\.?netrc(?![\w-])"
+    r"|\.pypirc|private-keys-v1\.d|secring\.gpg|application_default_credentials\.json|access_tokens\.db"
+    r"|credentials\.db|\.aws[\\/]credentials|key[34]\.db|logins\.json|cookies\.sqlite|signedInUser\.json"
+    r"|Login Data|\.password-store|share[\\/]keyrings|kwalletd|Keychains)"
+    r"|[\w-]\.(?:kdbx|keychain-db|ppk)(?![\w-])", re.I if os.name == "nt" else 0)
+
+
+def _code_compte(code: str | None, ctx, out: list) -> None:
+    """Code d'un autre langage qui nomme un secret du compte (chemin écrit, ou nom) : plafond."""
+    if not code or ctx.remote:
+        return
+    if _CODE_COMPTE.search(code) or _cite_compte(code, False, ctx, entier=False):
+        _add(out, L_SECRET_UTILISATEUR, guard=True, cat=_L.SECRETS_UTILISATEUR)
+
+
+def _lecture_compte(tool_name: str, tool_input: dict) -> Verdict | None:
+    """Read/NotebookRead d'un secret du compte, Grep sur lui ou sur un dossier qui en contient un : plafond.
+    Glob et LS ne rendent que des noms : libres, comme `ls ~/.ssh`."""
+    if tool_name in ("Read", "NotebookRead"):
+        brut = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
+        hit = bool(brut) and secret_du_compte(_resolve(brut))
+    elif tool_name == "Grep":
+        brut = str(tool_input.get("path") or "") or str(_base())
+        vals = []
+        if tool_input.get("glob"):
+            vals.append(("g", str(tool_input.get("glob"))))
+        if tool_input.get("type"):
+            vals.append(("t", str(tool_input.get("type"))))
+        hit = _parcours_compte(_resolve(brut), _tree_filters("rg", vals))
+    else:
+        return None
+    if not hit:
+        return None
+    return _single(True, L_SECRET_UTILISATEUR, "", CRITICAL, guard=True, cats=(_L.PLAFOND, _L.SECRETS_UTILISATEUR))
 
 
 def _protected(raw_path: str) -> bool:
@@ -1837,6 +2292,8 @@ def _write_level(raw_path: str) -> str | None:
 
 def _path_level(p: Path) -> str | None:
     """Gravité d'une écriture dans le chemin ABSOLU et normalisé `p`."""
+    if secret_du_compte(p) or _under(p, list(_US.racines)):  # 04/11 : même dans un projet (coffre .kdbx…)
+        return CRITICAL
     if _under(p, [r.resolve() for r in ALLOWED_WRITE_ROOTS]):
         return None
     if _under(p, [r.resolve() for r in CRITICAL_WRITE_ROOTS]):
@@ -3362,6 +3819,8 @@ CATS: dict[str, tuple[str, ...]] = {
     L_AUDIO: (_L.ADMINISTRATION,), L_DETACH: (_L.DOUTES,), L_BRAIN_MARK: (_L.ADMINISTRATION,),
     # 04/11 (lot 3b) : zone confidentielle = un secret déclaré par l'utilisateur (case « secrets » seule, jamais Total).
     L_ZONE: (_L.PLAFOND,),
+    # 04/11 : secret du compte lu (plafond, case « secrets du compte ») ; modifié (critique, écriture).
+    L_SECRET_UTILISATEUR: (_L.PLAFOND,), L_SECRET_UTILISATEUR_MODIF: (_L.ECRITURE,),
 }
 _INCONNUE = "inconnue"  # absente du catalogue : `limites.decide` la demande toujours
 # Outils natifs (`NATIVE_POLICY`) et outils MCP nommés.
@@ -3455,6 +3914,8 @@ def _ceiling_label_cats(label: str) -> tuple[str, ...]:
     """Catégorie précise d'une étiquette du garde-fou posée sans catégorie (voir `_add`)."""
     if label == L_SECRET:
         return (_L.SECRETS,)
+    if label == L_SECRET_UTILISATEUR:  # 04/11
+        return (_L.SECRETS_UTILISATEUR,)
     if label == L_CLAUDE_ID:
         return (_L.IDENTIFIANTS_CLAUDE,)
     if label == L_MISSION_FORBIDDEN:
@@ -3657,6 +4118,8 @@ def _eval_cmd(words: list, redirs: list, ctx: _Ctx, out: list, feed) -> tuple[bo
                 _analyze(val, _deeper(ctx), out)
     stdin = feed
     for _t, op, fd, target, hd in redirs:
+        if hd is None and op in ("<", "<>") and target is not None:  # 04/11 : `ssh h < ~/.ssh/id_rsa`, `3< f`
+            _judge_compte("<", [_expand(target, ctx)], ctx, out)
         if hd is not None:
             if not hd["quoted"]:
                 _body_subs(hd["body"] or "", ctx, out)
@@ -4267,6 +4730,7 @@ def _run(argv: list, ctx: _Ctx, out: list, stdin) -> tuple[bool, tuple | None, s
             _doubt(out, D_PROGRAM)  # $CMD, $(echo rm), /usr/bin/su?o ; « $DIR/python » reste lisible
             _judge_cited("", argv[1:], ctx, out, stdin)  # programme inconnu : un fichier protégé cité = question
             _judge_claude_dir("", argv[1:], ctx, out)  # 19/10 (relecture) : `$CMD ~/.claude`
+            _judge_compte("", argv[1:], ctx, out)  # 04/11 : `$CMD ~/.ssh/id_rsa`
             _judge_ceiling_cited("", argv[1:], ctx, out)  # 23/10 (audit P29) : `$CMD ~/.claude.json`
             return False, ("pipe", None), "", []
         progs = list(dict.fromkeys(names))
@@ -4331,6 +4795,7 @@ def _program(prog: str, w0: _X, args: list, ctx: _Ctx, out: list, stdin) -> tupl
     _judge_secret(args, ctx, out, prog)
     _judge_claude_dir(prog, args, ctx, out)  # 19/10 (relecture) : tout le dossier ~/.claude
     _judge_secret_tree(prog, args, ctx, out)  # 22/10 (P27) : lecteur récursif sur un ancêtre d'un secret
+    _judge_compte(prog, args, ctx, out)  # 04/11 : secrets du compte (clés SSH, jetons, navigateurs…)
     _judge_cited(prog, args, ctx, out, stdin)
     _judge_ceiling_cited(prog, args, ctx, out)  # 23/10 (audit P29, constat 3) : réglages de Claude Code
     # 19/10 (relecture) : le CLI natif lancé par son chemin (`~/.local/share/claude/versions/2.1.285`)
@@ -4818,6 +5283,7 @@ def _awk(args: list, ctx: _Ctx, out: list) -> None:
             break
     if i < len(args):
         _raw_code(args[i].src, out)
+        _code_compte(args[i].text, ctx, out)  # 04/11 : `getline < "~/.ssh/id_rsa"` dans le programme
         # Lire un fichier protégé avec awk est libre ; « print > f », « system() », « | getline » non.
         # 19/10 : le nom cité AVANT le programme compte aussi (`awk -v f=astrel/ipc.py '…> f'`).
         name = _cited_code([c for x in args for c in x.cands], ctx) if _AWK_WRITE.search(args[i].src) else ""
@@ -5499,6 +5965,7 @@ def _judge_code(code: str | None, rest: list, family: str, ctx: _Ctx, out: list)
     protégé (dans son texte ou ses arguments), question seulement s'il peut écrire ou
     lancer. Code inconnu (script sur le disque, code venu d'un tuyau) : question."""
     texts = ([code] if code else []) + [c for x in rest for c in x.cands]
+    _code_compte(code, ctx, out)  # 04/11 : code qui nomme un secret du compte (lecture : plafond)
     name, flag, fams = _cited_guard(texts, ctx, in_cwd=True)
     if name and (code is None or _code_writes(code, family)):
         _add(out, _label_code(name), guard=flag, cat=fams)  # 18/10 (plan P7) : "dev" si levable
@@ -5529,6 +5996,8 @@ def _cited_fallback(text: str, out: list) -> None:
         _add(out, _label_code(name), guard=True)
     elif _PLANS_TEXT.search(text):  # 16/10 : un plan cité dans une commande illisible
         _add(out, L_GUARD, guard=True)
+    if _cite_compte(text, False, _Ctx(cwds=[_base()]), entier=False):  # 04/11 : un secret du compte cité
+        _add(out, L_SECRET_UTILISATEUR, guard=True, cat=_L.SECRETS_UTILISATEUR)
 
 
 def _protected_all() -> list[Path]:
@@ -5750,6 +6219,8 @@ def _judge_write_path(p: Path, out: list) -> None:
         _add(out, f"une écriture dans {p.name or s}, qui contient un fichier du garde-fou",
              guard="dev" if _liftable(p) else True,
              cat=_familles(p) if _liftable(p) else _path_cats(p))  # 18/10 (plan P7) : "dev" = levable
+    elif secret_du_compte(p):  # 04/11 : une clé, un jeton, un mot de passe réécrits
+        _add(out, L_SECRET_UTILISATEUR_MODIF)
     elif any(p in q.parents for q in [r.resolve() for r in CRITICAL_WRITE_ROOTS]):
         # Écrire DANS un dossier qui contient une zone sensible (`cp -r x ~/`, `mv ~/.config …`) :
         # une fusion peut écraser .bashrc, .ssh… (5/10).
@@ -5818,6 +6289,8 @@ def _judge_scope(p: Path, pattern: str | None, filtered: bool, out: list) -> Non
     else:
         inside = any(r in p.parents for r in roots)
     inside = inside and not any(_hits(p, pattern, r) for r in roots)  # rm -rf Studio emporterait Astrel
+    compte = list(_US.racines)  # 04/11 : un secret du compte (ou ce qui en contient) n'est jamais « dans un projet »
+    inside = inside and not (secret_du_compte(p) or _under(p, compte) or any(_hits(p, pattern, r) for r in compte))
     _add(out, L_RM if inside else L_RM_OUTSIDE, SENSITIVE if inside else CRITICAL)
 
 
@@ -5853,7 +6326,8 @@ def _judge_plain_delete(x: _X, ctx: _Ctx, out: list) -> None:
             prot = _protected_all()
             if (pattern is None and _under(p, prot)) or any(_hits(p, pattern, q) for q in prot) or _plans_like(p, pattern):
                 _add(out, L_GUARD, guard=True, cat=_path_cats(p, pattern, deletion=True))  # 24/10 (P29 lot B)
-            elif (pattern is None and _under(p, critical)) or any(_hits(p, pattern, q) for q in critical):
+            elif (pattern is None and (_under(p, critical) or secret_du_compte(p))) or any(
+                    _hits(p, pattern, q) for q in critical):  # 04/11 : + un secret du compte (coffre .kdbx…)
                 _add(out, f"une suppression de {p.name if pattern is None else pattern}, hors de tes projets")
 
 
@@ -6005,6 +6479,9 @@ def _classify(tool_name: str, tool_input: dict) -> Verdict:
             wide = not _under(_resolve(target), SECRET_PATHS)
             return _single(True, L_SECRET, "", CRITICAL, guard=True,
                            cats=(_L.PLAFOND, _L.SECRETS_LARGES if wide else _L.SECRETS))
+        compte = _lecture_compte(tool_name, tool_input)  # 04/11 : secret du compte (clé SSH, jeton, navigateur)
+        if compte is not None:
+            return compte
     if tool_name in SAFE_TOOLS:
         return Verdict(False)
 
@@ -6033,6 +6510,9 @@ def _classify(tool_name: str, tool_input: dict) -> Verdict:
             Path(os.path.normpath(_base() / os.path.expanduser(target.strip().strip("'\"")))))) if target else None
         if ceiling:  # 23/10 (plan P29, fiche 3) : secret, identifiants ou réglages de Claude Code
             return _single(True, ceiling, "", CRITICAL, guard=True, cats=(_L.PLAFOND, _ceiling_cat(target)))
+        if target and secret_du_compte(_resolve(target)) and not _MISSION.get():  # 04/11 : clé, jeton réécrits
+            return _single(True, L_SECRET_UTILISATEUR_MODIF, f"bash:{L_SECRET_UTILISATEUR_MODIF}", CRITICAL,
+                           cats=(_L.ECRITURE,))
         level = _write_level(target)
         fence: list = []
         if target:

@@ -106,6 +106,39 @@ def test_formes_win32_d_un_secret(cible):
         assert guard.assess("Read", {"file_path": forme}, mode="autonome").needs_confirm, forme
 
 
+def _comptes() -> list[Path]:
+    import os
+
+    roaming = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    return [Path.home() / ".ssh" / "id_ed25519", roaming / "Microsoft" / "Credentials" / "DFBE70A7E5CC19A3",
+            roaming / "Microsoft" / "Protect" / "S-1-5-21-1" / "cle", Path.home() / ".aws" / "credentials"]
+
+
+@pytest.mark.parametrize("cible", _comptes(), ids=lambda p: p.name)
+def test_secret_du_compte_sous_toutes_les_formes(cible):
+    """04/11 (secrets du compte) : clé SSH, identifiants et clés DPAPI de Windows, jetons du cloud : lus par Bash
+    (Git Bash, « C:\\… » cité ou non, majuscules) ou par Read (formes Win32) : plafond."""
+    for forme in formes(cible) + [str(cible.resolve()), str(cible.resolve()).upper()]:
+        v = guard.assess("Bash", {"command": f"cat {forme}"}, mode="autonome")
+        assert v.needs_confirm and v.guard is True, forme
+    for forme in formes_win32(cible):
+        v = guard.assess("Read", {"file_path": forme}, mode="autonome")
+        assert v.needs_confirm and v.guard is True, forme
+
+
+def test_profil_de_navigateur_windows():
+    import os
+
+    local = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    for p in (local / "Google" / "Chrome" / "User Data" / "Default" / "Login Data",
+              local / "Microsoft" / "Edge" / "User Data" / "Default" / "Network" / "Cookies"):
+        for forme in (str(p), p.as_posix(), str(p).upper()):
+            assert guard.assess("Read", {"file_path": forme}, mode="autonome").guard is True, forme
+        assert guard.assess("Bash", {"command": f"cat '{p}'"}, mode="autonome").guard is True
+    assert not guard.assess("Bash", {"command": f"cat {(Path.home() / '.ssh' / 'known_hosts').as_posix()}"},
+                            mode="autonome").needs_confirm
+
+
 def test_nom_court_8_3_developpe():
     import ctypes
 
