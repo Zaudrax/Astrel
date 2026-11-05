@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import mode_prive
+
 from astrel import (commandes_locales, config, core, guard, instantanes, outils_local, propositions_local,
                     routeur)
 from astrel.events import bus
@@ -58,7 +60,7 @@ def test_liste_absente_vide_et_exemple_valide(racine):
     ({"argv": ["ls", ""]}, "vide"),
     ({"argv": ["ls"], "shell": True}, "clé inconnue"),
     ({"argv": ["ls"], "dossier": "relatif/x"}, "absolu"),
-    ({"argv": ["ls"], "dossier": "/etc"}, "hors de tes projets"),
+    ({"argv": ["ls"], "dossier": os.path.abspath("/etc")}, "hors de tes projets"),  # 05/11 : absolu sous Windows aussi
     ({"argv": ["ls"], "delai_s": 0}, "delai_s"),
     ({"argv": ["ls"], "delai_s": 10_000}, "delai_s"),
     ({"argv": ["ls"], "sortie_max": 10}, "sortie_max"),
@@ -82,7 +84,7 @@ def test_ecrire_valide_avant_d_ecrire_et_0600(racine):
         commandes_locales.ecrire('{"commandes": {"x": {"argv": "rm -rf /", "dossier": "/"}}}')
     assert not f.exists()
     cmds = commandes_locales.ecrire(json.dumps({"commandes": {"ls": {"argv": ["ls"], "dossier": str(racine)}}}))
-    assert list(cmds) == ["ls"] and stat.S_IMODE(f.stat().st_mode) == 0o600
+    assert list(cmds) == ["ls"] and mode_prive(f)  # 05/11 : pas de bits de mode sous Windows
     assert json.loads(f.read_text(encoding="utf-8"))["commandes"]["ls"]["delai_s"] == 60.0
 
 
@@ -286,7 +288,7 @@ def test_deposer_n_ecrit_pas_le_fichier(projet):
     f = propositions_local.DIR / f"{r['proposition']}.json"
     data = json.loads(f.read_text(encoding="utf-8"))
     assert data["statut"] == "en attente" and data["empreinte_origine"] == propositions_local._sha_bytes(avant)
-    assert stat.S_IMODE(f.stat().st_mode) == 0o600
+    assert mode_prive(f)
     (item,) = propositions_local.lister()
     assert "-code ZORGLUB-4217" in item["diff"] and "+code ZORGLUB-0000" in item["diff"]
     assert item["etat_fichier"] == "identique"
@@ -315,6 +317,8 @@ def test_depot_refuse_lien_secret_et_fichier_prive(projet, tmp_path):
     (projet / ".env").write_text("A=1\n", encoding="utf-8")
     with pytest.raises(propositions_local.Refus, match="protégé ou secret"):
         _deposer(projet, fichier=".env", ancien="A=1", nouveau="A=2")
+    if os.name == "nt":  # 05/11 : un fichier « privé » se reconnaît à ses bits de mode, absents sous Windows
+        return
     prive = projet / "prive.txt"
     prive.write_text("x\n", encoding="utf-8")
     prive.chmod(0o600)
