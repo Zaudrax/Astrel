@@ -70,7 +70,8 @@ class RoutageCoeur:
             (list(joined.ids) if joined is not None else [])
         etat = routeur.Etat(canaux_locaux=locaux, projet=projet, source=source,
                             scan=lambda _t, p: sensible.scan(scanne, p),
-                            lecture_locale=not self._outils_locaux_raison())  # 04/11 (lot 4)
+                            lecture_locale=not self._outils_locaux_raison(),  # 04/11 (lot 4)
+                            actions_locales=not self._outils_locaux_actions_raison())  # 05/11 (lot 5)
         # Canal Local : celui DONNÉ avec le message (comme au lot 1), pas le canal ouvert par défaut.
         return routeur.decider(text, channel, pieces, {"moteur_mode": mode}, etat)
 
@@ -114,8 +115,9 @@ class RoutageCoeur:
         return False
 
     def _routage_retenir(self, dec: routeur.Decision, text: str, source: str, channel: str, shown: str | None,
-                         joined) -> None:
-        """La demande attend la réponse de l'utilisateur à l'écran ; rien n'est parti."""
+                         joined, avec_rester: bool = True) -> None:
+        """La demande attend la réponse de l'utilisateur à l'écran ; rien n'est parti. `avec_rester` : False pour une
+        demande déjà traitée en local (lot 6, « Envoyer à Claude ») : Envoyer ou Annuler seulement."""
         ch, _routed = channels.route(text, requested=channel, follow=True)
         extrait = " ".join(text.split())
         if len(extrait) > EXTRAIT:
@@ -131,7 +133,7 @@ class RoutageCoeur:
             question += "\nPièces jointes : " + ", ".join(noms)
         rester = RESTER_SANS if noms else RESTER
         options = [rester, ENVOYER] if dec.recommande == routeur.LOCAL else [ENVOYER, rester]
-        if source == "whatsapp":
+        if source == "whatsapp" or not avec_rester:
             options = [ENVOYER]  # la réponse locale ne repart pas par WhatsApp (lot 1)
         options.append(ANNULER)
         res = choices.ask(question, options, channel=ch, kind="routage",

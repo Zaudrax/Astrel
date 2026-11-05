@@ -804,6 +804,14 @@ ITEMS: dict[str, Item] = {i.key: i for i in (
          "Du plus petit au plus gros, ceux qui tiennent sur ce PC : rapide (carte graphique), mixte ou lent. "
          "Place sur le disque vérifiée avant chaque téléchargement.",
          "action", "hot", lambda: None, view=_local("models_view"), run=_local("run")),
+    # 05/11 (lot 5 du moteur local) : liste blanche des commandes du modèle local (config/commandes-locales.json,
+    # protégée par le garde-fou) ; écrite par le cœur sur un clic du HUD seulement (`commandes_locales.run`).
+    Item("local.commandes", "modele_local", "Commandes autorisées",
+         "Commandes que le modèle local peut lancer par leur identifiant, et rien d'autre (argv en liste, dossier "
+         "dans tes projets, délai et sortie bornés). Ouvert seulement après le banc du modèle local, jamais en mode "
+         "Sans confirmation ni sous la levée du garde-fou. Seulement d'ici, jamais par Claude.",
+         "action", "hot", lambda: None, view=_module_call("commandes_locales", "view"),
+         run=_module_call("commandes_locales", "run")),
     # 24/10 (plan P32, demande de l'utilisateur) : Astrel PROPOSE de lui-même, toujours avec ton accord,
     # sans t'interrompre ; un interrupteur par type, plafond de fréquence, heures calmes.
     Item("initiatives_routines", "initiatives", "État",

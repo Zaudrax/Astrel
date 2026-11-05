@@ -40,6 +40,8 @@ FULL = (
     "astrel/confidentialite.py", "astrel/maj.py", "astrel/modeles_locaux.py", "astrel/claudeai.py",
     "astrel/levee.py", "astrel/graph.py", "astrel/sensors.py", "astrel/audit.py", "astrel/bubble.py",
     "astrel/minichat.py", "tools/check_install.py",
+    # 05/11 (lot 5 du moteur local) : Réglages › Commandes autorisées, erreurs des propositions montrées au HUD
+    "astrel/commandes_locales.py", "astrel/propositions_local.py", "astrel/coeur/propositions_local.py",
 )
 # Jamais lus : le garde-fou (fichiers protégés, ses descriptions sont ajoutées à la main au
 # catalogue), les serveurs MCP (réponses à Claude), le prompt et les outils de Claude.
@@ -47,6 +49,7 @@ SKIP = (
     "astrel/guard.py", "astrel/mcp_server.py", "astrel/mcp_connectors.py", "astrel/brain.py",
     "astrel/passerelle_serveur.py", "astrel/cle_api.py", "astrel/route_hook.py", "astrel/rtk_hook.py",
     "astrel/banc.py", "astrel/banc_mcp.py", "astrel/doctor.py", "astrel/cli.py",
+    "astrel/mcp_local.py",  # 05/11 (lot 5) : serveur MCP du modèle local, réponses au modèle
 )
 SKIP_DIRS = ("astrel/tools/", "astrel/platform/")
 VISIBLE_KW = {"text", "detail", "desc", "label", "reason", "error", "title", "message", "hint", "note", "help"}

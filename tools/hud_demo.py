@@ -897,6 +897,12 @@ class DemoSettings:
             it(k, _ITEMS[k].label, _ITEMS[k].help, "choice", _ITEMS[k].default(),
                choices=[{"value": v, "label": lbl} for v, lbl in _core_choices(_ITEMS[k])])
             for k in ("images_mode", "images_ordre", "images_manuel", "video_choix")]})
+        # 05/11 (lot 6 du moteur local) : « Qui répond », même réglage que astrel/settings.py (sélecteur du HUD) ;
+        # rangé dans « Cerveau » (la démo n'a pas de section Modèle local, comme pour « Rien ne sort »)
+        next(g for g in self.groups if g["id"] == "cerveau")["items"].append(
+            it("moteur_mode", _ITEMS["moteur_mode"].label, _ITEMS["moteur_mode"].help, "choice",
+               _ITEMS["moteur_mode"].default(),
+               choices=[{"value": v, "label": lbl} for v, lbl in _core_choices(_ITEMS["moteur_mode"])]))
         self.applied = {i["key"]: copy.deepcopy(i["value"]) for g in self.groups for i in g["items"]}
 
     def _cases(self) -> None:
@@ -1236,6 +1242,52 @@ class DemoPropositions:
 demo_propositions = DemoPropositions()
 
 
+class DemoPropositionsLocal:
+    """05/11 (lot 5 du moteur local) : propositions de modification de Qwen (`propositions_local_get`,
+    `proposition_local_appliquer`, `proposition_local_refuser`) ; une applicable, une dont le fichier a changé ;
+    le diff cite une balise, qui doit rester du texte."""
+
+    def __init__(self) -> None:
+        self.items = [
+            {"proposition_id": "L20261105-101500-a1b2c3", "date": "2026-11-05 10:15", "statut": "en attente",
+             "fichier": "/home/user/Projets/Demo/README.md", "canal": "general", "raison": "Faute de frappe dans le titre.",
+             "nouveau": False, "etat_fichier": "identique", "plus": 1, "moins": 1, "empreinte": "9f8e7d6c5b4a3921",
+             "diff": ["--- README.md", "+++ README.md", "@@ -1,3 +1,3 @@", "-# Projet de démo <img src=x>",
+                      "+# Projet de démonstration <img src=x>", " ", " Une ligne inchangée."], "traitee": None},
+            {"proposition_id": "L20261105-094000-d4e5f6", "date": "2026-11-05 09:40", "statut": "en attente",
+             "fichier": "/home/user/Projets/Demo/config.toml", "canal": "general", "raison": "Délai plus long.",
+             "nouveau": False, "etat_fichier": "modifié", "plus": 1, "moins": 1, "empreinte": "1122334455667788",
+             "diff": ["--- config.toml", "+++ config.toml", "@@ -2 +2 @@", "-delai = 10", "+delai = 30"],
+             "traitee": None},
+        ]
+
+    def publish(self) -> None:
+        bus.publish("propositions_local", en_attente=sum(it["statut"] == "en attente" for it in self.items))
+
+    def command(self, name: str, cmd: dict) -> dict:
+        if name == "propositions_local_get":
+            toutes = cmd.get("toutes") is True
+            return {"ok": True, "propositions": [it for it in self.items if toutes or it["statut"] == "en attente"]}
+        it = next((x for x in self.items if x["proposition_id"] == cmd.get("proposition_id")), None)
+        if not it or it["statut"] != "en attente":
+            return {"ok": False, "error": "proposition inconnue"}
+        quand = time.strftime("%Y-%m-%d %H:%M")
+        if name == "proposition_local_appliquer":
+            if cmd.get("empreinte") != it["empreinte"]:
+                return {"ok": False, "error": "la proposition a changé depuis son affichage : relis-la"}
+            if it["etat_fichier"] != "identique":
+                return {"ok": False, "error": "le fichier a changé depuis la proposition : elle n'est pas appliquée "
+                                              "(demande-en une nouvelle)"}
+            it.update(statut="appliquée", traitee={"le": quand, "par": "utilisateur", "instantane": True})
+        else:
+            it.update(statut="refusée", traitee={"le": quand, "par": "utilisateur", "raison": str(cmd.get("raison") or "")})
+        self.publish()
+        return {"ok": True, "fichier": it["fichier"]}
+
+
+demo_propositions_local = DemoPropositionsLocal()
+
+
 def demo_audit(cmd: dict) -> dict:
     """`audit_get` de la démo (plan P3, lot F) : 75 entrées fictives, filtrées et paginées
     comme le cœur (`astrel/audit.py`) ; l'une cite une balise, qui doit rester du texte."""
@@ -1486,6 +1538,49 @@ def main() -> int:
         history.fil_ecrire([dict(type="reply", text="Ancienne note sur Sirius, sortie du fil affiché.", channel=autre,
                                  mid="ancien-sirius", ts=time.time() - 86400)])
         return {"ok": True, "autre": autre}
+    local_memo: dict[str, tuple[str, str]] = {}  # 05/11 (lot 6) : demandes locales « en mémoire » (mid → texte, canal)
+    local_log: list[dict] = []  # commandes local_* reçues (contrôles du HUD)
+
+    def demo_local(cmd: dict) -> dict:
+        """05/11 (lot 6 du moteur local) : `demo_local {text, channel}` (tests du HUD) publie une demande et sa
+        réponse locales (badge « Local », `vers_claude`) ; `local_demandes` / `local_vers_claude` comme le cœur
+        (HUD seul ; demande sensible → carte « routage » ; oubliée → refus), sans aucun moteur."""
+        from astrel import sensible
+        from astrel.choices import choices as _choices
+        from astrel.coeur import local_tour
+
+        name = str(cmd["cmd"])
+        if name == "demo_local":
+            ch, mid = str(cmd.get("channel") or channels.default), uuid.uuid4().hex[:12]
+            texte = str(cmd.get("text") or "explique la photosynthèse")
+            bus.publish("transcript", who="user", text=f"en local : {texte}", source="clavier", channel=ch, mid=mid,
+                        engine="local")
+            garde = not cmd.get("hors_ligne") and not cmd.get("oubliee")  # `oubliee` : comme après une relance
+            if garde:
+                local_memo[mid] = (texte, ch)
+            bus.publish("reply", text=str(cmd.get("reply") or "(démo) Réponse du modèle local."), channel=ch,
+                        reply_to=mid, mid=uuid.uuid4().hex[:12], engine="local",
+                        **({"vers_claude": True} if garde else {"hors_ligne": True} if cmd.get("hors_ligne") else {}))
+            return {"ok": True, "mid": mid}
+        local_log.append({"cmd": name, "mid": cmd.get("mid"), "via": cmd.get("_via")})
+        if cmd.get("_from_claude") is True or cmd.get("_via") != "hud":
+            return {"ok": False, "error": f"{name} est réservé au HUD de l'utilisateur"}
+        if name == "local_demandes":
+            return {"ok": True, "mids": list(local_memo), "hors_ligne": False}
+        item = local_memo.pop(str(cmd.get("mid") or ""), None)
+        if item is None:
+            return {"ok": False, "error": local_tour.VC_OUBLIEE, "raison": "oubliee"}
+        texte, ch = item
+        if sensible.scan(texte, (), zones_conf=[]):
+            _choices.ask("(démo) Ta demande contient des données sensibles. L'envoyer à Claude ?",
+                         ["Envoyer à Claude", "Annuler"], channel=ch, kind="routage")
+            return {"ok": True, "mid": cmd.get("mid"), "carte": True}
+        bus.publish("notice", level="info", channel=ch, text=local_tour.VC_NOTICE)
+        mid = uuid.uuid4().hex[:12]
+        bus.publish("transcript", who="user", text=texte, source="clavier", channel=ch, mid=mid)
+        bus.publish("reply", text="(démo) Réponse de Claude.", usage={}, channel=ch, reply_to=mid, mid=uuid.uuid4().hex[:12])
+        return {"ok": True, "mid": cmd.get("mid"), "envoye": True}
+
     staged: list[dict] = []  # pièces jointes en attente déposées par le HUD (16/10)
     last_sent: list[str] = []  # id des pièces parties avec la dernière phrase dite (`demo_voice`)
 
@@ -1534,6 +1629,9 @@ def main() -> int:
             return demo_audit(cmd)
         elif cmd.get("cmd") in ("propositions_get", "proposition_appliquer", "proposition_refuser"):  # 04/11 (T49)
             return demo_propositions.command(str(cmd["cmd"]), cmd)
+        elif cmd.get("cmd") in ("propositions_local_get", "proposition_local_appliquer",
+                                "proposition_local_refuser"):  # 05/11 (lot 5 du moteur local)
+            return demo_propositions_local.command(str(cmd["cmd"]), cmd)
         elif cmd.get("cmd") == "demo_plan":  # tests du HUD : un nouveau plan déposé en direct
             return demo_plans.new_plan()
         elif cmd.get("cmd") == "demo_plans_offline":  # tests du HUD : cœur injoignable pour les plans
@@ -1724,6 +1822,8 @@ def main() -> int:
             return {"ok": True} if ok else {"ok": False, "error": "lien refusé : seules les adresses https:// s'ouvrent"}
         elif cmd.get("cmd") == "history_query":  # 04/11 : recherche (Ctrl+K), la VRAIE commande, index jetable
             return history.commande_hud(cmd)
+        elif cmd.get("cmd") in ("local_vers_claude", "local_demandes", "demo_local"):  # 05/11 (lot 6 du moteur local)
+            return demo_local(cmd)
         elif cmd.get("cmd") == "demo_recherche":  # tests du HUD : messages « Sirius » dans plusieurs canaux
             return demo_recherche()
         elif cmd.get("cmd") == "demo_answering":  # tests du HUD : une réponse en cours d'écriture (Échap = ■)
@@ -1945,6 +2045,7 @@ def main() -> int:
     seed_demo_todo(scratch, demo_plans)  # 26/10 (plan P38 lot 2) : vue « Tâches »
     reports.publish()
     demo_propositions.publish()  # 04/11 (T49) : pastille « Mémoire »
+    demo_propositions_local.publish()  # 05/11 (lot 5 du moteur local) : pastille « Qwen »
     bus.publish("autonomy", mode="autonome")
     bus.publish("usage", mode="conversation", followup=8.0)
     bus.publish("grants", items=[{"key": "bash:une tâche planifiée", "until": time.time() + 1500}])

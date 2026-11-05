@@ -10,6 +10,10 @@ veut traiter sur sa machine (« en local : … », canal Local) part chez Qwen (
 - Pièces jointes : pas encore lues en local (lot 1) ; refusées avec la raison, rendues à la barre.
 - 04/11 (lot 4) : une demande qui a seulement besoin de LIRE passe par `outils_local` (CLI sur le modèle local,
   Read/Grep/Glob, hook du garde-fou) quand ses outils sont ouverts ; son process compte parmi ceux de Claude.
+- 05/11 (lot 6) : « Envoyer à Claude » sous une réponse locale (commande `local_vers_claude {mid}`, HUD de
+  l'utilisateur SEUL) : la DEMANDE d'origine (jamais la réponse de Qwen), gardée EN MÉMOIRE seulement (les
+  `MEMO_MAX` dernières, jamais sur disque ; rien pour une demande faite hors ligne), repasse par la barrière du
+  lot 3 : sensible → carte « routage » (rien ne part sans le clic), sinon `handle(route="claude")`.
 
 Mixin de `Astrel` (core.py), comme les autres de `astrel/coeur/`.
 """
@@ -18,8 +22,9 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+from collections import OrderedDict
 
-from .. import config, langue, moteur_local, outils_local, routeur, state
+from .. import config, hors_ligne, langue, moteur_local, outils_local, routeur, sensible, state
 from ..channels import channels
 from ..events import bus
 from ..voice import SentenceSplitter
@@ -30,6 +35,11 @@ REFUS_WHATSAPP = ("Une demande « en local » ne se fait pas depuis WhatsApp : l
 REFUS_PIECES = ("Le moteur local ne lit pas encore les pièces jointes : elles sont rendues à la barre. "
                 "Envoie la demande sans elles, ou à Claude.")
 OCCUPE = "Le moteur local répond déjà à une demande : attends la fin ou arrête-la (■)."
+# 05/11 (lot 6) : « Envoyer à Claude » sous une réponse locale.
+MEMO_MAX = 20  # demandes locales gardées en mémoire pour un renvoi à Claude
+VC_OUBLIEE = "demande plus en mémoire (déjà envoyée, ou Astrel a redémarré) : retape-la"
+VC_HORS_LIGNE = "mode « rien ne sort » : Claude est arrêté, rien ne part"
+VC_NOTICE = "Ta demande d'origine part chez Claude (pas la réponse du modèle local)."
 
 
 class TourLocalCoeur:
@@ -57,6 +67,15 @@ class TourLocalCoeur:
         try:
             return outils_local.raison_indisponible(self._outils_locaux.base, bool(getattr(self, "_total", False)),
                                                     bool(getattr(self, "_lift", False)))
+        except Exception as exc:
+            return f"outils du modèle local indisponibles ({exc})"
+
+    def _outils_locaux_actions_raison(self) -> str:
+        """05/11 (lot 5) : pourquoi les commandes autorisées et les propositions du local restent fermées."""
+        try:
+            return outils_local.raison_actions_indisponible(self._outils_locaux.base,
+                                                            bool(getattr(self, "_total", False)),
+                                                            bool(getattr(self, "_lift", False)))
         except Exception as exc:
             return f"outils du modèle local indisponibles ({exc})"
 
@@ -137,7 +156,10 @@ class TourLocalCoeur:
                 projet = channels.workdir_of(ch) or config.WORKDIR
             except Exception:
                 projet = config.WORKDIR
-            return self._outils_locaux.repondre(demande, lang, projet=projet, stop=stop), True
+            # 05/11 (lot 5) : commandes autorisées et propositions, revérifiées elles aussi au moment de répondre.
+            actions = not self._outils_locaux_actions_raison()
+            return self._outils_locaux.repondre(demande, lang, projet=projet, stop=stop, actions=actions,
+                                                canal=ch), True
         return self._moteur_local.repondre(demande, lang, stop=stop), False
 
     def _tour_local_reponse(self, demande: str, source: str, ch: str, mid: str, outils: bool = False) -> None:
@@ -173,11 +195,83 @@ class TourLocalCoeur:
             if texte and avec_outils and not e["stop"].is_set():
                 self._moteur_local._garder(demande, texte)  # la suite de la conversation locale s'en souvient
             if texte:
+                # 05/11 (lot 6) : demande gardée en mémoire pour « Envoyer à Claude », jamais une demande hors ligne
+                hl = hors_ligne.actif()
+                garde = not hl and source in ("voix", "clavier") and self._local_memo_noter(mid, demande, ch)
                 bus.publish("reply", text=texte, channel=ch, reply_to=mid, mid=uuid.uuid4().hex[:12],
-                            engine="local")
+                            engine="local", **({"hors_ligne": True} if hl else {}),
+                            **({"vers_claude": True} if garde else {}))
             log.info("tour local fini en %.1f s (%d caractères%s)", time.monotonic() - t0, len(texte),
                      ", arrêté" if e["stop"].is_set() else "")
             if dit and source == "voix" and not self._in_conversation and self._followup_s() > 0:
                 self._followup = True  # comme après une réponse de Claude dite : il peut enchaîner
             if not self.speaker.busy and not self._in_conversation and not self._turn_active:
                 self.status.set(self._rest_state(), only=(state.THINKING, state.WORKING))
+
+    # --- 05/11 (lot 6) : « Envoyer à Claude » sous une réponse locale
+
+    def _local_memo(self) -> tuple[threading.Lock, OrderedDict]:
+        """(verrou, demandes) : mid de la demande → {demande, channel, at}, EN MÉMOIRE seulement."""
+        m = self.__dict__.get("_local_memo_d")
+        if m is None:
+            m = self.__dict__.setdefault("_local_memo_d", (threading.Lock(), OrderedDict()))
+        return m
+
+    def _local_memo_noter(self, mid: str, demande: str, ch: str) -> bool:
+        if not mid or not str(demande or "").strip():
+            return False
+        verrou, memo = self._local_memo()
+        with verrou:
+            memo[mid] = {"demande": demande, "channel": ch, "at": time.time()}
+            memo.move_to_end(mid)
+            while len(memo) > MEMO_MAX:
+                memo.popitem(last=False)
+        return True
+
+    @staticmethod
+    def _local_hud_refus(name: str, cmd: dict) -> str:
+        """HUD de l'utilisateur SEUL : refusé à Claude, à la bulle, au canal de contrôle et à WhatsApp."""
+        if cmd.get("_from_claude") is True or cmd.get("_via") != "hud":
+            log.warning("%s refusé : hors du HUD de l'utilisateur (%s)", name, cmd.get("_via") or "?")
+            return f"{name} est réservé au HUD de l'utilisateur"  # même texte que history_query
+        return ""
+
+    def _cmd_local_demandes(self, name: str, cmd: dict) -> dict:
+        """Demandes locales encore en mémoire (leurs mid, jamais le texte) : le HUD grise les autres boutons."""
+        refus = self._local_hud_refus(name, cmd)
+        if refus:
+            return {"ok": False, "error": refus}
+        verrou, memo = self._local_memo()
+        with verrou:
+            mids = list(memo)
+        return {"ok": True, "mids": mids, "hors_ligne": hors_ligne.actif()}
+
+    def _cmd_local_vers_claude(self, name: str, cmd: dict) -> dict:
+        refus = self._local_hud_refus(name, cmd)
+        if refus:
+            return {"ok": False, "error": refus}
+        return self._local_vers_claude(str(cmd.get("mid") or "").strip())
+
+    def _local_vers_claude(self, mid: str) -> dict:
+        """Renvoie à Claude la demande locale `mid` (celle de l'utilisateur) par la barrière du lot 3."""
+        if hors_ligne.actif():
+            return {"ok": False, "error": VC_HORS_LIGNE, "raison": "hors_ligne"}
+        verrou, memo = self._local_memo()
+        with verrou:
+            item = memo.pop(mid, None)
+        if item is None:
+            return {"ok": False, "error": VC_OUBLIEE, "raison": "oubliee"}
+        demande, ch = item["demande"], item["channel"]
+        raisons = tuple(sensible.scan(demande, ()))
+        if raisons:  # même règle que « avec Claude : » sur une donnée sensible : carte, rien ne part sans le clic
+            dec = routeur.Decision(routeur.CLAUDE, "renvoi", demande, raisons, routeur.CARTE_SENSIBLE, routeur.CLAUDE,
+                                   explicite=True)
+            self._routage_journal(dec, "clavier")
+            self._routage_retenir(dec, demande, "clavier", ch, None, None, avec_rester=False)
+            return {"ok": True, "mid": mid, "carte": True}
+        self._routage_journal(routeur.Decision(routeur.CLAUDE, "renvoi", demande, explicite=True), "clavier")
+        log.info("demande locale renvoyée à Claude (%d caractères)", len(demande))
+        bus.publish("notice", level="info", channel=ch, text=VC_NOTICE)
+        threading.Thread(target=self.handle, args=(demande, "clavier", ch), kwargs={"route": routeur.CLAUDE},
+                         name="local-vers-claude", daemon=True).start()
+        return {"ok": True, "mid": mid, "envoye": True}

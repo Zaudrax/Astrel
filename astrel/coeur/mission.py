@@ -281,6 +281,7 @@ class MissionCoeur:
               ("courrier", "_courrier_tick"),            # plan P33 : courrier entre agents, toutes les 5 s
               ("todo", "_todo_tick"),                    # plan P38 lot 3 : « prêt à clore »
               ("propositions de mémoire", "_propositions_tick"),  # 04/11 (T49) : badge, toutes les 5 s
+              ("propositions de Qwen", "_propositions_local_tick"),  # 05/11 (lot 5) : badge et notice, 5 s
               ("relevé du quota", "_quota_tick"))        # 22/10 : quota relevé hors des tours
     TICK_PANNE_S = 60.0  # un tick qui retombe en panne : une ligne de journal par minute au plus
 

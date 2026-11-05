@@ -20,7 +20,9 @@ import { initPlans } from "./plans.js";
 import { initTodo } from "./todo.js";
 import { initAudit } from "./audit.js";
 import { initPropositions } from "./propositions.js";
+import { initPropositionsLocal } from "./propositions-local.js"; // 05/11 (lot 5 du moteur local)
 import { initRecherche, openSearch } from "./recherche.js";
+import { initMoteur, localReplyActions } from "./moteur.js"; // 05/11 (lot 6 du moteur local)
 import { hydrateIcons, icon, setIcon, setLabel, stripEmoji } from "./icons.js";
 import { applyI18n, assistantName, locale, t, tx } from "./i18n.js";
 import { msgTime } from "./heure.js";
@@ -361,6 +363,7 @@ on("reply", (ev) => {
   // après un rechargement, elle compterait comme non lue).
   if (!ev.replay && viewing && shownIn(channel) === activeChannel) markSeen(activeChannel, Number(ev.ts) || undefined);
   if (m && ev.report) reportArrived(m, ev);
+  if (m && ev.engine === "local") localReplyActions(m, ev); // 05/11 (lot 6) : « Envoyer à Claude »
 });
 
 // ------------------------------------------------------------------ comptes rendus
@@ -2176,6 +2179,7 @@ addEventListener("keydown", (e) => {
   });
 });
 initSettings(toast); // Réglages (15/10) : hud/src/settings.js
+initMoteur(toast); // 05/11 (lot 6 du moteur local) : sélecteur « Qui répond », « Envoyer à Claude »
 initCalibrage(); // 02/11 : assistant de calibrage du micro (hud/src/calibrage.js)
 // 28/10 (plan P40 lot A5) : panneau « Images » sous la barre, Réglages › Images, évènement `ia_etat`
 initImages({ toast, channel: () => activeChannel });
@@ -2195,6 +2199,7 @@ initPlans(toast); // Plans (15/10, mode plan) : hud/src/plans.js
 initTodo(toast); // Tâches par projet (26/10, plan P38 lot 2) : hud/src/todo.js
 initAudit(); // Journal d'audit (plan P3, lot F) : hud/src/audit.js
 initPropositions(toast); // Propositions de mémoire (04/11, T49) : hud/src/propositions.js
+initPropositionsLocal(toast); // Propositions de Qwen (05/11, lot 5 du moteur local) : hud/src/propositions-local.js
 // 04/11 : recherche dans tous les canaux (hud/src/recherche.js) : bouton loupe et Ctrl+K, Avancé seulement.
 initRecherche({
   command,

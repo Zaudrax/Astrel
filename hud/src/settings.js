@@ -74,7 +74,7 @@ const ITEM_ICONS = {
   quota_offer: "gauge", quota_offer_pct: "gauge", reprise_auto: "refresh", quota_refresh: "refresh",
   quota_arret: "bot", quota_note_pct: "gauge", quota_stop_pct: "gauge", // 24/10 (plan P34) : agents près de la limite
   quota_reprise: "refresh", // 27/10 : relance des agents arrêtés pour le quota (auto, carte, rien)
-  "local.mode": "brain", "local.materiel": "monitor", "local.modeles": "database",
+  "local.mode": "brain", "local.materiel": "monitor", "local.modeles": "database", "local.commandes": "terminal",
   fournisseur: "cloud", "fournisseur.cles": "lock", depense_alerte_usd: "bell",
   capteurs: "scan",
   // 24/10 (plan P32) : initiatives d'Astrel
@@ -333,10 +333,13 @@ async function act(key, a) {
   } else if (a.input) {
     // Valeur demandée (numéro pour « Relier avec un code ») : envoyée sous `value`.
     // `secret` (clé API, plan P11) : saisie masquée, jamais affichée ni gardée ici.
+    // 05/11 (lot 5 du moteur local) : `multiline` (zone de texte) et `value` (texte de départ, jamais un secret).
     const r = await openModal({
       title: label, text: tx(a.confirm) || "", ok: label,
       fields: [{ name: "value", label: tx(String(a.input.label || "")) || t("settings.value"), required: true,
-        ...(a.input.secret ? { type: "password" } : {}) }],
+        ...(a.input.secret ? { type: "password" } : {}),
+        ...(a.input.multiline && !a.input.secret ? { multiline: true, rows: 14 } : {}),
+        ...(typeof a.input.value === "string" && !a.input.secret ? { value: a.input.value } : {}) }],
     });
     if (!r) return;
     input = r.value.trim();

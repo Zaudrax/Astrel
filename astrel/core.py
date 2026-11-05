@@ -503,6 +503,8 @@ from .coeur.calibrage import CALIBRAGE_COMMANDS, CalibrageCoeur  # 02/11 : assis
 from .coeur.langue import LangueCoeur  # 02/11 : conversation anglaise
 from .coeur.cycle import CycleCoeur  # 04/11 (T46) : cerveau qui tombe proprement
 from .coeur.propositions import PROPOSITIONS_COMMANDS, PropositionsCoeur  # 04/11 (T49) : mémoire à valider
+# 05/11 (lot 5 du moteur local) : propositions de modification du modèle local, l'utilisateur seul (HUD)
+from .coeur.propositions_local import PROPOSITIONS_LOCAL_COMMANDS, PropositionsLocalCoeur
 from .coeur.local_tour import TourLocalCoeur  # 04/11 : moteur local (Qwen), demande forcée en local
 from .coeur.hors_ligne import HorsLigneCoeur  # 04/11 : mode « rien ne sort » (lot 2 du moteur local)
 from .coeur.routage import RoutageCoeur  # 04/11 : routage des demandes, barrière des données sensibles (lot 3)
@@ -537,7 +539,7 @@ def _table_commandes(*paires: tuple[Any, str]) -> dict[str, str]:
 
 class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, ConfirmationsCoeur, TachesCoeur, QuotaCoeur,
              FiabiliteCoeur, CalibrageCoeur, LangueCoeur, CycleCoeur, PropositionsCoeur, TourLocalCoeur,
-             HorsLigneCoeur, RoutageCoeur):
+             HorsLigneCoeur, RoutageCoeur, PropositionsLocalCoeur):
     # 04/11 (T58, pas 2a) : l'état du tour en cours vit dans `self.tour` (`astrel/tour.py`, champs commentés
     # là-bas) ; les anciens noms (`_turn_active`, `_hushed`, `_splitter`…) en sont des descripteurs.
     _turn_active = DuTour("active")
@@ -1157,6 +1159,10 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
     def _cmd_propositions_commands(self, name: str, cmd: dict) -> Any:
         # 04/11 (T49) : propositions de mémoire, HUD ou terminal, l'utilisateur seul.
         return self._propositions_command(name, cmd)
+
+    def _cmd_propositions_local_commands(self, name: str, cmd: dict) -> Any:
+        # 05/11 (lot 5 du moteur local) : propositions de Qwen, l'utilisateur seul (appliquer : HUD seulement).
+        return self._propositions_local_command(name, cmd)
 
     def _cmd_guide_get(self, name: str, cmd: dict) -> Any:
         # Guide de démarrage du HUD (18/10, plan P5) : l'utilisateur seul (ou la personne
@@ -3400,6 +3406,10 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         except Exception:
             log.exception("propositions de mémoire illisibles")
         try:
+            self._publish_propositions_local(force=True)  # 05/11 (lot 5) : badge « Propositions de Qwen »
+        except Exception:
+            log.exception("propositions du modèle local illisibles")
+        try:
             todo_mod.todo.publish([(c.id, c.label) for c in channels.items()])  # plan P38 : vue « Tâches »
         except Exception:
             log.exception("todo illisible")
@@ -3681,6 +3691,7 @@ Astrel._COMMANDES = _table_commandes(
     (("settings_get", "settings_set", "settings_apply", "settings_action"), "_cmd_settings_get"),
     (_PLAN_HUD_COMMANDS, "_cmd_plan_hud_commands"),
     (PROPOSITIONS_COMMANDS, "_cmd_propositions_commands"),
+    (PROPOSITIONS_LOCAL_COMMANDS, "_cmd_propositions_local_commands"),  # 05/11 (lot 5 du moteur local)
     (("guide_get", "guide_mark"), "_cmd_guide_get"),
     (("capacites_get",), "_cmd_capacites_get"),
     (("audit_get",), "_cmd_audit_get"),
@@ -3713,6 +3724,9 @@ Astrel._COMMANDES = _table_commandes(
     (("stop_task", "task_stop"), "_cmd_stop_task"),
     (("task_detail",), "_cmd_task_detail"),
     (("history_query",), "_cmd_history_query"),  # 04/11 : recherche du HUD, l'utilisateur seul
+    # 05/11 (lot 6 du moteur local) : « Envoyer à Claude » sous une réponse locale, HUD de l'utilisateur seul
+    (("local_vers_claude",), "_cmd_local_vers_claude"),
+    (("local_demandes",), "_cmd_local_demandes"),
     (("agent_effort",), "_cmd_agent_effort"),
     (("memory_top",), "_cmd_memory_top"),
     (("read_report", "lire"), "_cmd_read_report"),

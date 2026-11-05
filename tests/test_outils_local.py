@@ -282,8 +282,8 @@ class _Flux:
     def __init__(self, nom):
         self.nom, self.appels = nom, []
 
-    def repondre(self, demande, langue="fr", projet=None, stop=None):
-        self.appels.append((demande, projet))
+    def repondre(self, demande, langue="fr", projet=None, stop=None, **kw):  # 05/11 (lot 5) : actions, canal
+        self.appels.append((demande, projet, kw.get("actions")))
         yield f"réponse {self.nom}"
 
     base = "qwen3.5:9b"

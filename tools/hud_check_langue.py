@@ -276,6 +276,43 @@ async def liens_en(p: Page) -> None:
     await asyncio.sleep(0.2)
 
 
+async def moteur_en(p: Page) -> None:
+    """05/11 (lot 6 du moteur local) en anglais : sélecteur « Qui répond » (badge, titre, menu, hors ligne) et bouton
+    « Envoyer à Claude » sous une réponse locale (actif, grisé avec la raison)."""
+    from hud_check_rendu import fake_event
+    demo = lambda cmd, **a: p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': cmd, **a}))}), true")
+    await p.js("document.querySelectorAll('.menu, .toast').forEach(m => m.remove()), true")
+    b = await p.js("({ text: document.querySelector('#engine-badge').innerText.trim(), title: document.querySelector('#engine-badge').title })")
+    check(f"Qui répond en anglais : « {b['text']} », « {b['title'][:55]}… »",
+          b["text"] == "Auto" and b["title"].startswith("Who answers your requests: Automatic"))
+    await click(p, "#engine-badge")
+    await p.until("!!document.querySelector('.menu.engine-menu')", 3)
+    items = await p.js("[...document.querySelectorAll('.menu.engine-menu .engine-item-head')].map(i => i.textContent)")
+    await scan(p, "menu « Qui répond »")
+    check(f"menu « Qui répond » en anglais : {items}", items == ["Automatic", "Local model", "Claude", "Hybrid (local first)"])
+    await p.js("document.querySelectorAll('.menu').forEach(m => m.remove()), true")
+    await fake_event(p, {"type": "model", "active": "sonnet", "label": "Offline · qwen3.5:9b", "id": "qwen3.5:9b", "offline": True})
+    off = await p.js("({ text: document.querySelector('#engine-badge').innerText.trim(), title: document.querySelector('#engine-badge').title })")
+    await scan(p, "Qui répond hors ligne")
+    await fake_event(p, {"type": "model", "active": "sonnet", "label": "Sonnet", "id": ""})
+    check(f"Qui répond hors ligne en anglais : « {off['text']} », « {off['title'][:50]}… »",
+          off["text"] == "Offline · Local" and off["title"].startswith("Nothing leaves"))
+    chan = await p.js("document.querySelector('.channel-tab.on')?.dataset.chan || 'general'")
+    last = "[...document.querySelectorAll('#transcript .msg.astrel.engine-local')].at(-1)"
+    nb = "document.querySelectorAll('#transcript .msg.astrel.engine-local').length"
+    avant = await p.js(nb)
+    await demo("demo_local", text="explain tides", channel=chan, reply="Tides come from the Moon.")
+    await p.until(f"{nb} > {avant} && !!{last}.querySelector('.to-claude')", 4)
+    on = await p.js(f"({{ text: {last}.querySelector('.to-claude').innerText.trim(), title: {last}.querySelector('.to-claude').title }})")
+    await demo("demo_local", text="explain tides", channel=chan, reply="Tides come from the Moon.", oubliee=True)
+    await p.until(f"{nb} > {avant} + 1 && {last}.querySelector('.local-why').textContent !== ''", 4)
+    why = await p.js(f"{last}.querySelector('.local-why').textContent")
+    await scan(p, "Envoyer à Claude sous une réponse locale")
+    check(f"Envoyer à Claude en anglais : « {on['text']} », « {on['title'][:45]}… », grisé « {why} »",
+          on["text"] == "Send to Claude" and on["title"].startswith("Send your original request")
+          and why.startswith("No longer in memory"))
+
+
 async def chat_lot2_en(p: Page) -> None:
     """04/11 (chat, lot 2) en anglais : chemin copié d'un clic (titre, toast), ■ et Échap (titre, toast), recherche
     dans tous les canaux (bouton, fenêtre, état, groupes, archives, note d'un message sorti du fil)."""
@@ -410,6 +447,7 @@ async def run(url: str) -> None:
         await p.shot("apres-en-hud.png")
         await liens_en(p)  # 04/11 : liens du fil, Copier, bouton ↓
         await chat_lot2_en(p)  # 04/11 : chemins copiés, Échap = ■, recherche dans tous les canaux
+        await moteur_en(p)  # 05/11 (lot 6 du moteur local) : « Qui répond », « Envoyer à Claude »
         await p.js("document.querySelector('#activity').classList.add('hidden')")
         # 28/10 (plan P40 lot A5) : panneau « Images » sous la barre, en Auto puis en Manuel
         await click(p, "#images-btn")
@@ -530,6 +568,11 @@ async def run(url: str) -> None:
         await p.until("!!document.querySelector('.modal.propositions .prop-item')", 6)
         await asyncio.sleep(0.4)
         await scan(p, "Memory")
+        await close_panel(p)
+        await click(p, "#qprop-chip")  # 05/11 (lot 5 du moteur local) : panneau « Qwen proposals »
+        await p.until("!!document.querySelector('.modal.propositions .prop-item.k-qwen')", 6)
+        await asyncio.sleep(0.4)
+        await scan(p, "Qwen proposals")
         await close_panel(p)
         await click(p, "#guide-chip")
         await p.until("!!document.querySelector('.modal.guide .guide-topic')", 8)

@@ -1,5 +1,7 @@
 """T58 pas 1 (04/11) : `_on_command` en table nom → méthode. Ce test FIGE, avant et après le déplacement du
-code, les noms traités (147 avec history_query, 04/11) et les refus faits à Claude (message exact)."""
+code, les noms traités (147 avec history_query, 04/11 ; 149 avec local_vers_claude et local_demandes, 05/11 ;
+152 avec les propositions du modèle local, lot 5, 05/11) et
+les refus faits à Claude (message exact)."""
 from __future__ import annotations
 
 import ast
@@ -18,11 +20,12 @@ NOMS = {
     "end_listen", "endlisten", "estop", "followup", "grants", "graph", "guide_get", "guide_mark", "history_query", "hud_here",
     "hud_pages", "hud_replace", "hush", "image_compte_ajouter", "image_compte_connecter", "image_compte_ordre",
     "image_compte_renommer", "image_compte_retirer", "image_generate", "image_piece", "image_retry", "image_status",
-    "initiative", "interrupt", "lire", "local", "local_off", "local_on", "media_open", "media_playing", "open_link",
+    "initiative", "interrupt", "lire", "local", "local_demandes", "local_off", "local_on", "local_vers_claude", "media_open", "media_playing", "open_link",
     "memory_top", "mic", "micprofile", "mics", "mission", "mission_auto", "mission_close", "mode", "model",
     "models", "mute", "mute_all", "mute_voice", "off", "on", "pause", "photo", "plan_comment", "plan_get",
     "plan_list", "plan_reject", "plan_reply", "plan_revise", "plan_submit", "plan_validate", "plans_get",
     "proposition_appliquer", "proposition_refuser", "propositions_get", "quit", "quota_refresh", "rapports",
+    "proposition_local_appliquer", "proposition_local_refuser", "propositions_local_get",  # 05/11 (lot 5)
     "read_report", "reflex_allowed", "reflex_create", "reflex_delete", "reflex_enable", "reflexes", "report",
     "reports", "reprendre", "reprends", "reset", "restart", "resume", "say", "sensor", "sensors",
     "settings_action", "settings_apply", "settings_get", "settings_set", "show_media", "silence", "status", "stop",
@@ -45,6 +48,10 @@ REFUS = {
     "plan_reject": "plans réservés à l'utilisateur (HUD ou terminal), refusés à Claude",
     "proposition_appliquer": "propositions de mémoire réservées à l'utilisateur (HUD ou terminal), refusées à Claude",
     "proposition_refuser": "propositions de mémoire réservées à l'utilisateur (HUD ou terminal), refusées à Claude",
+    # 05/11 (lot 5 du moteur local) : propositions de modification du modèle local
+    "propositions_local_get": "propositions du modèle local réservées à l'utilisateur (HUD), refusées à Claude",
+    "proposition_local_appliquer": "propositions du modèle local réservées à l'utilisateur (HUD), refusées à Claude",
+    "proposition_local_refuser": "propositions du modèle local réservées à l'utilisateur (HUD), refusées à Claude",
     "propositions_get": "propositions de mémoire réservées à l'utilisateur (HUD ou terminal), refusées à Claude",
     "confirm": "commande réservée à l'utilisateur (HUD ou terminal), refusée à Claude",
     "mission_close": "commande réservée à l'utilisateur (HUD ou terminal), refusée à Claude",
@@ -55,6 +62,8 @@ REFUS = {
     "guide_mark": "guide réservé à la personne devant l'écran, refusé à Claude",
     "capacites_get": "page des capacités réservée à la personne devant l'écran, refusée à Claude",
     "history_query": "history_query est réservé au HUD de l'utilisateur",  # 04/11 : recherche du HUD
+    "local_vers_claude": "local_vers_claude est réservé au HUD de l'utilisateur",  # 05/11 (lot 6 du moteur local)
+    "local_demandes": "local_demandes est réservé au HUD de l'utilisateur",
 }
 
 

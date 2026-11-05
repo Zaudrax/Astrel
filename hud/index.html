@@ -58,6 +58,8 @@
         <button class="chip" id="audit-chip" title="Journal : qui a autorisé quoi (confirmations, refus, envois WhatsApp, plans, Sans confirmation, agents)" data-i18n-title="audit.chip_title"><i data-icon="activity"></i><span data-i18n="audit.chip">Journal</span></button>
         <!-- 04/11 (T49) : propositions de mémoire à valider ; visible seulement s'il y en a (hud/src/propositions.js) -->
         <button class="chip hidden" id="propositions-chip" title="Mémoire : propositions à valider" data-i18n-title="prop.chip_title"><i data-icon="book"></i><span data-i18n="prop.chip">Mémoire</span><b id="propositions-badge" class="chip-count hidden" aria-label="propositions de mémoire à valider" data-i18n-aria="prop.badge">0</b></button>
+        <!-- 05/11 (lot 5 du moteur local) : modifications proposées par Qwen ; visible seulement s'il y en a (hud/src/propositions-local.js) -->
+        <button class="chip hidden" id="qprop-chip" title="Propositions de Qwen : modifications à relire" data-i18n-title="qprop.chip_title"><i data-icon="shield"></i><span data-i18n="qprop.chip">Qwen</span><b id="qprop-badge" class="chip-count hidden" aria-label="modifications proposées par le modèle local" data-i18n-aria="qprop.badge">0</b></button>
         <button class="chip icon-only" id="settings-chip" title="Réglages d'Astrel" aria-label="Réglages" data-i18n-title="settings.title" data-i18n-aria="settings.chip"><i data-icon="settings"></i></button>
       </div>
       <div class="tgroup" role="group" aria-label="Actions" data-i18n-aria="top.actions">
@@ -102,6 +104,8 @@
       <div id="usage-note" class="usage-note hidden"></div>
     </div>
     <div class="badges">
+      <!-- 05/11 (lot 6 du moteur local) : qui répond (réglage moteur_mode), visible aussi en Simple -->
+      <button type="button" id="engine-badge" class="badge" aria-haspopup="menu" aria-expanded="false" title="Qui répond à tes demandes" data-i18n-title="engine.change"><i data-icon="orbit" class="lead"></i>—</button>
       <span id="model-badge" class="badge" title="Changer de modèle" data-i18n-title="model.change"><i data-icon="brain" class="lead"></i>—</span>
       <!-- 23/10 (plan P28, demande de l'utilisateur) : effort de réflexion du cerveau, à côté du modèle -->
       <span id="effort-badge" class="badge" title="Changer l'effort de réflexion" data-i18n-title="effort.change"><i data-icon="gauge" class="lead"></i>—</span>

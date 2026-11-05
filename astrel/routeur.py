@@ -134,6 +134,16 @@ _LECTURE = re.compile(
     r"|sshd_config|sources?)\b"
     r"|\b(?:read|analy[sz]e|inspect|audit|review|look at|explain|summari[sz]e|grep|search)\b[^.?!]{0,40}"
     r"\b(?:files?|folders?|director(?:y|ies)|code|config\w*|logs?|project|scripts?|sources?)\b")
+# 05/11 (lot 5) : lancer une commande AUTORISÉE par l'utilisateur, ou PROPOSER une modification d'un fichier (rien
+# n'est écrit sans son clic au HUD) : le local le fait quand ces outils sont ouverts (`Etat.actions_locales`).
+# « supprime », « envoie », « installe », le web… restent proposés à Claude (`_CAPACITE`).
+_ACTION_LOCALE = re.compile(
+    r"\b(?:lance|relance|execute|passe|run|rerun)\w*\b[^.?!]{0,40}\b(?:commandes?(?: autorisees?)?|tests?|pytest"
+    r"|commands?|git status)\b"
+    r"|\b(?:propose|prepare|suggere|redige|suggest|draft)\w*\b[^.?!]{0,40}\b(?:modifications?|correctifs?|patch"
+    r"|changements?|corrections?|changes?|fix(?:es)?|edits?)\b"
+    r"|\b(?:corrige|modifie|change|ecris|edite|fix|edit|modify|write)\w*\b[^.?!]{0,30}\b(?:fichiers?|code"
+    r"|config\w*|scripts?|readme|files?)\b")
 
 
 @dataclass(frozen=True)
@@ -160,6 +170,7 @@ class Etat:
     source: str = "clavier"
     scan: Callable[[str, Iterable[str]], list[str]] | None = None
     lecture_locale: bool = False  # 04/11 (lot 4) : outils de lecture du local ouverts (banc réussi, ni Total ni levée)
+    actions_locales: bool = False  # 05/11 (lot 5) : commandes autorisées et propositions ouvertes (banc du lot 5)
 
 
 def mode_valide(mode: object) -> str:
@@ -167,20 +178,26 @@ def mode_valide(mode: object) -> str:
     return m if m in MODES else "auto"
 
 
-def _lecture_seule(demande: str) -> bool:
-    """La demande a besoin de LIRE et de rien d'autre (aucune action, aucun envoi, pas de web)."""
+def _lecture_seule(demande: str, actions: bool = False) -> bool:
+    """La demande a besoin de LIRE et de rien d'autre (aucune action, aucun envoi, pas de web). 05/11 (lot 5) :
+    `actions` : lancer une commande autorisée ou proposer une modification compte aussi."""
     plie = _plier(demande)
-    return bool(_LECTURE.search(plie)) and not _CAPACITE.search(_LECTURE.sub(" ", plie))
+    vu = bool(_LECTURE.search(plie)) or (actions and bool(_ACTION_LOCALE.search(plie)))
+    reste = _LECTURE.sub(" ", plie)
+    if actions:
+        reste = _ACTION_LOCALE.sub(" ", reste)
+    return vu and not _CAPACITE.search(reste)
 
 
 def decider(texte: str, canal: str = "", pieces: Iterable[str] = (), reglages: dict | None = None,
             etat: Etat | None = None) -> Decision:
     """Moteur d'une demande de l'utilisateur (voir l'en-tête du module pour l'ordre). 04/11 (lot 4) : une demande
-    locale qui a seulement besoin de lire passe par les outils de lecture du local s'ils sont ouverts."""
+    locale qui a seulement besoin de lire passe par les outils de lecture du local s'ils sont ouverts ;
+    05/11 (lot 5) : aussi lancer une commande autorisée ou proposer une modification, s'ils sont ouverts."""
     etat = etat or Etat()
     dec = _decider(texte, canal, pieces, reglages, etat)
     if dec.moteur == LOCAL and not dec.carte and etat.lecture_locale and not list(pieces or ()) \
-            and _lecture_seule(dec.texte):
+            and _lecture_seule(dec.texte, etat.actions_locales):
         return replace(dec, outils=True)
     return dec
 
@@ -200,8 +217,8 @@ def _decider(texte: str, canal: str, pieces: Iterable[str], reglages: dict | Non
     raisons = tuple(scan(texte, pieces))
     if pieces:  # le moteur local ne lit pas encore les pièces jointes
         manque = ("pièces jointes",)
-    elif etat.lecture_locale and _lecture_seule(demande):
-        manque = ()  # 04/11 (lot 4) : le local sait lire, avec ses outils
+    elif etat.lecture_locale and _lecture_seule(demande, etat.actions_locales):
+        manque = ()  # 04/11 (lot 4) : le local sait lire, avec ses outils (05/11, lot 5 : et lancer, proposer)
     else:
         manque = ("outils",) if _CAPACITE.search(_plier(demande)) else ()
     if moteur == CLAUDE:

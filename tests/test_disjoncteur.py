@@ -95,7 +95,8 @@ def test_series_par_agent(run):
 
 
 def test_politique_et_injoignable_comptent(run, monkeypatch):
-    monkeypatch.setattr(guard, "refused", lambda tool: "outil refusé par la politique." if tool == "X" else "")
+    # 05/11 (lot 5 du moteur local) : le hook passe aussi l'entrée de l'outil.
+    monkeypatch.setattr(guard, "refused", lambda tool, inp=None: "outil refusé par la politique." if tool == "X" else "")
     run(tool="X", inp={})
     decision, reason = run(answer=None)  # Astrel injoignable
     assert decision == "deny" and "ce n'est pas un accord" in reason

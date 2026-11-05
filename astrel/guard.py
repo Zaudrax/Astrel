@@ -351,6 +351,11 @@ MCP_POLICY: dict[str, dict[str, str]] = {
         "browser_file_upload": SENSITIVE, "browser_evaluate": SENSITIVE, "browser_fill_form": SENSITIVE,
         "browser_handle_dialog": SENSITIVE, "browser_drag": SENSITIVE,
     },
+    # 05/11 (lot 5 du moteur local, accord explicite de l'utilisateur) : serveur du CLI LOCAL seul (`mcp_local.py`).
+    # Libres ICI parce que `refused` (`_refus_outil_local`) a déjà refusé, sans carte, tout ce qui sort de la
+    # liste blanche de l'utilisateur (id inconnu, argument ajouté) et tout appel hors du CLI local ; une proposition
+    # n'écrit rien (l'utilisateur l'applique au HUD, le cœur rejuge le fichier).
+    "astrel_local": {"liste_commandes": "", "commande_autorisee": "", "proposer_modification": ""},
 }
 _PLAYWRIGHT = re.compile(r"playwright\d*")
 # 04/11 (lot A, audit 2 T44-A) : `browser_run_code_unsafe` (@playwright/mcp, capacité « core », activée par
@@ -358,6 +363,15 @@ _PLAYWRIGHT = re.compile(r"playwright\d*")
 # d'office sur tout serveur (`refused`, avant toute carte), en dur ici en plus de `hooks/tool-policy.json`
 # (un fichier de politique remplacé ou illisible ne le rouvre pas).
 REFUSED_MCP_TOOLS = frozenset({"browser_run_code_unsafe"})
+# 05/11 (lot 5 du moteur local, accord explicite de l'utilisateur) : liste blanche des commandes du modèle local
+# (écrite par l'utilisateur seul, Réglages du HUD) et propositions de modification (écrites par `mcp_local.py`) :
+# dans `PROTECTED_PATHS` ; `_refus_outil_local` les juge. Dossier du CLI local : `outils_local.CONFIG_CLI`.
+COMMANDES_LOCALES_FILE = config.CONFIG_DIR / "commandes-locales.json"
+PROPOSITIONS_LOCAL_DIR = config.RUNTIME / "propositions-local"
+LOCAL_CLI_DIR = config.RUNTIME / "outils-local"
+_ID_COMMANDE_LOCALE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,39}$")  # même motif que `commandes_locales.ID`
+_ENTREES_LOCALES = {"liste_commandes": (set(), set()), "commande_autorisee": ({"id"}, {"id"}),
+                    "proposer_modification": ({"fichier"}, {"fichier", "contenu", "ancien", "nouveau", "raison"})}
 # `open_path` d'un fichier qui LANCE du code (lanceur, script, exécutable) : critique (xdg-open hors du
 # cgroup du service, le programme lancé ne passerait plus pour Claude).
 _OPEN_CODE_SUFFIXES = frozenset({
@@ -571,6 +585,10 @@ PROTECTED_PATHS = [p.resolve() for p in (
     # appel) ; le micro choisi, ses seuils et le micro coupé (persistant, rallumé par l'utilisateur seul) : la
     # voix de l'utilisateur confirme et active Total. Écrits par le cœur ou l'installateur ; les LIRE reste libre.
     config.PROFILE_FILE, config.MIC_FILE, config.CONFIG_DIR / "mic_profiles.json", config.RUNTIME / "mic-muted",
+    # 05/11 (lot 5 du moteur local, accord explicite de l'utilisateur) : commandes que le modèle local peut lancer
+    # (écrites par le cœur sur un clic des Réglages du HUD) et ses propositions de modification (écrites par
+    # `mcp_local.py`, appliquées par le cœur sur un clic). Les LIRE reste libre.
+    COMMANDES_LOCALES_FILE, PROPOSITIONS_LOCAL_DIR,
 )]
 REFUS_DIR = config.RUNTIME / "garde-refus"  # 01/11 : série de refus du disjoncteur (`hooks/permission_hook.py`)
 # 18/10 (plan P7) : ce qu'une LEVÉE du garde-fou (Réglages du HUD, l'utilisateur seul) laisse
@@ -602,7 +620,8 @@ _PROTECTED_NAMES = (r"autonomy\.json|grants\.json|mission\.json|guard\.py|confir
                     # 25/10 (audit p33-p34) : arrêt sur quota (ordre, marques, état, clé) ; empreinte du
                     # garde-fou et politique d'outils (`hooks/`), aussi cités dans du code (perl -e, awk…).
                     r"|quota-ordre\.json|quota-ordre\.d|quota-arret\.json|quota-cle|empreinte\.json|tool-policy\.json"
-                    r"|messages-en-attente\.json")  # 01/11 : messages de l'utilisateur en attente (`attente.py`)
+                    r"|messages-en-attente\.json"  # 01/11 : messages de l'utilisateur en attente (`attente.py`)
+                    r"|commandes-locales\.json|propositions-local")  # 05/11 : lot 5 du moteur local
 # 16/10 : `runtime/plans` n'est plus cherché dans le texte brut de la commande (faux
 # positifs : message de commit, `echo "runtime/plans" > /tmp/n`, `cp runtime/plans/P3.md
 # /tmp/`, `tests/plans/P1.md`). Il est jugé commande par commande (`_plans_like`) :
@@ -6691,8 +6710,58 @@ def _policy_level(server: str, tool: str) -> str | None:
     return tools.get(tool, tools.get("*"))
 
 
-def refused(tool_name: str) -> str:
-    """Raison du refus d'office si `tool_name` est dans « refuser » ; sinon vide."""
+def _ids_commandes_locales(fichier: Path | None = None) -> frozenset[str]:
+    """Identifiants de la liste de l'utilisateur (`config/commandes-locales.json`). Absente, illisible ou d'une autre
+    forme : aucun (tout est refusé). La validation complète (argv, dossier, délai) est faite par le serveur."""
+    try:
+        data = json.loads(Path(fichier or COMMANDES_LOCALES_FILE).read_text(encoding="utf-8"))
+        cmds = data.get("commandes") if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return frozenset()
+    if not isinstance(cmds, dict):
+        return frozenset()
+    return frozenset(k for k, v in cmds.items() if isinstance(k, str) and _ID_COMMANDE_LOCALE.match(k)
+                     and isinstance(v, dict) and isinstance(v.get("argv"), list) and v["argv"])
+
+
+def _du_cli_local(env: dict | None = None) -> bool:
+    """Le hook tourne-t-il pour le CLI LOCAL (`outils_local.environnement` : son dossier de configuration) ?"""
+    vu = (os.environ if env is None else env).get("CLAUDE_CONFIG_DIR") or ""
+    return bool(vu) and os.path.realpath(vu) == os.path.realpath(str(LOCAL_CLI_DIR))
+
+
+def _refus_outil_local(tool: str, tool_input: object, fichier: Path | None = None, env: dict | None = None) -> str:
+    """05/11 (lot 5) : raison de refuser SANS CARTE un outil du serveur `astrel_local` ("" : libre). Refusé :
+    hors du CLI local, outil inconnu, entrée illisible, clé en plus (« argument ajouté »), et pour
+    `commande_autorisee` un identifiant absent de la liste de l'utilisateur."""
+    if not _du_cli_local(env):
+        return (f"l'outil {tool} n'existe que pour le modèle local d'Astrel : refusé par le garde-fou. "
+                "N'insiste pas, propose une autre voie.")
+    attendu = _ENTREES_LOCALES.get(tool)
+    if attendu is None or not isinstance(tool_input, dict):
+        return f"outil {tool} inconnu ou entrée illisible : refusé par le garde-fou d'Astrel."
+    requis, permis = attendu
+    cles = set(tool_input)
+    if not requis <= cles or not cles <= permis:
+        return (f"{tool} : argument non permis ({', '.join(sorted(cles - permis)) or 'manquant'}) : refusé par "
+                "le garde-fou d'Astrel. Aucune option ni argument ne s'ajoute à une commande autorisée.")
+    if tool == "commande_autorisee":
+        cid = tool_input.get("id")
+        if not isinstance(cid, str) or cid not in _ids_commandes_locales(fichier):
+            return (f"commande « {str(cid)[:60]} » absente de la liste de l'utilisateur : refusée par le garde-fou "
+                    "d'Astrel. Seuls les identifiants de liste_commandes se lancent ; n'en invente pas.")
+    elif tool == "proposer_modification" and not isinstance(tool_input.get("fichier"), str):
+        return "proposer_modification : chemin du fichier illisible : refusé par le garde-fou d'Astrel."
+    return ""
+
+
+def refused(tool_name: str, tool_input: object = None) -> str:
+    """Raison du refus d'office si `tool_name` est dans « refuser » ; sinon vide. 05/11 (lot 5) : outils du
+    serveur `astrel_local` jugés sur leur ENTRÉE (`_refus_outil_local`) ; sans entrée : refusés."""
+    if tool_name.startswith("mcp__astrel_local__"):
+        why = _refus_outil_local(tool_name.rsplit("__", 1)[-1], tool_input)
+        if why:
+            return why
     if tool_name.startswith("mcp__") and tool_name.rsplit("__", 1)[-1] in REFUSED_MCP_TOOLS:
         # 04/11 (lot A, audit 2 T44-A) : en dur, quel que soit le fichier de politique (remplacé par un test,
         # illisible, ou d'une autre version) et quel que soit le serveur (`playwright`, `playwright2..4`…).

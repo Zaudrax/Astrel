@@ -1,0 +1,38 @@
+{
+ "_aide": "Commandes que le modèle local (Qwen) peut lancer par leur identifiant, outil commande_autorisee (docs/chantiers/HYBRIDE-QWEN.md, lot 5). La vraie liste est config/commandes-locales.json, VIDE par défaut, protégée par le garde-fou : elle se modifie depuis Réglages › Modèle local › Commandes autorisées, jamais par Claude. Les exemples de « _exemples » ne sont PAS lus : copie ceux que tu veux dans « commandes ». argv = une LISTE de mots (jamais une ligne de shell : pas de |, &&, *, $), le modèle n'y ajoute rien ; dossier = chemin absolu dans tes projets ; delai_s 1 à 600 (défaut 60) ; sortie_max 1000 à 200000 caractères (défaut 16000).",
+ "commandes": {},
+ "_exemples": {
+  "tests": {
+   "argv": [".venv/bin/python", "-m", "pytest", "-q", "-x"],
+   "dossier": "/chemin/absolu/de/ton/projet",
+   "delai_s": 300,
+   "sortie_max": 20000,
+   "description": "Suite de tests du projet (s'arrête au premier échec)"
+  },
+  "git-status": {
+   "argv": ["git", "status", "--short", "--branch"],
+   "dossier": "/chemin/absolu/de/ton/projet",
+   "delai_s": 20,
+   "description": "État du dépôt git (lecture seule)"
+  },
+  "git-log": {
+   "argv": ["git", "log", "--oneline", "-20"],
+   "dossier": "/chemin/absolu/de/ton/projet",
+   "delai_s": 20,
+   "description": "Les 20 derniers commits"
+  },
+  "journal-astrel": {
+   "argv": ["journalctl", "--user", "-u", "astrel.service", "-n", "200", "--no-pager"],
+   "dossier": "/chemin/absolu/de/ton/projet",
+   "delai_s": 30,
+   "sortie_max": 40000,
+   "description": "Les 200 dernières lignes du journal d'Astrel"
+  },
+  "espace-disque": {
+   "argv": ["df", "-h"],
+   "dossier": "/chemin/absolu/de/ton/projet",
+   "delai_s": 10,
+   "description": "Place libre sur les disques"
+  }
+ }
+}

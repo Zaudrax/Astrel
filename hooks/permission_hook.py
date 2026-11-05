@@ -150,7 +150,8 @@ def main() -> int:
     cwd = str(payload.get("cwd") or "")
 
     # 20/10 (plan P12, lot 6) : outil refusé d'office par hooks/tool-policy.json, sans carte.
-    why = guard.refused(tool)
+    # 05/11 (lot 5 du moteur local) : l'entrée aussi (outils du serveur `astrel_local`, jugés sur leur entrée).
+    why = guard.refused(tool, tool_input)
     if why:
         emit("deny", _refuse(payload, why))
         return 0

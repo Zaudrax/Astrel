@@ -505,6 +505,7 @@ async def run(url):
         await check_plans(p)
         await check_audit(p)
         await check_propositions(p)  # 04/11 (T49)
+        await check_propositions_local(p)  # 05/11 (lot 5 du moteur local)
         await check_hors_ligne(p)  # 04/11 (lot 2 du moteur local)
         await check_barre_du_haut(p)  # 19/10
         await check_mise_en_page(p)
@@ -526,6 +527,8 @@ async def run(url):
         await check_liens_et_barre(p)  # 04/11 : liens cliquables, Copier, ↑, « / », point du bouton ↓
         await check_recherche_chemins_echap(p)  # 04/11 : chemins copiés, Échap = ■, recherche Ctrl+K
         await check_moteur_local(p)  # 04/11 : badge « Local », réponse locale à côté de celle de Claude
+        await check_selecteur_moteur(p)  # 05/11 (lot 6 du moteur local) : « Qui répond » à côté du modèle
+        await check_local_vers_claude(p)  # 05/11 (lot 6 du moteur local) : « Envoyer à Claude » sous une réponse locale
         await check_sans_graphe(p)  # 23/10 (plan P28) : graphe 3D, Recadrer, Orbite retirés
         await check_affichage_simple(p)  # 22/10 (plan P23, lots A et B) : recharge la page
         await check_theme_a_la_connexion(p)  # 21/10 (relecture P17) : recharge la page
@@ -2057,11 +2060,13 @@ SIMPLE_JS = """(() => {
     const r = e.getBoundingClientRect(); return { t: r.top, b: r.bottom, l: r.left, r: r.right }; };
   // 28/10 (T10, décision de l'utilisateur) : #reports-chip, #mission-chip, #affichage-chip et #power-chip
   // retirés du DOM ; la mission en cours reste montrée par son bandeau
+  // 05/11 (lot 6 du moteur local) : des badges, seul « Qui répond » (#engine-badge) reste : réglage de confidentialité
   const hide = ['#autonomy-chip', '#plans-chip', '#audit-chip', '#channels',
-                '#right .badges', '#sensors', '#quota', '#context', '#memory', '#total-frame', '#lift-frame'];
+                '#model-badge', '#effort-badge', '#voice-badge', '#mic-badge', '#sensors', '#quota', '#context', '#memory',
+                '#total-frame', '#lift-frame'];
   const keep = ['#conn', '.brand-name', '#total-chip', '#lift-chip', '#settings-chip',
                 '#estop-chip', '#total-banner', '#lift-banner', '#memory-banner', '#mission-banner',
-                '#transcript', '#ask', '#orb-wrap'];
+                '#transcript', '#ask', '#orb-wrap', '#engine-badge'];
   const seg = (s) => q(s + ' b')?.innerText.trim() || '';
   const st = (e) => { if (!e) return null; const c = getComputedStyle(e); return { border: c.borderTopColor, color: c.color, anim: c.animationName }; };
   const probe = (css) => { const d = document.createElement('div'); d.style.cssText = css; document.body.append(d);
@@ -3135,6 +3140,49 @@ async def check_propositions(p: Page) -> None:
         "!!document.querySelector('.modal.propositions .prop-apply')"))
     await p.js("document.querySelector('.modal.propositions .modal-x').click()")
     check("Mémoire : fermeture", await p.until("!document.querySelector('.modal.propositions')", 2))
+
+
+async def check_propositions_local(p: Page) -> None:
+    """05/11 (lot 5 du moteur local) : panneau « Propositions de Qwen » sur la démo (`DemoPropositionsLocal`) :
+    pastille, diff en textContent (balise inerte, lignes classées ajout/retrait), Appliquer grisé quand le fichier a
+    changé, Appliquer avec l'empreinte reçue, Refuser par la boîte du HUD, pastille cachée à la fin."""
+    sent = lambda cmd: p.js(f"window.__sent.filter(m => m.cmd === {json.dumps(cmd)})")
+    chip = await p.js("""(() => { const c = document.querySelector('#qprop-chip');
+        return { shown: !c.classList.contains('hidden') && c.getClientRects().length > 0,
+                 badge: c.querySelector('#qprop-badge').textContent }; })()""")
+    check(f"Qwen : pastille visible avec {chip['badge']} propositions", chip["shown"] and chip["badge"] == "2")
+    await p.js("document.querySelector('#qprop-chip').click()")
+    opened = await p.until("document.querySelectorAll('.modal.propositions .prop-item.k-qwen').length === 2", 4)
+    o = await p.js("""(() => { const m = document.querySelector('.modal.propositions');
+        const items = m.querySelectorAll('.prop-item');
+        const diff = items[0].querySelector('.qprop-diff');
+        return { title: m.querySelector('.modal-title').textContent, text: diff.textContent,
+                 bad: m.querySelectorAll('img, script, iframe').length,
+                 add: diff.querySelectorAll('.qd-add').length, del: diff.querySelectorAll('.qd-del').length,
+                 hunk: diff.querySelectorAll('.qd-hunk').length,
+                 ok0: !items[0].querySelector('.prop-apply').disabled, ok1: items[1].querySelector('.prop-apply').disabled,
+                 warn: !!items[1].querySelector('.qprop-warn') }; })()""")
+    check(f"Qwen : fenêtre « {o['title']} », diff en texte inerte (+{o['add']} −{o['del']}), Appliquer grisé si le "
+          "fichier a changé", opened and o["title"] == "Propositions de Qwen" and "<img src=x>" in o["text"]
+          and o["bad"] == 0 and o["add"] == 1 and o["del"] == 1 and o["hunk"] == 1 and o["ok0"] and o["ok1"] and o["warn"])
+    await p.shot("18c-qwen.png")
+    await p.js("document.querySelector('.modal.propositions .prop-apply').click()")
+    applied = await p.until("document.querySelectorAll('.modal.propositions .prop-item').length === 1", 4)
+    a = (await sent("proposition_local_appliquer"))[-1] if await sent("proposition_local_appliquer") else {}
+    check("Qwen : Appliquer envoie proposition_local_appliquer avec proposition_id et l'empreinte affichée",
+          applied and a.get("proposition_id") == "L20261105-101500-a1b2c3" and a.get("empreinte") == "9f8e7d6c5b4a3921")
+    await p.js("document.querySelector('.modal.propositions .prop-refuse').click()")
+    modal = await p.until("!!document.querySelector('.modal:not(.wide) textarea[name=raison]')", 3)
+    await p.js("""(() => { const ta = document.querySelector('.modal:not(.wide) textarea[name=raison]');
+        ta.value = 'plus tard'; ta.dispatchEvent(new Event('input')); return true; })()""")
+    await p.js("document.querySelector('.modal:not(.wide) .modal-ok').click()")
+    gone = await p.until("document.querySelectorAll('.modal.propositions .prop-item').length === 0", 4)
+    r = (await sent("proposition_local_refuser"))[-1] if await sent("proposition_local_refuser") else {}
+    hidden = await p.until("document.querySelector('#qprop-chip').classList.contains('hidden')", 3)
+    check("Qwen : Refuser par la boîte du HUD (motif), liste vide, pastille cachée",
+          modal and gone and hidden and r.get("raison") == "plus tard")
+    await p.js("document.querySelector('.modal.propositions .modal-x').click()")
+    check("Qwen : fermeture", await p.until("!document.querySelector('.modal.propositions')", 2))
 
 
 async def check_plans(p: Page) -> None:
@@ -5502,6 +5550,164 @@ async def check_moteur_local(p: Page) -> None:
           and "rien n'est sorti" in info[0]["title"]
           and sorted((m["local"], m["text"]) for m in info[1:]) == [(False, "Claude écrit encore."),
                                                                     (True, "Qwen écrit seul.")])
+
+
+async def check_selecteur_moteur(p: Page) -> None:
+    """05/11 (lot 6 du moteur local) : sélecteur « Qui répond » à côté du badge du modèle (réglage `moteur_mode`
+    lu dans `settings`, changé par `settings_set`) : vrai bouton (focus, Entrée, flèches, Échap), menu de 4 modes,
+    choix envoyé et suivi ; visible en Simple ; hors ligne : forcé au local, grisé, la raison, pas de menu."""
+    await p.until("!!window.__ws && window.__ws.readyState === 1", 10)
+    await p.js("document.querySelectorAll('.modal-back, .menu, .toast').forEach(b => b.remove()), true")
+    demo = lambda cmd, **a: p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': cmd, **a}))})")
+    badge = """(() => { const b = document.querySelector('#engine-badge');
+        return { tag: b.tagName, text: b.innerText.trim(), title: b.title, next: b.nextElementSibling?.id || '',
+                 off: b.classList.contains('off'), local: b.classList.contains('is-local'), dis: b.getAttribute('aria-disabled'),
+                 exp: b.getAttribute('aria-expanded'), popup: b.getAttribute('aria-haspopup'), aria: b.getAttribute('aria-label') || '',
+                 icon: b.querySelector('svg')?.dataset.icon || '', shown: b.getClientRects().length > 0 }; })()"""
+    await demo("settings_set", key="moteur_mode", value="auto")
+    await p.until("document.querySelector('#engine-badge').innerText.trim() === 'Auto'", 3)
+    b = await p.js(badge)
+    check(f"lot 6 : « Qui répond » = bouton « {b['text']} » juste avant le modèle ({b['next']}), icône {b['icon']}, "
+          f"« {b['title'][:60]}… »",
+          b["tag"] == "BUTTON" and b["text"] == "Auto" and b["next"] == "model-badge" and b["popup"] == "menu"
+          and b["exp"] == "false" and "Automatique" in b["title"] and b["aria"] == b["title"] and not b["off"])
+    # clavier : focus, Entrée ouvre, le choix actif a le focus, flèche bas, Échap ferme et rend le focus
+    await p.js("document.querySelector('#engine-badge').focus(), true")
+    await p.key("Enter", vk=13, text="\r")
+    ouvert = await p.until("!!document.querySelector('.menu.engine-menu')", 2)
+    m = await p.js("""(() => { const m = document.querySelector('.menu.engine-menu');
+        const items = [...m.querySelectorAll('.item')];
+        return { role: m.getAttribute('role'), items: items.map(i => i.querySelector('.engine-item-head').textContent),
+                 checked: items.map(i => i.getAttribute('role') + ':' + i.getAttribute('aria-checked')),
+                 focus: document.activeElement?.dataset?.mode || '', note: m.querySelector('.engine-note')?.textContent || '',
+                 exp: document.querySelector('#engine-badge').getAttribute('aria-expanded') }; })()""") if ouvert else {}
+    check(f"lot 6 : Entrée ouvre le menu {m.get('items')}, Automatique coché et focalisé ({m.get('focus')}), note « {m.get('note', '')[:40]}… »",
+          ouvert and m["role"] == "menu" and m["items"] == ["Automatique", "Modèle local", "Claude", "Hybride (local d'abord)"]
+          and m["checked"] == ["menuitemradio:true", "menuitemradio:false", "menuitemradio:false", "menuitemradio:false"]
+          and m["focus"] == "auto" and "avec Claude" in m["note"] and m["exp"] == "true")
+    n_stop = await p.js("window.__sent.filter(x => x.cmd === 'stop').length")
+    await p.key("ArrowDown", vk=40)
+    bas = await p.js("document.activeElement?.dataset?.mode || ''")
+    await p.key("Escape", vk=27)
+    ferme = await p.until("!document.querySelector('.menu.engine-menu')", 2)
+    rendu = await p.js("document.activeElement?.id || ''")
+    n_stop2 = await p.js("window.__sent.filter(x => x.cmd === 'stop').length")
+    check(f"lot 6 : flèche bas → {bas}, Échap ferme le menu ({ferme}), focus rendu au badge ({rendu}), rien d'arrêté",
+          bas == "local" and ferme and rendu == "engine-badge" and n_stop2 == n_stop)
+    await p.shot("lot6-qui-repond.png")
+    # choix à la souris : settings_set moteur_mode=local, badge suivi (vert « Local »)
+    n = await p.js("window.__sent.filter(x => x.cmd === 'settings_set').length")
+    await p.js("document.querySelector('#engine-badge').click(), true")
+    await p.until("!!document.querySelector('.menu.engine-menu')", 2)
+    await p.js("document.querySelector('.menu.engine-menu .item[data-mode=\"local\"]').click(), true")
+    suivi = await p.until("document.querySelector('#engine-badge').innerText.trim() === 'Local'", 3)
+    envoye = await p.js(f"window.__sent.filter(x => x.cmd === 'settings_set').slice({n})")
+    b = await p.js(badge)
+    toast = await p.js("[...document.querySelectorAll('.toast')].map(t => t.textContent).find(t => t.startsWith('Qui répond')) || ''")
+    check(f"lot 6 : clic « Modèle local » → settings_set {[(x.get('key'), x.get('value')) for x in envoye]}, badge « {b['text']} » "
+          f"(vert {b['local']}), menu fermé, toast « {toast} »",
+          suivi and [(x.get("key"), x.get("value")) for x in envoye] == [("moteur_mode", "local")] and b["local"]
+          and not await p.js("!!document.querySelector('.menu.engine-menu')") and toast == "Qui répond : Modèle local")
+    # Simple : le sélecteur reste (réglage de confidentialité), les autres badges partent
+    simple = await p.js("""(() => { const h = document.documentElement, was = h.dataset.affichage; h.dataset.affichage = 'simple';
+        const vis = (s) => document.querySelector(s).getClientRects().length > 0;
+        const r = { engine: vis('#engine-badge'), model: vis('#model-badge'), mic: vis('#mic-badge') };
+        if (was === undefined) delete h.dataset.affichage; else h.dataset.affichage = was; return r; })()""")
+    check(f"lot 6 : en Simple, « Qui répond » visible, modèle et micro cachés ({simple})",
+          simple == {"engine": True, "model": False, "mic": False})
+    # hors ligne : forcé au local, grisé, la raison ; un clic dit pourquoi, sans menu
+    await fake_event(p, {"type": "model", "active": "sonnet", "label": "Hors ligne · qwen3.5:9b", "id": "qwen3.5:9b",
+                         "offline": True})
+    b = await p.js(badge)
+    await p.js("document.querySelectorAll('.toast').forEach(t => t.remove()); document.querySelector('#engine-badge').click(), true")
+    await asyncio.sleep(0.2)
+    pas_de_menu = not await p.js("!!document.querySelector('.menu.engine-menu')")
+    raison = await p.js("[...document.querySelectorAll('.toast')].map(t => t.textContent).find(t => t.includes('Rien ne sort')) || ''")
+    check(f"lot 6 hors ligne : « {b['text']} » grisé ({b['off']}, aria-disabled {b['dis']}), « {b['title'][:50]}… », "
+          f"clic sans menu ({pas_de_menu}), raison « {raison[:40]}… »",
+          b["text"] == "Hors ligne · Local" and b["off"] and b["dis"] == "true" and b["local"]
+          and "Claude est arrêté" in b["title"] and pas_de_menu and raison)
+    await fake_event(p, {"type": "model", "active": "sonnet", "label": "Sonnet", "id": ""})
+    await demo("settings_set", key="moteur_mode", value="auto")
+    back = await p.until("document.querySelector('#engine-badge').innerText.trim() === 'Auto'"
+                         " && !document.querySelector('#engine-badge').classList.contains('off')", 3)
+    check("lot 6 : retour en ligne, badge rallumé, Automatique rétabli", back)
+
+
+async def check_local_vers_claude(p: Page) -> None:
+    """05/11 (lot 6 du moteur local) : « Envoyer à Claude » sous une réponse locale : `local_vers_claude {mid}` avec le
+    mid de la DEMANDE, état suivi (envoyée, carte) ; grisé avec la raison écrite quand la demande n'est plus en mémoire,
+    qu'elle a été faite hors ligne, ou pendant le mode « rien ne sort » ; `local_demandes` à chaque connexion."""
+    await p.until("!!window.__ws && window.__ws.readyState === 1", 10)
+    await p.js("document.querySelectorAll('.modal-back, .menu, .toast').forEach(b => b.remove()), true")
+    ch = await p.js("document.querySelector('.channel-tab.on')?.dataset.chan || ''")
+    demo = lambda cmd, **a: p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': cmd, **a}))})")
+    last = "[...document.querySelectorAll('#transcript .msg.astrel.engine-local')].at(-1)"
+    box = f"""(() => {{ const m = {last}; const b = m?.querySelector('.local-actions .to-claude'), w = m?.querySelector('.local-why');
+        return b ? {{ text: b.innerText.trim(), dis: b.disabled, title: b.title, why: w.hidden ? '' : w.textContent,
+                     desc: b.getAttribute('aria-describedby') === w.id, n: m.querySelectorAll('.local-actions').length }} : null; }})()"""
+    hello = await p.js("window.__sent.some(x => x.cmd === 'local_demandes')")
+    nb = "document.querySelectorAll('#transcript .msg.astrel.engine-local').length"
+
+    async def nouvelle(**a):  # une demande locale de la démo, puis attendre SA bulle (la précédente a aussi un bouton)
+        avant = await p.js(nb)
+        await demo("demo_local", channel=ch, **a)
+        return await p.until(f"{nb} > {avant} && !!{last}.querySelector('.to-claude')", 3)
+
+    await nouvelle(text="explique la photosynthèse")
+    b = await p.js(box)
+    check(f"lot 6 : bouton « {b and b['text']} » sous la réponse locale, actif, « {b and b['title'][:50]}… » "
+          f"(local_demandes à la connexion : {hello})",
+          b and b["text"] == "Envoyer à Claude" and not b["dis"] and "demande d'origine" in b["title"] and not b["why"]
+          and b["n"] == 1 and b["desc"] and hello)
+    n = await p.js("window.__sent.filter(x => x.cmd === 'local_vers_claude').length")
+    await p.js(f"{last}.querySelector('.to-claude').click(), true")
+    # 05/11 : attendre la RÉPONSE de local_vers_claude (raison écrite) : grisé seul = encore en cours (`busy`), la
+    # raison vide ; lue trop tôt, elle faisait échouer le contrôle selon la vitesse de la démo.
+    parti = await p.until(f"{last}.querySelector('.to-claude').disabled && !{last}.querySelector('.local-why').hidden", 3)
+    envoi = await p.js(f"window.__sent.filter(x => x.cmd === 'local_vers_claude').slice({n})")
+    b = await p.js(box)
+    suite = await p.until("[...document.querySelectorAll('#transcript .msg.user:not(.engine-local)')].some(m => "
+                          "m.textContent.includes('explique la photosynthèse'))", 3)
+    check(f"lot 6 : clic → local_vers_claude {[x.get('mid') for x in envoi]} (mid de la demande), « {b['why']} », "
+          f"demande d'origine dans le fil ({suite})",
+          parti and len(envoi) == 1 and isinstance(envoi[0].get("mid"), str) and len(envoi[0]["mid"]) == 12
+          and b["dis"] and b["why"] == "Envoyée à Claude" and suite)
+    # oubliée (relance d'Astrel) et faite hors ligne : grisé, la raison écrite
+    await nouvelle(text="résume ce texte", oubliee=True)
+    oubli = await p.js(box)
+    await nouvelle(text="résume ce texte", hors_ligne=True)
+    hl = await p.js(box)
+    check(f"lot 6 : demande oubliée → grisé « {oubli['why']} » ; faite hors ligne → grisé « {hl['why']} »",
+          oubli["dis"] and oubli["why"].startswith("Plus en mémoire") and hl["dis"] and "rien ne sort" in hl["why"])
+    # pendant le mode « rien ne sort » : grisé, puis rallumé au retour en ligne
+    await nouvelle(text="explique les marées")
+    await fake_event(p, {"type": "model", "active": "sonnet", "label": "Hors ligne · qwen3.5:9b", "id": "qwen3.5:9b",
+                         "offline": True})
+    pendant = await p.js(box)
+    await fake_event(p, {"type": "model", "active": "sonnet", "label": "Sonnet", "id": ""})
+    apres = await p.js(box)
+    check(f"lot 6 : hors ligne → grisé « {pendant['why']} », de retour en ligne → actif ({not apres['dis']})",
+          pendant["dis"] and pendant["why"] == "Mode « rien ne sort » : Claude est arrêté" and not apres["dis"])
+    # demande sensible : la carte « routage » avant tout envoi
+    await nouvelle(text="vérifie mon IBAN FR76 3000 6000 0112 3456 7890 189")
+    await p.js(f"{last}.querySelector('.to-claude').click(), true")
+    carte = await p.until("[...document.querySelectorAll('.msg.choice')].some(c => "
+                          "c.querySelector('.choice-question')?.textContent.includes('données sensibles'))", 3)
+    await p.until(f"!{last}.querySelector('.local-why').hidden", 3)  # 05/11 : la réponse, pas seulement la carte
+    b = await p.js(box)
+    labels = await p.js("""(() => { const c = [...document.querySelectorAll('.msg.choice')].filter(c =>
+        c.querySelector('.choice-question')?.textContent.includes('données sensibles')).at(-1);
+        return [...c.querySelectorAll('.choice-btn .choice-label')].map(l => l.textContent); })()""") if carte else []
+    check(f"lot 6 : demande sensible → carte {labels}, bouton « {b['why']} »",
+          carte and labels[:2] == ["Envoyer à Claude", "Annuler"] and b["dis"] and b["why"].startswith("Carte à l'écran"))
+    await p.js("""(() => { const c = [...document.querySelectorAll('.msg.choice')].filter(c =>
+        c.querySelector('.choice-question')?.textContent.includes('données sensibles')).at(-1);
+        [...c.querySelectorAll('.choice-btn')].find(b => b.querySelector('.choice-label').textContent === 'Annuler').click(); return true; })()""")
+    fini = await p.until("""(() => { const c = [...document.querySelectorAll('.msg.choice')].filter(c =>
+        c.querySelector('.choice-question')?.textContent.includes('données sensibles')).at(-1);
+        return [...c.querySelectorAll('.choice-btn')].every(b => b.classList.contains('hidden')); })()""", 3)
+    check("lot 6 : carte annulée (rien ne part)", fini)
 
 
 async def check_liens_et_barre(p: Page) -> None:

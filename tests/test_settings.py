@@ -31,7 +31,7 @@ CONTRACT_KEYS = {"moteur_mode", "compte", "demarrage", "diagnostic", *LIVE, "aud
                  "quota_offer", "quota_offer_pct", "reprise_auto", "quota_refresh",
                  "quota_arret", "quota_note_pct", "quota_stop_pct",  # 24/10 (plan P34)
                  "quota_reprise",  # 27/10 : relance des agents arrêtés pour le quota (auto, carte, rien)
-                 "local.mode", "local.materiel", "local.modeles",
+                 "local.mode", "local.materiel", "local.modeles", "local.commandes",  # 05/11 : lot 5 du moteur local
                  # 20/10 (plan P11) : fournisseur du cerveau, clés et passerelle, alerte de dépense
                  "fournisseur", "fournisseur.cles", "depense_alerte_usd",
                  # 20/10 : langue de l'interface (astrel/i18n.py)

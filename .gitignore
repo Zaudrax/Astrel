@@ -43,6 +43,8 @@ mcp-servers/node_modules/
 # suivis (un `git pull` ne doit jamais entrer en conflit avec eux).
 config/reflexes.json
 config/channels.json
+# 05/11 (lot 5 du moteur local) : commandes autorisées du modèle local (chemins de la machine)
+config/commandes-locales.json
 config/mic_profiles.json
 config/profile.json
 

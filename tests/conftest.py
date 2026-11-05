@@ -170,6 +170,11 @@ def _economie_isolee(tmp_path, monkeypatch):
     monkeypatch.setattr(outils_local, "BANC_DIR", tmp_path / "banc")
     monkeypatch.setattr(outils_local, "CONFIG_CLI", tmp_path / "outils-local")
     monkeypatch.setattr(outils_local, "_VERSION", {"v": "0.0.0-test"})
+    # 05/11 (lot 5) : ni la liste des commandes de l'utilisateur, ni les propositions du modèle local de la machine.
+    from astrel import commandes_locales, guard, propositions_local
+    monkeypatch.setattr(commandes_locales, "FICHIER", tmp_path / "commandes-locales.json")
+    monkeypatch.setattr(guard, "COMMANDES_LOCALES_FILE", tmp_path / "commandes-locales.json")
+    monkeypatch.setattr(propositions_local, "DIR", tmp_path / "propositions-local")
     # Plan P28 : effort par métier choisi par l'utilisateur, et ce que le CLI en marche a reçu.
     monkeypatch.setattr(agents, "EFFORT_FILE", tmp_path / "agent-effort.json")
     monkeypatch.setattr(agents, "_written", None)

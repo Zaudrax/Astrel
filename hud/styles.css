@@ -234,6 +234,27 @@ input { font: inherit; color: inherit; }
 #effort-badge.off { opacity: 0.55; }
 .effort-menu .effort-note { padding: 6px 10px 2px; max-width: 260px; }
 #mic-badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 05/11 (lot 6 du moteur local) : « Qui répond » (réglage moteur_mode), un vrai bouton (focus clavier) ; hors ligne
+   ou imposé par une variable : grisé, la raison au survol et au clic */
+#engine-badge { cursor: pointer; background: transparent; font-family: var(--mono); font-size: 10px; line-height: inherit; }
+#engine-badge:hover { color: var(--ink-hi); border-color: var(--accent); }
+#engine-badge:focus-visible, .engine-menu .item:focus-visible, .local-actions .to-claude:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; }
+#engine-badge.is-local { color: var(--green); border-color: rgba(var(--rgb-ok), 0.45); }
+#engine-badge.off { opacity: 0.6; cursor: help; }
+.engine-menu { max-width: 320px; }
+.engine-menu button.item { display: block; width: 100%; text-align: start; background: transparent; border: 0;
+  color: inherit; font: inherit; }
+.engine-menu .item.active { color: var(--accent); }
+.engine-menu .engine-item-head { display: flex; align-items: center; gap: 6px; }
+.engine-menu .engine-item-desc { display: block; margin-top: 2px; }
+.engine-menu .engine-note { padding: 6px 10px 2px; }
+/* « Envoyer à Claude » sous une réponse locale ; grisé : la raison écrite à côté */
+.local-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.local-actions .to-claude { margin-left: 0; }
+.local-actions .to-claude.off, .local-actions .to-claude.off:hover { opacity: 0.55; cursor: not-allowed; color: var(--muted);
+  border-color: var(--panel-border); }
+.local-actions .local-why { font-size: 11px; color: var(--muted); }
 
 .sensors { display: grid; gap: 6px; }
 .sensor {
@@ -1594,6 +1615,14 @@ body.dropping #composer { border-color: var(--green); box-shadow: 0 0 18px rgba(
   background: rgba(var(--rgb-hi), 0.04); border: 1px solid var(--panel-border); color: var(--ink);
 }
 .prop-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* 05/11 (lot 5 du moteur local) : diff des propositions de Qwen (hud/src/propositions-local.js), jetons seulement */
+.qprop-diff { max-height: 360px; white-space: pre; overflow-wrap: normal; }
+.qprop-diff > span { display: block; }
+.qprop-diff .qd-add { color: var(--green); background: rgba(var(--rgb-ok), 0.08); }
+.qprop-diff .qd-del { color: var(--red); background: rgba(var(--rgb-warn), 0.06); }
+.qprop-diff .qd-hunk { color: var(--accent); }
+.qprop-diff .qd-file { color: var(--muted); font-weight: 600; }
+.qprop-warn { color: var(--amber); }
 .audit-more:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* --- 18/10 (plan P5) : appairage WhatsApp dans les Réglages, guide de démarrage --- */
@@ -2030,8 +2059,9 @@ body.dropping #composer { border-color: var(--green); box-shadow: 0 0 18px rgba(
 :root[data-affichage="simple"] :is(#autonomy-chip, #plans-chip, #todo-chip, #audit-chip) { display: none !important; }
 :root[data-affichage="simple"] .brand-name { display: inline-block; text-transform: none; letter-spacing: 0.04em; }
 :root[data-affichage="simple"] :is(.chip.toggle.total.on, .chip.lift) { animation: none; }  /* couleur gardée, sans pulsation */
-/* panneau du cerveau, badges, capteurs, abonnement, filtres ; onglets et noms de projets (proposition 9) */
-:root[data-affichage="simple"] :is(#channels, #search-btn, .task .chan, #right .badges, #sensors, #quota, #context, #memory, #courrier, #todo-apercu,
+/* panneau du cerveau, badges, capteurs, abonnement, filtres ; onglets et noms de projets (proposition 9).
+   05/11 (lot 6 du moteur local) : sauf « Qui répond » (#engine-badge), réglage de confidentialité */
+:root[data-affichage="simple"] :is(#channels, #search-btn, .task .chan, #right .badges > :not(#engine-badge), #sensors, #quota, #context, #memory, #courrier, #todo-apercu,
   #right > .panel-title:is([data-i18n="right.sensors"], #quota-title, #courrier-title, #todo-title)) {
   display: none !important; }
 /* la conversation se centre : plus de colonne gauche (à l'écran large, marges égales des deux côtés) */
