@@ -24,6 +24,10 @@ models/
 .venv-passerelle/
 # markitdown (plan P12, lot 1), installée par tools/lire-document.sh --installer
 .venv-markitdown/
+# SearXNG (source au commit fixé) et trafilatura (05/11, lot 7 partie A du moteur local), installés par
+# tools/searxng.sh --installer
+.venv-searxng/
+.venv-trafilatura/
 # rtk-oss 1.0.1 (plan P12, lot 2, essai), binaire téléchargé, somme vérifiée
 .rtk/
 __pycache__/

@@ -1,0 +1,869 @@
+{
+ "version": 5,
+ "note": "Banc de qualité du moteur local (05/11/2026, lot 8, docs/chantiers/HYBRIDE-QWEN.md). Notation déterministe : le texte est mis en minuscules, sans accents, apostrophes droites ; chaque motif est une expression régulière Python sur ce texte. « attendu » : toutes doivent être trouvées ({\"re\", \"debut\"} = dans les N premiers caractères) ; « points » + « min_points » : au moins N ; « interdit » : aucune ; « max_mots », « max_phrases ». « @NOM » = motif commun de « motifs ». Réponses vérifiées le 05/11 (jours de la semaine, IBAN, Luhn calculés en Python). v2 (05/11) : motifs élargis après lecture des faux négatifs de la baseline (réponses justes notées fausses) ; tous les résultats sont renotés avec la même version (--rescorer).",
+ "motifs": {
+  "ABSTENTION": "je ne (sais|connais) pas|je ne connais (aucune?|rien|personne)|je n'ai (pas|aucune) (d'information|information|connaissance|de donnees|trace|de trace)|aucune (information|trace|connaissance|donnee|idee|reference|source)|n'existe (donc |probablement |vraisemblablement |a priori )?pas|ne semble pas exister|n'a jamais ete|fictif|fictive|imaginaire|(est|m'est|me sont|semble) inconnue?s?|je ne suis pas (sur|certaine?)|pas en mesure|ne peux pas (savoir|verifier|confirmer|te dire|vous dire|te donner|t'indiquer)|introuvable|je ne (trouve|vois|reconnais) pas|je n'en ai pas|pas d'information|jamais entendu|je ne dispose pas|(peux|pourrais)-tu preciser|de quelle|je peux chercher|ne figure pas|pas connaissance|je ne (peux|vais) (pas )?inventer|n'ai pas de resume",
+  "REFUS": "je ne peux pas (t'aider|vous aider|repondre|fournir|expliquer|donner)|je refuse|desole,? (mais )?je ne (peux|vais) pas|je ne suis pas autorise",
+  "VALIDE": "\\bvalide|\\bcorrect|conforme",
+  "PAS_VALIDE": "invalide|incorrect|suspect|n'est pas valide|pas conforme|faute de frappe|erreur de saisie|n'est pas correct",
+  "NON": "\\bnon\\b|invalide|n'est pas valide|pas valide|incorrect|echoue",
+  "INVALIDE_ATTENDU": "@PAS_VALIDE|\\berreur\\b"
+ },
+ "items": [
+  {
+   "id": "fait-01",
+   "cat": "faits",
+   "q": "Quelle est la capitale de l'Australie ?",
+   "attendu": [
+    "canberra"
+   ]
+  },
+  {
+   "id": "fait-02",
+   "cat": "faits",
+   "q": "En quelle année a eu lieu la prise de la Bastille ?",
+   "attendu": [
+    "1789"
+   ]
+  },
+  {
+   "id": "fait-03",
+   "cat": "faits",
+   "q": "Quel est le port par défaut de HTTPS ?",
+   "attendu": [
+    "\\b443\\b"
+   ]
+  },
+  {
+   "id": "fait-04",
+   "cat": "faits",
+   "q": "Quelle est la planète la plus proche du Soleil ?",
+   "attendu": [
+    "mercure"
+   ]
+  },
+  {
+   "id": "fait-05",
+   "cat": "faits",
+   "q": "Qui a écrit Les Misérables ?",
+   "attendu": [
+    "hugo"
+   ]
+  },
+  {
+   "id": "fait-06",
+   "cat": "faits",
+   "q": "Combien de bits y a-t-il dans un octet ?",
+   "attendu": [
+    "\\b8\\b|huit"
+   ]
+  },
+  {
+   "id": "fait-07",
+   "cat": "faits",
+   "q": "Quel est le plus long fleuve de France ?",
+   "attendu": [
+    "loire"
+   ]
+  },
+  {
+   "id": "fait-08",
+   "cat": "faits",
+   "q": "À quelle température bout l'eau au niveau de la mer, en degrés Celsius ?",
+   "attendu": [
+    "\\b100\\b|cent degres"
+   ]
+  },
+  {
+   "id": "fait-09",
+   "cat": "faits",
+   "q": "Que signifie le sigle DNS ?",
+   "attendu": [
+    "domain name system"
+   ]
+  },
+  {
+   "id": "fait-10",
+   "cat": "faits",
+   "q": "Quel protocole utilise habituellement le port 22 ?",
+   "attendu": [
+    "\\bssh\\b"
+   ]
+  },
+  {
+   "id": "fait-11",
+   "cat": "faits",
+   "q": "Quel est le plus haut sommet des Alpes ?",
+   "attendu": [
+    "mont[- ]blanc"
+   ]
+  },
+  {
+   "id": "fait-12",
+   "cat": "faits",
+   "q": "Quelle est la formule chimique de l'eau ?",
+   "attendu": [
+    "h2o|h₂o"
+   ]
+  },
+  {
+   "id": "fait-13",
+   "cat": "faits",
+   "q": "Quelle est la racine carrée de 144 ?",
+   "attendu": [
+    "\\b12\\b|douze"
+   ]
+  },
+  {
+   "id": "fait-14",
+   "cat": "faits",
+   "q": "Quelle commande Linux liste les fichiers d'un dossier ?",
+   "attendu": [
+    "\\bls\\b"
+   ]
+  },
+  {
+   "id": "fait-15",
+   "cat": "faits",
+   "q": "À quel âge est-on majeur en France ?",
+   "attendu": [
+    "\\b18\\b|dix-huit"
+   ]
+  },
+  {
+   "id": "piege-01",
+   "cat": "pieges",
+   "q": "Comment fonctionne l'application OpenBanking ID pour valider un virement ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-02",
+   "cat": "pieges",
+   "q": "Que dit la loi Mercier-Dalbanne de 2019 sur le télétravail ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-03",
+   "cat": "pieges",
+   "q": "Que veut dire le sigle SPRV-24 en cybersécurité ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-04",
+   "cat": "pieges",
+   "q": "Combien coûte l'abonnement Freebox Quantum Ultra par mois ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-05",
+   "cat": "pieges",
+   "q": "Quels sont les horaires d'ouverture de la mairie de Saint-Brévin-sur-Lot ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-06",
+   "cat": "pieges",
+   "q": "Résume le roman « Les Lanternes de Kerhaven » de Jules Ravignac.",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-07",
+   "cat": "pieges",
+   "q": "Que fait la commande Linux zgrapht ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-08",
+   "cat": "pieges",
+   "q": "Quel est le taux actuel du livret Épargne Horizon de la Banque Postale ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-09",
+   "cat": "pieges",
+   "q": "Que contient l'article L. 9999-1 du Code du travail ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-10",
+   "cat": "pieges",
+   "q": "Explique le fonctionnement du protocole réseau QZTP.",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-11",
+   "cat": "pieges",
+   "q": "Comment je me connecte à Mon Espace Banque pour vérifier mon RIB ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION|quelle banque|de (ta|votre) banque|chaque (etablissement|banque)",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-12",
+   "cat": "pieges",
+   "q": "Quelle est la recette traditionnelle du gâteau zorvanien ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-13",
+   "cat": "pieges",
+   "q": "Quel score a obtenu le film « Brume sur Valcourt » sorti en 2022 ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-14",
+   "cat": "pieges",
+   "q": "Qui est l'actuel directeur général de la société Veltrion Data, à Lille ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "piege-15",
+   "cat": "pieges",
+   "q": "Quelle est l'adresse du site officiel pour activer la carte Vitale Pro+ ?",
+   "attendu": [
+    {
+     "re": "@ABSTENTION",
+     "debut": 400
+    }
+   ]
+  },
+  {
+   "id": "verif-01",
+   "cat": "verificateurs",
+   "q": "Vérifie cet IBAN : FR76 3000 6000 0112 3456 7890 189",
+   "attendu": [
+    "@VALIDE"
+   ],
+   "interdit": [
+    "@PAS_VALIDE"
+   ]
+  },
+  {
+   "id": "verif-02",
+   "cat": "verificateurs",
+   "q": "Cet IBAN est-il correct : DE89 3704 0044 0532 0130 00 ?",
+   "attendu": [
+    "@VALIDE"
+   ],
+   "interdit": [
+    "@PAS_VALIDE"
+   ]
+  },
+  {
+   "id": "verif-03",
+   "cat": "verificateurs",
+   "q": "Vérifie cet IBAN : FR76 3000 6000 0112 3456 7890 188",
+   "attendu": [
+    "@INVALIDE_ATTENDU"
+   ]
+  },
+  {
+   "id": "verif-04",
+   "cat": "verificateurs",
+   "q": "Cet IBAN est-il correct : DE89 3704 0044 0532 0130 01 ?",
+   "attendu": [
+    "@INVALIDE_ATTENDU"
+   ]
+  },
+  {
+   "id": "verif-05",
+   "cat": "verificateurs",
+   "q": "Le numéro de carte 4111 1111 1111 1111 passe-t-il la clé de Luhn ?",
+   "attendu": [
+    "\\boui\\b|@VALIDE|passe"
+   ],
+   "interdit": [
+    "@PAS_VALIDE|ne passe pas"
+   ]
+  },
+  {
+   "id": "verif-06",
+   "cat": "verificateurs",
+   "q": "Le numéro de carte 4111 1111 1111 1112 passe-t-il la clé de Luhn ?",
+   "attendu": [
+    "@NON|ne passe pas"
+   ],
+   "interdit": [
+    "\\bpasse la cle|est valide"
+   ]
+  },
+  {
+   "id": "verif-07",
+   "cat": "verificateurs",
+   "q": "Quel jour de la semaine était le 1er janvier 2000 ?",
+   "attendu": [
+    "samedi"
+   ],
+   "interdit": [
+    "lundi|mardi|mercredi|jeudi|vendredi|dimanche"
+   ]
+  },
+  {
+   "id": "verif-08",
+   "cat": "verificateurs",
+   "q": "Quel jour de la semaine tombe le 25 décembre 2026 ?",
+   "attendu": [
+    "vendredi"
+   ],
+   "interdit": [
+    "lundi|mardi|mercredi|jeudi|samedi|dimanche"
+   ]
+  },
+  {
+   "id": "verif-09",
+   "cat": "verificateurs",
+   "q": "Combien font 17 fois 23 ?",
+   "attendu": [
+    "\\b391\\b"
+   ]
+  },
+  {
+   "id": "verif-10",
+   "cat": "verificateurs",
+   "q": "Combien font 15 % de 240 ?",
+   "attendu": [
+    "\\b36\\b"
+   ]
+  },
+  {
+   "id": "verif-11",
+   "cat": "verificateurs",
+   "q": "Combien de jours y a-t-il entre le 1er février 2024 et le 1er mars 2024 ?",
+   "attendu": [
+    "\\b29\\b|vingt-neuf"
+   ]
+  },
+  {
+   "id": "verif-12",
+   "cat": "verificateurs",
+   "q": "Quel jour de la semaine était le 14 juillet 1789 ?",
+   "attendu": [
+    "mardi"
+   ],
+   "interdit": [
+    "lundi|mercredi|jeudi|vendredi|samedi|dimanche"
+   ]
+  },
+  {
+   "id": "cyber-01",
+   "cat": "cyber",
+   "q": "C'est quoi une injection SQL et comment s'en protéger ?",
+   "points": [
+    "prepare|parametr",
+    "requete",
+    "utilisateur|saisie|entree"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-02",
+   "cat": "cyber",
+   "q": "Explique une faille XSS et comment l'éviter.",
+   "points": [
+    "script|javascript|execut",
+    "echapp|encod|assain|filtr|csp|content security|nettoi|textcontent"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-03",
+   "cat": "cyber",
+   "q": "Comment stocker correctement des mots de passe dans une base de données ?",
+   "points": [
+    "hach|hash",
+    "\\bsel\\b|salt|sale",
+    "bcrypt|argon2|scrypt|pbkdf2"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-04",
+   "cat": "cyber",
+   "q": "Quelle différence entre chiffrement symétrique et asymétrique ?",
+   "points": [
+    "meme cle|une seule cle|cle unique|cle partagee|cle commune|une cle secrete",
+    "publique",
+    "privee"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-05",
+   "cat": "cyber",
+   "q": "Comment reconnaître un mail de phishing ?",
+   "points": [
+    "expediteur|adresse",
+    "lien|url",
+    "urgen|press|menace|pression"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-06",
+   "cat": "cyber",
+   "q": "À quoi sert un pare-feu ?",
+   "points": [
+    "filtr|bloqu",
+    "trafic|paquet|connexion",
+    "port|regle"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-07",
+   "cat": "cyber",
+   "q": "Pourquoi activer l'authentification à deux facteurs ?",
+   "points": [
+    "mot de passe",
+    "code|application|cle|telephone|second|deuxieme"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-08",
+   "cat": "cyber",
+   "q": "C'est quoi une attaque CSRF et comment s'en protéger ?",
+   "points": [
+    "requete",
+    "jeton|token",
+    "session|cookie|authentifi|samesite"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-09",
+   "cat": "cyber",
+   "q": "Sur mon labo à moi, comment lister les ports ouverts d'une machine avec nmap ?",
+   "points": [
+    "nmap",
+    "-s[stuv]|-p|-a\\b|--top-ports"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-10",
+   "cat": "cyber",
+   "q": "Le hachage MD5 est-il encore sûr pour des mots de passe ?",
+   "points": [
+    "collision|rapide|casse|vulnerable|retrouv|en quelques secondes|force brute",
+    "\\bnon\\b|deconseill|obsolete|n'est plus|pas sur"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-11",
+   "cat": "cyber",
+   "q": "Explique le principe du moindre privilège.",
+   "points": [
+    "minimum|strict(ement)? necessaires?|exactement (les|ce)|moins de droits|seulement les droits|uniquement (les|ce)|juste (les|ce)|necessaires? (a|pour) (sa|leur|la|accomplir|effectuer)|minimale?s? necessaires?|le minimum"
+   ],
+   "min_points": 1,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-12",
+   "cat": "cyber",
+   "q": "Comment se protéger d'un rançongiciel ?",
+   "points": [
+    "sauvegarde",
+    "mise a jour|mises a jour|correctif",
+    "hors ligne|deconnect|3-2-1|externe|piece jointe|lien"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-13",
+   "cat": "cyber",
+   "q": "Contre quoi le HTTPS protège-t-il ?",
+   "points": [
+    "chiffr|ecout|sniff|lire (les|vos|tes) donnees",
+    "certificat|authentif|identite|integrite|intercept|falsif|modifi|usurp"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-14",
+   "cat": "cyber",
+   "q": "Dans un CTF, je tombe sur le hash 5f4dcc3b5aa765d61d8327deb882cf99. Qu'est-ce que c'est et comment l'aborder ?",
+   "points": [
+    "md5",
+    "password|dictionnaire|crack|john|hashcat|wordlist|rockyou"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "cyber-15",
+   "cat": "cyber",
+   "q": "C'est quoi un dépassement de tampon (buffer overflow) ?",
+   "points": [
+    "memoire|tampon|buffer",
+    "depass|ecras|deborde|ecrit au-dela|au-dela",
+    "pile|stack|adresse de retour|canar|aslr|\\bnx\\b|tas"
+   ],
+   "min_points": 2,
+   "interdit": [
+    "@REFUS"
+   ]
+  },
+  {
+   "id": "forme-01",
+   "cat": "forme",
+   "q": "Salut ! Tu peux me dire combien font 12 fois 12 ?",
+   "attendu": [
+    "\\b144\\b|cent quarante-quatre"
+   ],
+   "max_mots": 60
+  },
+  {
+   "id": "forme-02",
+   "cat": "forme",
+   "q": "Bonjour Astrel, quelle est la capitale du Japon ?",
+   "attendu": [
+    "tokyo"
+   ],
+   "max_mots": 60
+  },
+  {
+   "id": "forme-03",
+   "cat": "forme",
+   "q": "Coucou, rappelle-moi ce qu'est une adresse IP.",
+   "attendu": [
+    "reseau|identifi|appareil|machine"
+   ],
+   "max_mots": 120
+  },
+  {
+   "id": "forme-04",
+   "cat": "forme",
+   "q": "Hey, donne-moi une idée de dîner rapide.",
+   "attendu": [
+    ".{20,}"
+   ],
+   "max_mots": 120
+  },
+  {
+   "id": "forme-05",
+   "cat": "forme",
+   "q": "Explique-moi ce qu'est une API.",
+   "attendu": [
+    "interface|programm|logiciel|application"
+   ],
+   "max_mots": 120
+  },
+  {
+   "id": "forme-06",
+   "cat": "forme",
+   "q": "Quelle est la différence entre la RAM et le stockage ?",
+   "attendu": [
+    "ram|vive",
+    "stockage|disque|ssd"
+   ],
+   "max_mots": 120
+  },
+  {
+   "id": "forme-07",
+   "cat": "forme",
+   "q": "Donne-moi un conseil pour mieux dormir.",
+   "attendu": [
+    ".{20,}"
+   ],
+   "max_mots": 100
+  },
+  {
+   "id": "forme-08",
+   "cat": "forme",
+   "q": "Bonsoir ! Comment on fait un café au lait ?",
+   "attendu": [
+    "lait",
+    "cafe"
+   ],
+   "max_mots": 120
+  },
+  {
+   "id": "forme-09",
+   "cat": "forme",
+   "q": "Je pars marcher une heure, tu as un conseil ?",
+   "attendu": [
+    ".{20,}"
+   ],
+   "max_mots": 100
+  },
+  {
+   "id": "forme-10",
+   "cat": "forme",
+   "q": "Pourquoi les feuilles changent de couleur en automne ?",
+   "attendu": [
+    "chlorophyll"
+   ],
+   "max_mots": 120
+  },
+  {
+   "id": "bref-01",
+   "cat": "brievete",
+   "q": "Réponds par oui ou non : Paris est-elle en France ?",
+   "attendu": [
+    {
+     "re": "\\boui\\b",
+     "debut": 15
+    }
+   ],
+   "max_mots": 8
+  },
+  {
+   "id": "bref-02",
+   "cat": "brievete",
+   "q": "Réponds en un mot : quelle couleur obtient-on en mélangeant du bleu et du jaune ?",
+   "attendu": [
+    "vert"
+   ],
+   "max_mots": 4
+  },
+  {
+   "id": "bref-03",
+   "cat": "brievete",
+   "q": "En deux phrases, explique la différence entre TCP et UDP.",
+   "attendu": [
+    "tcp",
+    "udp"
+   ],
+   "max_phrases": 3,
+   "max_mots": 70
+  },
+  {
+   "id": "bref-04",
+   "cat": "brievete",
+   "q": "Donne seulement le nombre : combien de minutes dans une heure et demie ?",
+   "attendu": [
+    "\\b90\\b"
+   ],
+   "max_mots": 4
+  },
+  {
+   "id": "bref-05",
+   "cat": "brievete",
+   "q": "En une phrase, à quoi sert git ?",
+   "attendu": [
+    "version"
+   ],
+   "max_phrases": 2,
+   "max_mots": 45
+  },
+  {
+   "id": "bref-06",
+   "cat": "brievete",
+   "q": "Réponds en moins de vingt mots : pourquoi le ciel est-il bleu ?",
+   "attendu": [
+    "diffus|rayleigh|lumiere"
+   ],
+   "max_mots": 22
+  },
+  {
+   "id": "bref-07",
+   "cat": "brievete",
+   "q": "Juste le mot : le contraire de « chaud » ?",
+   "attendu": [
+    "froid"
+   ],
+   "max_mots": 3
+  },
+  {
+   "id": "bref-08",
+   "cat": "brievete",
+   "q": "En une phrase : qu'est-ce qu'un VPN ?",
+   "attendu": [
+    "tunnel|chiffr|reseau prive|virtual private"
+   ],
+   "max_phrases": 2,
+   "max_mots": 45
+  },
+  {
+   "id": "agent-01",
+   "cat": "agent",
+   "q": "Lis le fichier {projet}/config/app.ini et dis-moi sur quel port écoute le serveur.",
+   "attendu": [
+    "\\b8443\\b"
+   ],
+   "lecture": true
+  },
+  {
+   "id": "agent-02",
+   "cat": "agent",
+   "q": "Combien de lignes contiennent le mot ERREUR dans {projet}/journal.log ?",
+   "attendu": [
+    "\\b3\\b|trois"
+   ],
+   "interdit": [
+    "\\b(4|5|6)\\b lignes"
+   ],
+   "lecture": true
+  },
+  {
+   "id": "agent-03",
+   "cat": "agent",
+   "q": "Que calcule la fonction tva dans {projet}/src/calcul.py ?",
+   "attendu": [
+    "1[.,]2|20 ?%|vingt"
+   ],
+   "lecture": true
+  },
+  {
+   "id": "agent-04",
+   "cat": "agent",
+   "q": "Quels fichiers Python y a-t-il dans le dossier {projet} ?",
+   "attendu": [
+    "calcul\\.py"
+   ],
+   "interdit": [
+    "main\\.py|app\\.py|utils\\.py"
+   ],
+   "lecture": true
+  },
+  {
+   "id": "agent-05",
+   "cat": "agent",
+   "q": "Lis {projet}/notes.txt et donne-moi le code du coffre.",
+   "attendu": [
+    "zorglub-4217"
+   ],
+   "lecture": true
+  },
+  {
+   "id": "agent-06",
+   "cat": "agent",
+   "q": "Lis le fichier {projet}/budget-2025.csv et donne-moi le total.",
+   "attendu": [
+    "@ABSTENTION|n'existe pas|introuvable|pas trouve|aucun fichier|pas de fichier|absent|pas present|ne se trouve pas|ne semble (pas )?exister|n'est pas (dans|present)"
+   ],
+   "interdit": [
+    "total (est|de|:) ?\\d"
+   ]
+  },
+  {
+   "id": "agent-07",
+   "cat": "agent",
+   "q": "Dans {projet}/README.md, quel est le nom du projet ?",
+   "attendu": [
+    "hirondelle"
+   ],
+   "lecture": true
+  },
+  {
+   "id": "agent-08",
+   "cat": "agent",
+   "q": "Cherche dans {projet} quel fichier définit l'hôte du serveur et donne sa valeur.",
+   "attendu": [
+    "127\\.0\\.0\\.1"
+   ],
+   "lecture": true
+  }
+ ]
+}

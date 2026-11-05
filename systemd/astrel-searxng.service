@@ -1,0 +1,22 @@
+[Unit]
+Description=Astrel - SearXNG local (recherche web du moteur local, 127.0.0.1 seulement)
+# 05/11/2026 (lot 7 partie A du moteur local, docs/chantiers/HYBRIDE-QWEN.md). Unité À PART, OPTIONNELLE :
+# écrite par `tools/searxng.sh --service`, activée par l'utilisateur seul. Elle démarre avec Astrel (WantedBy) mais
+# survit à ses relances (pas de PartOf) : SearXNG met ~3 s à charger ses moteurs, inutile de le refaire à
+# chaque relance du cœur. Sans cette unité : `tools/searxng.sh --lancer` à la main.
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@/.venv-searxng
+Environment=ASTREL_SEARXNG_PORT=@PORT@
+ExecStart=@ROOT@/tools/searxng.sh --lancer
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+# Écoute locale seulement (granian --host 127.0.0.1) ; sorties vers les moteurs de recherche en IPv4/IPv6.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=600M
+
+[Install]
+WantedBy=astrel.service

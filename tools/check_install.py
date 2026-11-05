@@ -315,7 +315,37 @@ def check_installed() -> list[Check]:
                           capture_output=True, cwd=str(ROOT)).returncode
     res.append(Check("dépendances Python", OK if code == 0 else MANQUE, "" if code == 0 else "incomplètes",
                      "" if code == 0 else "relance : python install.py"))
+    res.append(check_imagegen())
     return res
+
+
+def _version_npm(dossier: Path, paquet: str) -> tuple[str, str]:
+    """(version FIXÉE par package-lock.json, version installée dans node_modules), "" si illisible."""
+    def lire(f: Path, *cles: str) -> str:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            for cle in cles:
+                data = data[cle]
+            return str(data)
+        except (OSError, ValueError, KeyError, TypeError):
+            return ""
+    return (lire(dossier / "package-lock.json", "packages", f"node_modules/{paquet}", "version"),
+            lire(dossier / "node_modules" / paquet / "package.json", "version"))
+
+
+def check_imagegen(root: Path | None = None) -> Check:
+    """05/11 (T45) : worker des images et vidéos IA (imagegen/, `npm ci` d'install.py), playwright-core à la
+    version du package-lock. Facultatif : ALERTE seulement."""
+    dossier = (root or ROOT) / "imagegen"
+    attendu, installe = _version_npm(dossier, "playwright-core")
+    nom = "images et vidéos IA (Node)"
+    if not attendu:
+        return Check(nom, INFO, "package-lock.json absent")
+    if not installe:
+        return Check(nom, ALERTE, "worker non installé : pas d'images ni de vidéos IA", "cd imagegen && npm ci")
+    if installe != attendu:
+        return Check(nom, ALERTE, f"playwright-core {installe} installé, {attendu} attendu", "cd imagegen && npm ci")
+    return Check(nom, OK, f"playwright-core {installe}")
 
 
 def check_cairo_macos() -> Check:

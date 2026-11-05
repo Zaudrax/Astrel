@@ -7,7 +7,11 @@ Lot 3 : `decider`, le routage complet, dans cet ordre (décisions du 04/11) :
 6. auto : sensible → local, cybersécurité hors du projet → local, sinon → CLAUDE (ce qui n'est classé nulle
 part va à Claude) ; 7. le local n'a pas la capacité (outils, web, envoi, pièces jointes) → carte PROPOSÉE.
 Jamais de bascule seule vers Claude, jamais d'envoi d'une donnée sensible sans carte ; un refus de Claude ne
-renvoie rien au local. Fonctions PURES, sans modèle : le cœur décide (`coeur/routage.py`)."""
+renvoie rien au local. Fonctions PURES, sans modèle : le cœur décide (`coeur/routage.py`).
+05/11 (lot 7 partie B, décision de l'utilisateur : Qwen a Internet en permanence, sauf « rien ne sort ») : quand les
+outils web du local sont ouverts (`Etat.web_local`), une demande LOCALE qui cherche sur Internet ou lit une page
+n'est plus proposée à Claude : le local répond avec ses outils (`Decision.outils`), et avec son navigateur
+(`Decision.navigateur`) si elle vise un site interactif et qu'il est ouvert (`Etat.navigateur_local`)."""
 from __future__ import annotations
 
 import re
@@ -146,6 +150,23 @@ _ACTION_LOCALE = re.compile(
     r"|config\w*|scripts?|readme|files?)\b")
 
 
+# 05/11 (lot 7B) : chercher sur Internet, lire une page, une adresse écrite dans la demande.
+_WEB = re.compile(
+    r"\b(?:cherche|recherche|trouve|regarde|verifie|consulte)\w*\b[^.?!]{0,40}\b(?:sur (?:internet|le web|le net"
+    r"|google|wikipedia)|en ligne|sur le site)\b"
+    r"|\b(?:search|look up|browse|check)\b[^.?!]{0,30}\b(?:web|online|internet|wikipedia)\b"
+    r"|\b(?:lis|lire|ouvre|ouvrir|resume|regarde|consulte|read|open|summari[sz]e|look at)\w*\b[^.?!]{0,30}"
+    r"\b(?:page|article|site|url|lien|link|website)s?\b"
+    r"|\bhttps?://\S+|\bwww\.[a-z0-9-]+\.\S+")
+# 05/11 (lot 7B) : un site INTERACTIF (le navigateur du local, 8 outils, derrière son mandataire).
+_NAVIGATEUR = re.compile(
+    r"\b(?:navigateur|browser)\b|\bsite interactif\b|\binteractive (?:site|website)\b"
+    r"|\b(?:remplis|remplir|fill(?: in| out)?)\b[^.?!]{0,30}\b(?:formulaire|form|champs?|fields?)\b"
+    r"|\b(?:clique|cliquer|click)\w*\b"
+    r"|\b(?:va|aller|navigue\w*|go|navigate)\b[^.?!]{0,10}\b(?:sur|to)\b[^.?!]{0,30}\b(?:site|page|website)\b"
+    r"|\bapplication (?:web|javascript)\b|\bweb app\b")
+
+
 @dataclass(frozen=True)
 class Decision:
     """Moteur choisi par le cœur. `carte` : « sensible » (données sensibles vers Claude) ou « capacite » (le
@@ -159,6 +180,7 @@ class Decision:
     recommande: str = ""
     explicite: bool = False
     outils: bool = False   # 04/11 (lot 4) : le local répond AVEC ses outils de lecture
+    navigateur: bool = False  # 05/11 (lot 7B) : et avec son navigateur (site interactif)
 
 
 @dataclass
@@ -171,6 +193,8 @@ class Etat:
     scan: Callable[[str, Iterable[str]], list[str]] | None = None
     lecture_locale: bool = False  # 04/11 (lot 4) : outils de lecture du local ouverts (banc réussi, ni Total ni levée)
     actions_locales: bool = False  # 05/11 (lot 5) : commandes autorisées et propositions ouvertes (banc du lot 5)
+    web_local: bool = False        # 05/11 (lot 7B) : outils web du local ouverts (épreuves web du banc, en ligne)
+    navigateur_local: bool = False  # 05/11 (lot 7B) : navigateur du local ouvert (ses épreuves du banc)
 
 
 def mode_valide(mode: object) -> str:
@@ -178,15 +202,28 @@ def mode_valide(mode: object) -> str:
     return m if m in MODES else "auto"
 
 
-def _lecture_seule(demande: str, actions: bool = False) -> bool:
+def _lecture_seule(demande: str, actions: bool = False, web: bool = False, navigateur: bool = False) -> bool:
     """La demande a besoin de LIRE et de rien d'autre (aucune action, aucun envoi, pas de web). 05/11 (lot 5) :
-    `actions` : lancer une commande autorisée ou proposer une modification compte aussi."""
+    `actions` : lancer une commande autorisée ou proposer une modification compte aussi. 05/11 (lot 7B) : `web` :
+    chercher sur Internet et lire une page aussi ; `navigateur` : un site interactif aussi."""
     plie = _plier(demande)
-    vu = bool(_LECTURE.search(plie)) or (actions and bool(_ACTION_LOCALE.search(plie)))
-    reste = _LECTURE.sub(" ", plie)
-    if actions:
-        reste = _ACTION_LOCALE.sub(" ", reste)
+    motifs = [_LECTURE] + ([_ACTION_LOCALE] if actions else []) + ([_WEB] if web else []) + (
+        [_NAVIGATEUR] if web and navigateur else [])
+    vu = any(m.search(plie) for m in motifs)
+    reste = plie
+    for m in motifs:
+        reste = m.sub(" ", reste)
     return vu and not _CAPACITE.search(reste)
+
+
+_SUR_LE_WEB = re.compile(r"\b(?:site|page|web|url|navigateur|browser|website|internet|en ligne|online)\b|https?://|www\.")
+
+
+def vise_un_site(demande: str) -> bool:
+    """05/11 (lot 7B) : la demande vise-t-elle un site INTERACTIF (formulaire, clic, navigateur) ? Il faut aussi
+    qu'elle parle du web (« explique où cliquer » dans un fichier n'ouvre pas Chrome)."""
+    plie = _plier(demande)
+    return bool(_NAVIGATEUR.search(plie) and (_SUR_LE_WEB.search(plie) or _WEB.search(plie)))
 
 
 def decider(texte: str, canal: str = "", pieces: Iterable[str] = (), reglages: dict | None = None,
@@ -197,8 +234,9 @@ def decider(texte: str, canal: str = "", pieces: Iterable[str] = (), reglages: d
     etat = etat or Etat()
     dec = _decider(texte, canal, pieces, reglages, etat)
     if dec.moteur == LOCAL and not dec.carte and etat.lecture_locale and not list(pieces or ()) \
-            and _lecture_seule(dec.texte, etat.actions_locales):
-        return replace(dec, outils=True)
+            and _lecture_seule(dec.texte, etat.actions_locales, etat.web_local, etat.navigateur_local):
+        nav = etat.web_local and etat.navigateur_local and vise_un_site(dec.texte)
+        return replace(dec, outils=True, navigateur=nav)
     return dec
 
 
@@ -217,8 +255,9 @@ def _decider(texte: str, canal: str, pieces: Iterable[str], reglages: dict | Non
     raisons = tuple(scan(texte, pieces))
     if pieces:  # le moteur local ne lit pas encore les pièces jointes
         manque = ("pièces jointes",)
-    elif etat.lecture_locale and _lecture_seule(demande, etat.actions_locales):
-        manque = ()  # 04/11 (lot 4) : le local sait lire, avec ses outils (05/11, lot 5 : et lancer, proposer)
+    elif etat.lecture_locale and _lecture_seule(demande, etat.actions_locales, etat.web_local, etat.navigateur_local):
+        manque = ()  # 04/11 (lot 4) : le local sait lire, avec ses outils (05/11, lot 5 : et lancer, proposer ;
+        # lot 7B : et chercher sur Internet, lire une page, un site interactif)
     else:
         manque = ("outils",) if _CAPACITE.search(_plier(demande)) else ()
     if moteur == CLAUDE:

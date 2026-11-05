@@ -8,7 +8,8 @@ Aucun droit administrateur. Relançable sans risque : ce qui est déjà fait est
 gardé (venv, modèles, réglages, mode de sécurité, empreinte du garde-fou).
 
 Étapes : contrôle de la machine (tools/check_install.py) → environnement Python
-→ réglages d'exemple → modèles → serveurs MCP (Node) → mode PRUDENT si c'est
+→ réglages d'exemple → modèles → dépendances Node (serveurs MCP, pont WhatsApp,
+worker des images et vidéos IA) → mode PRUDENT si c'est
 une première installation → démarrage automatique (Linux : service systemd,
 bulle, raccourcis GNOME) → empreinte du garde-fou (Linux, première fois).
 
@@ -331,7 +332,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         run([py, ROOT / "tools" / "fetch_models.py"])
 
-    step(5, total, "Navigateur piloté (Playwright), pont WhatsApp et HUD")
+    step(5, total, "Navigateur piloté (Playwright), pont WhatsApp, images et vidéos IA, HUD")
     if shutil.which("npm"):
         run(["npm", "install", "--no-audit", "--no-fund", "--silent"], cwd=ROOT / "mcp-servers")
         # 18/10 (plan P5) : le pont WhatsApp, à versions FIXÉES (package-lock). Facultatif :
@@ -339,13 +340,19 @@ def main(argv: list[str] | None = None) -> int:
         if (ROOT / "whatsapp" / "package-lock.json").exists() and \
                 run(["npm", "ci", "--no-audit", "--no-fund", "--silent"], cwd=ROOT / "whatsapp", check=False) != 0:
             print("   pont WhatsApp non préparé : Réglages › WhatsApp › « Préparer WhatsApp » plus tard")
+        # 05/11 (T45) : le worker des images et vidéos IA (playwright-core FIXÉ par son package-lock),
+        # absent jusqu'ici (« Générateur d'images pas installé »). Facultatif comme WhatsApp.
+        if (ROOT / "imagegen" / "package-lock.json").exists() and \
+                run(["npm", "ci", "--no-audit", "--no-fund", "--silent"], cwd=ROOT / "imagegen", check=False) != 0:
+            print("   images et vidéos IA non préparées : « cd imagegen && npm ci » plus tard")
         if args.rebuild_hud:
             run(["npm", "install", "--no-audit", "--no-fund", "--silent"], cwd=ROOT / "hud")
             run(["npm", "run", "-s", "build"], cwd=ROOT / "hud")
         else:
             print("   HUD précompilé utilisé tel quel (--rebuild-hud pour le recompiler)")
     else:
-        print("   npm absent : ni navigateur piloté ni WhatsApp ; le HUD précompilé sert tel quel.")
+        print("   npm absent : ni navigateur piloté, ni WhatsApp, ni images et vidéos IA ; "
+              "le HUD précompilé sert tel quel.")
 
     step(6, total, "Démarrage automatique")
     workdir = args.projets or current_workdir(Path.home() / ".config/systemd/user/astrel.service") \

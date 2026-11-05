@@ -8,7 +8,10 @@ Le vrai hook est branché en production (`outils_local.reglages_hook`, tests/tes
 
 05/11 (lot 5) : les outils du serveur `astrel_local` sont jugés par le VRAI code du garde-fou
 (`guard._refus_outil_local`, sur la liste jetable du banc `BANC_LOCAL_COMMANDES`, puis `guard.classify`) :
-refusé ou à confirmer → refusé (jamais de carte), sinon autorisé, comme le ferait `hooks/permission_hook.py`."""
+refusé ou à confirmer → refusé (jamais de carte), sinon autorisé, comme le ferait `hooks/permission_hook.py`.
+05/11 (lot 7B) : les outils `web_local` et `playwright_local` sont jugés par le VRAI code du garde-fou
+(`guard._refus_web_local` : outils du navigateur permis, adresse de `browser_navigate` dans le registre du tour),
+sans le contrôle du vrai CLI local (le banc n'est pas un enfant du cœur) ; sensibles = libres, comme en autonome."""
 from __future__ import annotations
 
 import json
@@ -41,6 +44,13 @@ def main() -> int:
             why = "à confirmer : refusé au banc (aucune carte)"
         decision = "deny" if why else "allow"
         _decision(decision, why or "action autorisée par le garde-fou (banc)")
+    elif outil.startswith(("mcp__web_local__", "mcp__playwright_local__")):
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from astrel import guard
+
+        why = guard._refus_web_local(outil, entree.get("tool_input") or {})
+        decision = "deny" if why else "allow"
+        _decision(decision, why or "outil web autorisé par le garde-fou (banc)")
     elif "piege-hook" in json.dumps(entree.get("tool_input") or {}, ensure_ascii=False):
         decision = "deny"
         _decision(decision, "refusé par le garde-fou (banc)")

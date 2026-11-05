@@ -29,7 +29,12 @@ WATCHED = {
     "python": ["requirements.txt"],
     "mcp": ["mcp-servers/package.json", "mcp-servers/package-lock.json"],
     "hud": ["hud/package.json", "hud/package-lock.json"],
+    # 05/11 (T45) : pont WhatsApp et worker des images et vidéos IA, réinstallés à la version du package-lock
+    "whatsapp": ["whatsapp/package.json", "whatsapp/package-lock.json"],
+    "imagegen": ["imagegen/package.json", "imagegen/package-lock.json"],
 }
+# Dossiers Node installés par `npm ci` (versions FIXÉES du package-lock), comme dans install.py.
+NPM_CI = ("whatsapp", "imagegen")
 # Ce qui décide de laisser passer une action : son empreinte est retenue par le doctor.
 GUARD_PREFIXES = ("astrel/", "hooks/")
 
@@ -112,7 +117,11 @@ def main(argv: list[str] | None = None) -> int:
     if before["mcp"] != after["mcp"] and shutil.which("npm"):
         inst.run(["npm", "install", "--no-audit", "--no-fund", "--silent"], cwd=ROOT / "mcp-servers")
         print("   Node (MCP) : réinstallées")
-    if all(before[k] == after[k] for k in ("python", "mcp")):
+    for nom in NPM_CI:
+        if before[nom] != after[nom] and shutil.which("npm") and (ROOT / nom / "package-lock.json").exists():
+            code = inst.run(["npm", "ci", "--no-audit", "--no-fund", "--silent"], cwd=ROOT / nom, check=False)
+            print(f"   Node ({nom}) : " + ("réinstallées" if code == 0 else f"échec, relance « cd {nom} && npm ci »"))
+    if all(before[k] == after[k] for k in ("python", "mcp", *NPM_CI)):
         print("   inchangées")
 
     print("3/4 Réglages et garde-fou")

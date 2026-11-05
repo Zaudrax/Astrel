@@ -1,6 +1,6 @@
 """T58 pas 1 (04/11) : `_on_command` en table nom → méthode. Ce test FIGE, avant et après le déplacement du
 code, les noms traités (147 avec history_query, 04/11 ; 149 avec local_vers_claude et local_demandes, 05/11 ;
-152 avec les propositions du modèle local, lot 5, 05/11) et
+152 avec les propositions du modèle local, lot 5, 05/11 ; 153 avec chat_commande, commandes « / » du chat, 05/11) et
 les refus faits à Claude (message exact)."""
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ NOMS = {
     "agent_effort", "announce", "ask_choice", "attach_stage", "attachments_stage", "audit_get", "autonomy",
     "autorisations", "calibrage_cancel", "calibrage_save", "calibrage_start", "canal", "canaux", "capacites_get",
     "channel", "channel_create", "channel_delete", "channel_edit", "channel_move", "channel_rename",
-    "channel_reorder", "channels", "choice_answer", "chut", "confirm", "couper_tout", "dictation", "dictee",
+    "channel_reorder", "channels", "chat_commande", "choice_answer", "chut", "confirm", "couper_tout", "dictation", "dictee",
     "end_listen", "endlisten", "estop", "followup", "grants", "graph", "guide_get", "guide_mark", "history_query", "hud_here",
     "hud_pages", "hud_replace", "hush", "image_compte_ajouter", "image_compte_connecter", "image_compte_ordre",
     "image_compte_renommer", "image_compte_retirer", "image_generate", "image_piece", "image_retry", "image_status",
@@ -64,6 +64,7 @@ REFUS = {
     "history_query": "history_query est réservé au HUD de l'utilisateur",  # 04/11 : recherche du HUD
     "local_vers_claude": "local_vers_claude est réservé au HUD de l'utilisateur",  # 05/11 (lot 6 du moteur local)
     "local_demandes": "local_demandes est réservé au HUD de l'utilisateur",
+    "chat_commande": "chat_commande est réservé au HUD de l'utilisateur",  # 05/11 : commandes « / » du chat
 }
 
 

@@ -1,7 +1,8 @@
 # Intégration continue d'Astrel (P2, lot 3).
 #
 # - « linux » (à chaque push et pull request) : contrôle de la machine, tests
-#   Python (et Node du HUD), rendu du HUD en Chrome headless. Doit être VERT.
+#   Python, tests Node (HUD, pont WhatsApp, worker des images et vidéos IA ; 05/11),
+#   rendu du HUD en Chrome headless. Doit être VERT.
 # - « portage » (macOS et Windows, à la demande, une fois par semaine, et à chaque push
 #   sur la branche « portage ») : MESURE où en est le portage ; un échec n'est
 #   jamais bloquant (rapport dans le job, pas de mail d'échec).
@@ -29,7 +30,8 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # 05/11 (T45) : 30 → 40 min ; le worker des images ajoute ~9 min (8 à 10 min avant, mesuré le 05/11)
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -51,8 +53,29 @@ jobs:
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/python -m pip install -r /tmp/requirements-ci.txt websockets
-      - name: Tests Python (dont ceux du HUD en Node, par tests/test_hud_markdown.py)
+      # 05/11 (T45) : comme install.py, versions FIXÉES des package-lock ; servent aux tests Node ci-dessous
+      - name: Dépendances Node du pont WhatsApp et du worker des images et vidéos IA (npm ci, comme install.py)
+        run: |
+          (cd whatsapp && npm ci --no-audit --no-fund)
+          (cd imagegen && npm ci --no-audit --no-fund)
+      - name: Tests Python (dont une partie des tests Node du HUD, relancés par pytest)
         run: .venv/bin/python -m pytest -q
+      # 05/11 (T45) : TOUS les tests Node, plus seulement ceux que pytest relance (7 fichiers du HUD sur 13 avant)
+      - name: Tests Node du HUD (hud/tests, tous les fichiers)
+        if: always()
+        timeout-minutes: 5
+        working-directory: hud
+        run: node --test tests/*.test.mjs
+      - name: Tests Node du pont WhatsApp (faux Baileys, aucun compte)
+        if: always()
+        timeout-minutes: 5
+        working-directory: whatsapp
+        run: node --test
+      - name: Tests Node du worker des images et vidéos IA (fausses pages locales, Chrome headless de l'image, aucun site)
+        if: always()
+        timeout-minutes: 20
+        working-directory: imagegen
+        run: node --test --test-concurrency=1
       - name: Rendu du HUD en Chrome headless
         run: .venv/bin/python tools/hud_check_rendu.py
       - name: Essai de démarrage (vrai Astrel, faux Claude, sans micro ni haut-parleur)
@@ -77,6 +100,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      # 05/11 (T45) : même Node que le job linux (avant : celui de l'image, version variable)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Faux Claude Code dans le PATH
         shell: bash
         run: echo "$GITHUB_WORKSPACE/tools/ci/faux-claude" >> "$GITHUB_PATH"
@@ -95,6 +122,29 @@ jobs:
       - name: Essai de démarrage (vrai Astrel, faux Claude, sans micro ni haut-parleur)
         shell: bash
         run: '"$VPY" tools/ci/demarrage.py'
+      # 05/11 (T45) : tests Node, en MESURE comme le reste du job
+      - name: Tests Node du HUD (hud/tests, tous les fichiers)
+        if: always()
+        timeout-minutes: 5
+        shell: bash
+        working-directory: hud
+        run: node --test tests/*.test.mjs
+      - name: Tests Node du pont WhatsApp (faux Baileys, aucun compte)
+        if: always()
+        timeout-minutes: 8
+        shell: bash
+        working-directory: whatsapp
+        run: npm ci --no-audit --no-fund && node --test
+      # Worker des images et vidéos : macOS seulement (Chrome de l'image désigné par ASTREL_IMAGEGEN_CHROME) ;
+      # pas sous Windows : ses tests cherchent les Chrome restants par `ps -eo`, absent de Windows.
+      - name: Tests Node du worker des images et vidéos IA (macOS, fausses pages locales, aucun site)
+        if: always() && runner.os == 'macOS'
+        timeout-minutes: 20
+        shell: bash
+        working-directory: imagegen
+        env:
+          ASTREL_IMAGEGEN_CHROME: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+        run: npm ci --no-audit --no-fund && node --test --test-concurrency=1
       - name: Tests de la couche plateforme, de l'installation et du canal local (plan P6)
         if: always()
         shell: bash

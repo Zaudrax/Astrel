@@ -378,6 +378,49 @@ async def chat_lot2_en(p: Page) -> None:
     await close_panel(p)
 
 
+async def commandes_en(p: Page) -> None:
+    """05/11 : commandes « / » de la barre en anglais : liste (noms anglais, descriptions), valeurs de /model, /help
+    dans le fil, commande inconnue (toast), refus de /clear traduit (catalogue du cœur)."""
+    await p.js("document.querySelectorAll('.menu, .toast').forEach(m => m.remove()), true")
+
+    async def taper(texte):
+        await p.js("(() => { const a = document.querySelector('#ask'); a.value = ''; a.dispatchEvent(new Event('input')); a.focus(); })()")
+        await p.send("Input.insertText", text=texte)
+        await asyncio.sleep(0.1)
+
+    liste = """(() => { const l = document.querySelector('#slash-menu');
+        return { open: !!l && !l.hidden, label: l?.getAttribute('aria-label'),
+          names: [...l.querySelectorAll('.slash-name')].map(x => x.textContent),
+          desc: [...l.querySelectorAll('.slash-desc')].map(x => x.textContent) }; })()"""
+    await taper("/")
+    m = await p.js(liste)
+    await scan(p, "liste des commandes « / »")
+    check(f"commandes « / » en anglais : « {m['label']} », {m['names'][:4]}…, « {m['desc'][0]} »",
+          m["open"] and m["label"] == "Chat commands" and m["names"][:2] == ["/help", "/clear"]
+          and "/offline" in m["names"] and "/stop-all" in m["names"] and m["desc"][0].startswith("the list of commands"))
+    await taper("/model ")
+    v = await p.js(liste)
+    check(f"valeurs de /model en anglais : {v['names']}, « {v['desc'][1]} »",
+          v["names"] == ["/model sonnet", "/model opus", "/model haiku"] and v["desc"][1] == "the strongest, for hard work")
+    await taper("/help")
+    await p.key("Enter", vk=13, text="\r")
+    got = await wait(p, "!!document.querySelector('#transcript .msg.cmd-help:not(.hidden)')", 4)
+    h = await p.js("""(() => { const m = [...document.querySelectorAll('#transcript .msg.cmd-help')].at(-1);
+        return { title: m.querySelector('.cmd-help-title').textContent, first: m.querySelector('.cmd-help-name').textContent }; })()""") if got else {}
+    await scan(p, "/help dans le fil")
+    check(f"/help en anglais dans le fil : « {h.get('title', '')[:40]}… », « {h.get('first')} »",
+          got and h["title"].startswith("Chat commands (typed in the bar") and h["first"] == "/help")
+    await taper("/xyz")
+    await p.key("Enter", vk=13, text="\r")
+    unk = await wait(p, "[...document.querySelectorAll('.toast')].some(t => t.textContent.startsWith('Unknown command: /xyz.'))", 3)
+    await taper("/clear")
+    await p.key("Enter", vk=13, text="\r")
+    refus = await wait(p, "[...document.querySelectorAll('.toast')].some(t => t.textContent.startsWith('No new conversation: a background task'))", 3)
+    check(f"commande inconnue ({unk}) et refus de /clear ({refus}) en anglais", unk and refus)
+    await p.js("(() => { const a = document.querySelector('#ask'); a.value = ''; a.dispatchEvent(new Event('input')); a.blur(); })()")
+    await p.shot("apres-en-commandes.png")
+
+
 async def run(url: str) -> None:
     targets = json.load(urllib.request.urlopen(f"http://127.0.0.1:{CDP_PORT}/json"))
     ws_url = next(t["webSocketDebuggerUrl"] for t in targets if t["type"] == "page")
@@ -448,6 +491,7 @@ async def run(url: str) -> None:
         await liens_en(p)  # 04/11 : liens du fil, Copier, bouton ↓
         await chat_lot2_en(p)  # 04/11 : chemins copiés, Échap = ■, recherche dans tous les canaux
         await moteur_en(p)  # 05/11 (lot 6 du moteur local) : « Qui répond », « Envoyer à Claude »
+        await commandes_en(p)  # 05/11 : commandes « / » de la barre
         await p.js("document.querySelector('#activity').classList.add('hidden')")
         # 28/10 (plan P40 lot A5) : panneau « Images » sous la barre, en Auto puis en Manuel
         await click(p, "#images-btn")

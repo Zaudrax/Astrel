@@ -136,6 +136,12 @@ azure, kube, docker, gh, npm, pypi), .netrc, coffres, trousseaux, mots de passe 
 système (`SecretsCompte`, `_secrets_compte`). Les LIRE (Read, Grep, toute commande qui les cite, joker, lecteur
 récursif sur un dossier parent, programme lancé dans ~/.ssh, CLI qui sort un jeton) : plafond, case « secrets du
 compte » ; les modifier ou les supprimer : critique. Aucun verdict desserré.
+
+05/11 (agents imbriqués, autorisation explicite de l'utilisateur) : lancer un AUTRE agent IA (claude -p, codex, gemini,
+aider…, sous toutes ses formes : chemin, lien, paquet npm, node cli.js, python -m, code d'un autre langage, SDK,
+tmux/screen/terminal, cmd/PowerShell, variables CLAUDE_CONFIG_DIR/CLAUDE_CODE_*/CLAUDECODE) : plafond, case
+« agent imbriqué » (`L_AGENT_IMBRIQUE`, `_judge_agent`). Aide, version et gestion du CLI claude restent libres.
+tmux, screen et les terminaux font désormais juger la commande qu'ils lancent. Aucun verdict desserré.
 """
 from __future__ import annotations
 
@@ -240,6 +246,143 @@ def _claude_cli(args: list, out: list) -> None:
     if ("setup-token" in ops or any(pair in _CLAUDE_CRITICAL for pair in zip(ops, ops[1:]))
             or (not {"-p", "--print"} & set(a) and _CLAUDE_SELF & set(ops[:2]))):
         _add(out, L_CLAUDE_ID, guard=True)
+
+
+# 05/11 (trou confirmé, autorisation explicite de l'utilisateur) : `claude -p "…"` lancé par le Bash de Claude passait
+# SANS question, et ce CLI imbriqué ne charge pas le hook d'Astrel (posé par le seul `--settings` du cerveau) : il
+# agissait sans garde-fou. Lancer un AUTRE agent IA qui exécute des outils = plafond (ni Total, ni levée, ni « oui
+# pour 30 min »), case `agent_imbrique`. Libres : aide et version ; `claude doctor`, `auth status`, `mcp list|get`,
+# `plugin list` (ce qui change le compte reste jugé par `_claude_cli`). Le CLI local du moteur Qwen et les CLI des
+# fournisseurs sont lancés par le CŒUR, jamais par ce Bash : non concernés.
+L_AGENT_IMBRIQUE = "le lancement d'un autre agent IA sans le garde-fou (claude, codex, gemini…)"
+_AGENTS = frozenset({
+    "claude", "claude-code", "codex", "gemini", "gemini-cli", "aider", "aider-chat", "opencode", "opencode-ai",
+    "goose", "cursor-agent", "amp", "grok", "grok-cli", "qwen", "qwen-code", "crush", "openhands", "openhands-ai",
+    "copilot", "auggie", "droid", "plandex", "kilocode", "cline", "kiro-cli", "gptme", "interpreter",
+    "open-interpreter", "kimi", "qodo"})
+_AGENT_NOMS = "|".join(sorted(map(re.escape, _AGENTS), key=len, reverse=True))
+# Paquets npm des CLI d'agents, dans un chemin ou un nom (`node …/@openai/codex/bin/codex.js`, `npm:@…`).
+_AGENT_PAQUET = re.compile(r"(?:^|[/:\\])(?:@anthropic-ai[/\\]claude-(?:code|agent-sdk)|@openai[/\\]codex"
+                           r"|@google[/\\]gemini-cli|@qwen-code[/\\]qwen-code|opencode-ai|@sourcegraph[/\\]amp"
+                           r"|@charmland[/\\]crush|@vibe-kit[/\\]grok-cli|@github[/\\]copilot|@augmentcode[/\\]auggie"
+                           r"|@kilocode[/\\]cli|@factory[/\\]cli|@cline[/\\]cli)(?:[/@\\]|$)")
+_AGENT_MODULES = {"aider", "openhands", "interpreter", "gptme"}  # python -m aider
+_AGENT_SUFFIXE = re.compile(r"\.(?:exe|cmd|bat|ps1|com)$")
+# Un nom de CLI d'agent en position de COMMANDE dans un texte qu'on ne lit pas comme du shell (cmd /c, PowerShell,
+# wsl, expect, shell illisible, programme calculé) : début, après un séparateur ou une citation, chemin compris.
+_AGENT_TEXTE = re.compile(r"(?:^|[\s;&|(`'\"])(?:[^\s;&|()`'\"]*[/\\])?(?:" + _AGENT_NOMS + r")(?:\.exe|\.cmd|\.ps1)?"
+                          r"(?=$|[\s;&|)`'\"])", re.I)
+# Code d'un autre langage (python -c, heredoc, node -e, awk) : un CLI d'agent lancé (`subprocess.run(["claude",
+# …])`, `os.system("codex exec …")`, `spawn('gemini')`, Tcl `exec claude`, perl `` `claude -p` ``) ou le SDK
+# d'agent (`claude_agent_sdk`, qui lance le CLI).
+_AGENT_LANCE = re.compile(r"subprocess|Popen|\bsystem\b|\bexec\w*|\bspawn\w*|popen|child_process|\bCommand\b"
+                          r"|Process\.Start|ProcessBuilder|Open3|\bpty\b|shell\s*=")
+# Nom cité en PREMIER argument d'une fonction qui lance un process (`run(["claude"`, `system("codex …`,
+# `spawn('gemini'`) ou d'une liste affectée (`cmd = ["claude", …]`) ; pas une valeur (`{service: 'gemini'}`,
+# `site === 'gemini'`, `args=("codex", "outils")`, `for f in ("codex", …)` : rejeu du 05/11).
+_AGENT_CHAINE = re.compile(r"(?:\b(?:run|call|Popen|check_output|check_call|system|popen|getoutput|getstatusoutput"
+                           r"|spawn\w*|exec\w*|create_subprocess_\w+)\s*\(\s*\[?|=\s*\[)\s*[\"'`](?:[^\"'`\s]*[/\\])?(?:"
+                           + _AGENT_NOMS + r")(?:\.exe|\.cmd)?(?=[\"'`\s])")
+_PAS_UN_CHEMIN = re.compile(r"[\s'\"();]")
+_AGENT_NU = re.compile(r"\b(?:exec|spawn|system)\s+[\"']?(?:[^\s;\"']*/)?(?:" + _AGENT_NOMS + r")(?=[\s;\"']|$)")
+_AGENT_SDK = re.compile(r"claude_agent_sdk|claude_code_sdk|@anthropic-ai/claude-(?:agent-sdk|code)(?![\w-])"
+                        r"|@openai/codex-sdk|codex_sdk")
+# Variables d'un CLI de Claude posées pour LANCER (`CLAUDE_CONFIG_DIR=/tmp/c python agent.py`, `export
+# CLAUDE_CODE_…`, `unset CLAUDECODE`) : le programme qui suit lance un CLI.
+_VAR_AGENT = re.compile(r"^(?:CLAUDE_CONFIG_DIR|CLAUDECODE|CLAUDE_CODE_\w+)$")
+# Options propres aux CLI d'agents : données à n'importe quel programme (binaire renommé, script qui les passe au
+# CLI), sauf aux lecteurs de texte qui les CHERCHENT (`grep -- --dangerously-skip-permissions …`).
+_AGENT_DRAPEAUX = {"--dangerously-skip-permissions", "--allow-dangerously-skip-permissions",
+                   "--dangerously-bypass-approvals-and-sandbox", "--permission-mode", "--append-system-prompt",
+                   "--mcp-config", "--strict-mcp-config", "--allowedTools", "--disallowedTools", "--yolo"}
+_CHERCHEURS = {"grep", "egrep", "fgrep", "rg", "ag", "ack", "git", "echo", "printf", "sed", "awk", "gawk", "mawk",
+               "jq", "yq", "less", "more", "head", "tail", "cat", "bat", "batcat", "man", "wc", "sort", "uniq", "cut",
+               "tr", "diff", "cmp", "tee", "test", "[", "true", ":", "fd", "fdfind", "find", "locate", "which", "type",
+               "whereis", "ls", "stat", "file", "strings", "column", "nl", "fold", "comm", "tac", "rev", "read"}
+_CLAUDE_AIDE = {"--help", "-h", "--version", "-v", "-V"}
+_AGENT_AIDE = {"--help", "--version"}
+# Sous-commandes de gestion du CLI claude (aucun agent lancé ; `_claude_cli` juge celles qui changent le compte).
+_CLAUDE_GESTION = {"doctor", "auth", "mcp", "plugin", "plugins", "marketplace", "setup-token", "update", "upgrade",
+                   "install", "config", "migrate-installer"}
+_PROC_EXE = re.compile(r"^/proc/[^/]+/(?:exe|fd/\d+)$")  # le binaire d'un process (le cerveau : /proc/$PPID/exe)
+_QUI_EST: dict[str, str] = {}  # nom nu → vrai chemin (PATH), lu une fois par process
+
+
+def _nom_agent(c: str) -> str:
+    """05/11 : nom du CLI d'agent que désigne ce mot de commande (« » : aucun). Nom (Windows : .exe, .cmd…),
+    paquet npm (`@anthropic-ai/claude-code@latest`), binaire natif (`…/claude/versions/2.1.285`), chemin
+    d'un paquet d'agent, et VRAI chemin d'un lien (`ln -s ~/.local/bin/claude /tmp/x` puis `/tmp/x`)."""
+    if _PROC_EXE.match(c):
+        return "agent"  # /proc/$PPID/exe : le binaire du cerveau lui-même (pid inconnu compris)
+    if not c or _DYN in c:
+        return ""
+    if _CLAUDE_BIN.search(c) or _CLAUDE_JS.search(c):
+        return "claude"
+    if _AGENT_PAQUET.search(c):
+        return "claude" if "claude" in c else "agent"
+    n = _AGENT_SUFFIXE.sub("", c.replace("\\", "/").rsplit("/", 1)[-1].lower())
+    if "@" in n[1:]:
+        n = n[:n.index("@", 1)]  # npx claude-code@latest
+    if n in _AGENTS:
+        return n
+    if _PROC_EXE.match(c):
+        return "agent"
+    vrai = _vrai_chemin(c)
+    if vrai and vrai != c and (_CLAUDE_BIN.search(vrai) or _CLAUDE_JS.search(vrai) or _AGENT_PAQUET.search(vrai)
+                               or _AGENT_SUFFIXE.sub("", vrai.rsplit("/", 1)[-1].lower()) in _AGENTS):
+        return "claude" if "claude" in vrai else "agent"
+    return ""
+
+
+def _vrai_chemin(c: str) -> str:
+    """Vrai chemin d'un programme (lien suivi) ; nom nu cherché dans PATH. « » si introuvable."""
+    try:
+        if "/" in c or "\\" in c:
+            return os.path.realpath(os.path.expanduser(c))
+        if c not in _QUI_EST:
+            import shutil
+
+            w = shutil.which(c)
+            _QUI_EST[c] = os.path.realpath(w) if w else ""
+        return _QUI_EST[c]
+    except (OSError, ValueError):
+        return ""
+
+
+def _agent_sans_outils(nom: str, args: list) -> bool:
+    """05/11 : ce lancement d'un CLI d'agent ne fait-il que s'afficher (aide, version) ou gérer le CLI claude
+    (doctor, auth, mcp sauf `serve`, plugin…) ? Un mot inconnu ou calculé : non (un agent peut tourner)."""
+    avant = []
+    for x in args:
+        if x.text == "--" and not x.dyn:
+            break
+        avant.append(x)
+    lits = {x.text for x in avant if not x.dyn and len(set(x.cands)) == 1}
+    claude = nom in ("claude", "claude-code")
+    if lits & (_CLAUDE_AIDE if claude else _AGENT_AIDE):
+        return True
+    if not claude:
+        return len(args) == 1 and not args[0].dyn and args[0].cands in (["-h"], ["-V"])
+    if not args or args[0].dyn or not set(args[0].cands) <= _CLAUDE_GESTION:
+        return False
+    if "mcp" in args[0].cands:  # `claude mcp serve` : les outils du CLI (Bash, Edit…) servis sans garde-fou
+        return len(args) < 2 or (not args[1].dyn and "serve" not in args[1].cands)
+    return True
+
+
+def _agent(out: list) -> None:
+    _add(out, L_AGENT_IMBRIQUE, guard=True, cat=limites.AGENT_IMBRIQUE)
+
+
+def _drapeau_agent(args: list) -> bool:
+    """05/11 : une option propre aux CLI d'agents (`--dangerously-skip-permissions`, `--mcp-config=…`)."""
+    return any(c in _AGENT_DRAPEAUX or c.split("=", 1)[0] in _AGENT_DRAPEAUX for x in args for c in x.cands)
+
+
+def _agent_dans_code(text: str) -> bool:
+    """05/11 : du code d'un autre langage qui lance un CLI d'agent ou charge son SDK."""
+    return bool(_AGENT_SDK.search(text) or _AGENT_NU.search(text)
+                or (_AGENT_LANCE.search(text) and _AGENT_CHAINE.search(text)))
 # Doutes de l'analyse : toujours confirmés, jamais couverts par « oui pour 30 min »
 # (la question suivante peut cacher tout autre chose).
 D_SYNTAX = "une commande que le garde-fou ne sait pas analyser"
@@ -356,7 +499,14 @@ MCP_POLICY: dict[str, dict[str, str]] = {
     # liste blanche de l'utilisateur (id inconnu, argument ajouté) et tout appel hors du CLI local ; une proposition
     # n'écrit rien (l'utilisateur l'applique au HUD, le cœur rejuge le fichier).
     "astrel_local": {"liste_commandes": "", "commande_autorisee": "", "proposer_modification": ""},
+    # 05/11 (lot 7 partie A du moteur local, autorisation de l'utilisateur pour ce chantier) : outils web du CLI LOCAL
+    # (`mcp_web_local.py`). Lecture web = sensible (libre en autonome, demandée en prudent) ; le contrôle des
+    # adresses (vues dans le tour, jamais le réseau privé, DNS vérifié à la connexion) est dans le serveur.
+    "web_local": {"recherche_web": SENSITIVE, "lire_page": SENSITIVE},
 }
+# 05/11 (lot 7 partie A) : le navigateur DÉDIÉ au local (`mcp_web_local.declaration_playwright`) prend la table
+# du navigateur principal, comme `playwright2..4` (aucun n'est plus libre que l'autre).
+MCP_POLICY["playwright_local"] = MCP_POLICY["playwright"]
 _PLAYWRIGHT = re.compile(r"playwright\d*")
 # 04/11 (lot A, audit 2 T44-A) : `browser_run_code_unsafe` (@playwright/mcp, capacité « core », activée par
 # défaut) exécute du JavaScript dans le PROCESS du serveur, « RCE-equivalent » selon ses auteurs : REFUSÉ
@@ -369,6 +519,9 @@ REFUSED_MCP_TOOLS = frozenset({"browser_run_code_unsafe"})
 COMMANDES_LOCALES_FILE = config.CONFIG_DIR / "commandes-locales.json"
 PROPOSITIONS_LOCAL_DIR = config.RUNTIME / "propositions-local"
 LOCAL_CLI_DIR = config.RUNTIME / "outils-local"
+# 05/11 (essais réels du moteur local, accord de l'utilisateur pour ce chantier) : pids des CLI locaux en marche, écrits
+# par le CŒUR seul (`outils_local.PIDS_CLI`, même chemin) ; protégé (`PROTECTED_PATHS`). Voir `_cli_local_reel`.
+LOCAL_CLI_PIDS_FILE = config.RUNTIME / "outils-local-pids.json"
 _ID_COMMANDE_LOCALE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,39}$")  # même motif que `commandes_locales.ID`
 _ENTREES_LOCALES = {"liste_commandes": (set(), set()), "commande_autorisee": ({"id"}, {"id"}),
                     "proposer_modification": ({"fichier"}, {"fichier", "contenu", "ancien", "nouveau", "raison"})}
@@ -589,6 +742,9 @@ PROTECTED_PATHS = [p.resolve() for p in (
     # (écrites par le cœur sur un clic des Réglages du HUD) et ses propositions de modification (écrites par
     # `mcp_local.py`, appliquées par le cœur sur un clic). Les LIRE reste libre.
     COMMANDES_LOCALES_FILE, PROPOSITIONS_LOCAL_DIR,
+    # 05/11 (essais réels du moteur local, accord de l'utilisateur pour ce chantier) : pids des CLI locaux, lus par le
+    # hook pour laisser le modèle LOCAL lire une zone confidentielle ; un pid ajouté par Claude l'y laisserait lire.
+    LOCAL_CLI_PIDS_FILE,
 )]
 REFUS_DIR = config.RUNTIME / "garde-refus"  # 01/11 : série de refus du disjoncteur (`hooks/permission_hook.py`)
 # 18/10 (plan P7) : ce qu'une LEVÉE du garde-fou (Réglages du HUD, l'utilisateur seul) laisse
@@ -1897,6 +2053,8 @@ def _zone_lue(tool_name: str, tool_input: dict) -> Verdict | None:
     zs = zones_confidentielles()
     if not zs:
         return None
+    if _cli_local_reel():
+        return None  # 05/11 : le modèle LOCAL lit la zone, rien ne sort (le reste du verdict s'applique)
 
     def touche(p: Path, recursif: bool) -> bool:
         return _under(p, zs) or (recursif and any(_under(z, [p]) for z in zs))
@@ -3840,6 +3998,7 @@ CATS: dict[str, tuple[str, ...]] = {
     L_ZONE: (_L.PLAFOND,),
     # 04/11 : secret du compte lu (plafond, case « secrets du compte ») ; modifié (critique, écriture).
     L_SECRET_UTILISATEUR: (_L.PLAFOND,), L_SECRET_UTILISATEUR_MODIF: (_L.ECRITURE,),
+    L_AGENT_IMBRIQUE: (_L.PLAFOND,),  # 05/11 : toujours `guard=True`, case « agent imbriqué »
 }
 _INCONNUE = "inconnue"  # absente du catalogue : `limites.decide` la demande toujours
 # Outils natifs (`NATIVE_POLICY`) et outils MCP nommés.
@@ -3935,6 +4094,8 @@ def _ceiling_label_cats(label: str) -> tuple[str, ...]:
         return (_L.SECRETS,)
     if label == L_SECRET_UTILISATEUR:  # 04/11
         return (_L.SECRETS_UTILISATEUR,)
+    if label == L_AGENT_IMBRIQUE:  # 05/11
+        return (_L.AGENT_IMBRIQUE,)
     if label == L_CLAUDE_ID:
         return (_L.IDENTIFIANTS_CLAUDE,)
     if label == L_MISSION_FORBIDDEN:
@@ -4010,6 +4171,8 @@ def _raw_code(text: str, out: list) -> None:
             _add(out, label)
     if BRAIN_VAR in text:  # 04/11 (lot A) : `os.environ.pop("ASTREL_BRAIN")`, `env=…` sans le marqueur
         _brain_mark(out)
+    if _agent_dans_code(text):  # 05/11 : `subprocess.run(["claude", "-p", …])`, SDK d'agent
+        _agent(out)
 
 
 def _analyze(text: str, ctx: _Ctx, out: list) -> None:
@@ -4025,6 +4188,8 @@ def _analyze(text: str, ctx: _Ctx, out: list) -> None:
         _raw_code(text, out)
         if not ctx.remote:
             _cited_fallback(text, out)
+        if _AGENT_TEXTE.search(text):  # 05/11 : un CLI d'agent dans un shell illisible
+            _agent(out)
         return
     _eval_seq(items, ctx, out)
     for w in parser.subwords:  # $(…) d'une arithmétique, d'un tableau ou d'un case
@@ -4159,6 +4324,8 @@ def _eval_cmd(words: list, redirs: list, ctx: _Ctx, out: list, feed) -> tuple[bo
         x = _expand(val, ctx)
         if name == BRAIN_VAR:  # 04/11 (lot A) : « ASTREL_BRAIN= prog », réaffectation (variable déjà exportée)
             _brain_mark(out)
+        if _VAR_AGENT.match(name) and (words[i:] or name == "CLAUDECODE"):
+            _agent(out)  # 05/11 : `CLAUDE_CONFIG_DIR=/tmp/c prog`, `CLAUDECODE= …` (exportée par le CLI)
         if name in _CODE_VARS:
             _analyze(x.src.lstrip("|"), _deeper(ctx), out)
         if words[i:] or _launch_var(name):  # « F=…; grep x "$F" » : non exportée, simple valeur
@@ -4364,6 +4531,8 @@ _PREFIXES: dict[str, tuple[str, set, int]] = {
                             "--xauth-protocol", "--wait"}, 0),
     "dbus-run-session": ("", {"--config-file", "--dbus-daemon"}, 0),
     "npx": ("p", {"--package"}, 0), "bunx": ("", set(), 0), "busybox": ("", set(), 0),
+    # 05/11 (agents imbriqués) : `pnpx @anthropic-ai/claude-code`, `wsl claude -p …` (Windows : le Linux de WSL)
+    "pnpx": ("", set(), 0), "wsl": ("du", {"--distribution", "--user", "--cd", "--shell-type"}, 0),
     "flock": ("wEc", {"--wait", "--timeout", "--conflict-exit-code", "--command"}, 1),
 }
 
@@ -4515,6 +4684,9 @@ def _prefix(prog: str, args: list, ctx: _Ctx, out: list):
             _brain_mark(out)
         if prog == "env" and name in ("-u", "--unset") and val is not None and (val.dyn or BRAIN_VAR in val.cands):
             _brain_mark(out)  # 04/11 (lot A) : env -u ASTREL_BRAIN, ou un nom calculé
+        if prog == "env" and name in ("-u", "--unset") and val is not None and any(_VAR_AGENT.match(c)
+                                                                                    for c in val.cands):
+            _agent(out)  # 05/11 : env -u CLAUDECODE prog (le CLI imbriqué ne se reconnaît plus comme tel)
         if val is None:
             continue
         if (prog in ("sudo", "run0") and name in ("-D", "--chdir")) or (prog == "env" and name in ("-C", "--chdir")):
@@ -4536,6 +4708,8 @@ def _prefix(prog: str, args: list, ctx: _Ctx, out: list):
     while i < len(args) and (m := re.match(r"([A-Za-z_]\w*)=", args[i].text)):
         if m.group(1) == BRAIN_VAR:  # 04/11 (lot A) : env ASTREL_BRAIN=autre prog
             _brain_mark(out)
+        if _VAR_AGENT.match(m.group(1)):  # 05/11 : env CLAUDE_CONFIG_DIR=/tmp/c prog
+            _agent(out)
         if _launch_var(m.group(1)):  # sudo/env NOM=valeur programme
             ctx = ctx.child(launch=True)
         if m.group(1) in _CODE_VARS:
@@ -4747,6 +4921,11 @@ def _run(argv: list, ctx: _Ctx, out: list, stdin) -> tuple[bool, tuple | None, s
         if (w0.glob or any(_DYN in n or _GLOB.search(n) for n in names)
                 or (w0.dyn and not all("/" in c for c in w0.cands))):
             _doubt(out, D_PROGRAM)  # $CMD, $(echo rm), /usr/bin/su?o ; « $DIR/python » reste lisible
+            # 05/11 : `$(which claude) -p …`, `$(ls ~/.local/share/claude/versions/*) …`, `$X --dangerously-…`
+            calc = " ".join((w0.src, *w0.subs))
+            if (_AGENT_TEXTE.search(calc) or "claude/versions" in calc or any(_PROC_EXE.match(c) for c in w0.cands)
+                    or _drapeau_agent(argv[1:])):
+                _agent(out)
             _judge_cited("", argv[1:], ctx, out, stdin)  # programme inconnu : un fichier protégé cité = question
             _judge_claude_dir("", argv[1:], ctx, out)  # 19/10 (relecture) : `$CMD ~/.claude`
             _judge_compte("", argv[1:], ctx, out)  # 04/11 : `$CMD ~/.ssh/id_rsa`
@@ -4767,6 +4946,8 @@ def _run(argv: list, ctx: _Ctx, out: list, stdin) -> tuple[bool, tuple | None, s
             stdin = None
             continue
         wrap = _WRAPPERS.get(prog)
+        if wrap is None and prog.lower().endswith(".exe"):
+            wrap = _WRAPPERS.get(prog[:-4].lower())  # 05/11 : `wsl.exe claude`, `env.exe …` (Git Bash)
         if wrap is None:
             break
         res = wrap(argv[1:], ctx, out)
@@ -4819,6 +5000,7 @@ def _program(prog: str, w0: _X, args: list, ctx: _Ctx, out: list, stdin) -> tupl
     _judge_ceiling_cited(prog, args, ctx, out)  # 23/10 (audit P29, constat 3) : réglages de Claude Code
     # 19/10 (relecture) : le CLI natif lancé par son chemin (`~/.local/share/claude/versions/2.1.285`)
     _labels("claude" if _CLAUDE_BIN.search(w0.text) else prog, args, a, ctx, out)
+    _judge_agent(prog, w0, args, ctx, out)  # 05/11 : un autre agent IA (claude -p, codex, gemini…) sans garde-fou
     _fence_program(prog, args, ctx, out)  # mission en cours : programmes qui modifient des fichiers
     if prog in ("cd", "pushd"):
         return _cd(args, ctx), None
@@ -4830,8 +5012,13 @@ def _program(prog: str, w0: _X, args: list, ctx: _Ctx, out: list, stdin) -> tupl
         # sans -x masque la variable exportée pour les programmes lancés ensuite) : le marqueur change.
         if any(re.match(re.escape(BRAIN_VAR) + r"(?!\w)", c) for x in args for c in x.cands):
             _brain_mark(out)
+        if "CLAUDECODE" in a and ("-n" in a or prog == "local"):
+            _agent(out)  # 05/11 : export -n CLAUDECODE, local CLAUDECODE (le CLI imbriqué ne se reconnaît plus)
         for x in args:
             m = re.match(r"([A-Za-z_]\w*)\+?=", x.text)
+            if m and _VAR_AGENT.match(m.group(1)) and prog in ("export", "declare", "typeset") and (
+                    prog == "export" or any(re.fullmatch(r"-\w*x\w*", t) for t in a)):
+                _agent(out)  # 05/11 : export CLAUDE_CONFIG_DIR=…, export CLAUDE_CODE_… (pour un CLI lancé ensuite)
             if m:
                 if m.group(1) in _CODE_VARS:  # export PAGER='…' : la valeur sera lancée plus loin
                     _analyze(x.src.partition("=")[2].lstrip("|"), _deeper(ctx), out)
@@ -4846,6 +5033,8 @@ def _program(prog: str, w0: _X, args: list, ctx: _Ctx, out: list, stdin) -> tupl
     elif prog == "unset":
         if BRAIN_VAR in a or any(x.dyn for x in args):  # 04/11 (lot A) : unset ASTREL_BRAIN, ou un nom calculé
             _brain_mark(out)
+        if any(_VAR_AGENT.match(t) for t in a):  # 05/11 : unset CLAUDECODE (avant de lancer un CLI imbriqué)
+            _agent(out)
         for t in a:
             ctx.env.pop(t, None)
     elif prog == "disown":
@@ -5097,6 +5286,203 @@ def _audio_source(prog: str, a: list[str]) -> bool:
         ops = _operands(a)
         return bool(ops) and ops[0] in ("set-default", "set-profile", "set-route")
     return False
+
+
+# --- 05/11 (agents imbriqués, autorisation explicite de l'utilisateur ; voir `L_AGENT_IMBRIQUE`) ---
+_TEXTE_SEUL = {"cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe", "expect", "osascript"}
+_COPIEURS = {"cp", "ln", "install", "mv", "rsync"}
+
+
+def _judge_agent(prog: str, w0: _X, args: list, ctx: _Ctx, out: list) -> None:
+    """05/11 : un autre agent IA lancé (claude, codex, gemini, aider…), sous son nom, son chemin, un lien, son
+    paquet npm, `node …/cli.js`, `python -m aider` ; aussi son binaire copié ou lié sous un autre nom, un alias,
+    `hash -p`, un texte de cmd/PowerShell/expect, et ses options propres données à un autre programme."""
+    cands = list(w0.cands)
+    if "/" in w0.text or "\\" in w0.text:
+        cands += [str(p) for c in w0.cands if _DYN not in c for p in (_paths(c, ctx) or [])]
+    noms = ({_nom_agent(c) for c in cands} | {_nom_agent(prog)}) - {""}
+    if noms:
+        nom = "claude" if noms & {"claude", "claude-code"} else sorted(noms)[0]
+        if not _agent_sans_outils(nom, args):
+            _agent(out)
+        return
+    a = [c for x in args for c in x.cands]
+    fam = prog.lower()
+    if _INTERP.fullmatch(prog) or fam in ("bun", "deno", "tsx", "ts-node"):
+        if fam.startswith(("python", "pypy")):  # python -m aider, python -maider
+            mods = [a[k + 1] if t == "-m" and k + 1 < len(a) else t[2:] for k, t in enumerate(a) if t.startswith("-m")]
+            if any(m.split(".", 1)[0] in _AGENT_MODULES for m in mods):
+                _agent(out)
+                return
+        for k, x in enumerate(args):  # node …/@anthropic-ai/claude-code/cli.js, deno run npm:@openai/codex
+            nom = next((n for c in x.cands if ("/" in c or "\\" in c or ":" in c) and not _PAS_UN_CHEMIN.search(c)
+                        for n in [_nom_agent(c)] if n), "")  # un chemin, pas le code de `python -c`
+            if nom:
+                if not _agent_sans_outils(nom, args[k + 1:]):
+                    _agent(out)
+                return
+    if fam in _TEXTE_SEUL and _AGENT_TEXTE.search(" ".join(x.src or x.text for x in args)):
+        _agent(out)  # cmd /c claude -p …, powershell -c "codex exec …", expect -c 'spawn claude'
+    elif prog == "alias":  # alias c='claude -p' : la valeur est une commande
+        for x in args:
+            _nom, eq, val = x.text.partition("=")
+            if eq and val:
+                _analyze(val, _deeper(ctx), out)
+    elif prog == "hash" and "-p" in a:  # hash -p ~/.local/bin/claude c ; c -p …
+        k = a.index("-p")
+        if k + 1 < len(a) and _nom_agent(a[k + 1]):
+            _agent(out)
+    elif prog in _COPIEURS:  # cp ~/.local/bin/claude /tmp/x ; /tmp/x -p … (le nom ne dit plus rien)
+        ops = [x for x in args if x.dyn or not x.text.startswith("-")]
+        for x in ops[:-1] if len(ops) > 1 else ops:
+            if any(_binaire_agent(p) for c in x.cands if _DYN not in c for p in (_paths(c, ctx) or [])):
+                _agent(out)
+                break
+    _relance(prog, args, ctx, out)
+    if prog not in _CHERCHEURS and _drapeau_agent(args):
+        _agent(out)  # /tmp/x --dangerously-skip-permissions -p …, python agent.py --permission-mode …
+
+
+def _binaire_agent(p: Path) -> bool:
+    """Le CLI d'un agent sur le disque (fichier, ou dossier du CLI natif qui contient `versions/`)."""
+    s = str(p)
+    if _CLAUDE_BIN.search(s) or _CLAUDE_JS.search(s) or _AGENT_PAQUET.search(s):
+        return True
+    if _AGENT_SUFFIXE.sub("", p.name.lower()) not in _AGENTS:
+        return False
+    try:
+        return p.is_file() or (p / "versions").is_dir()
+    except OSError:
+        return False
+
+
+# Multiplexeurs et terminaux qui lancent une commande (avant le 05/11 : rien n'y était lu, `tmux new -d 'sudo
+# reboot'` ou `gnome-terminal -- claude -p …` passaient) ; lanceurs de paquets (`uvx aider-chat`, `uv run …`).
+_TMUX_LANCE = {"new-session", "new", "new-window", "neww", "split-window", "splitw", "respawn-pane", "respawnp",
+               "respawn-window", "respawnw", "run-shell", "run", "display-popup", "popup", "if-shell", "if",
+               "pipe-pane", "pipep", "send-keys", "send"}
+# Lettres d'options à valeur (toutes sous-commandes confondues ; -d, détaché le plus souvent, compté sans valeur :
+# en cas de doute, plus de mots sont lus comme la commande, jamais moins).
+_TMUX_VAL = set("ceFfhlnNsStTwxyb")
+_SCREEN_VAL = set("ScehpstT")
+_TERMINAUX = {"gnome-terminal", "xterm", "uxterm", "konsole", "kitty", "alacritty", "foot", "footclient", "wezterm",
+              "xfce4-terminal", "mate-terminal", "lxterminal", "terminator", "tilix", "x-terminal-emulator", "kgx",
+              "ptyxis", "urxvt", "rxvt", "st", "qterminal", "terminology", "sakura", "guake", "cool-retro-term"}
+_TERM_MARQUES = {"--", "-e", "-x", "--command", "--execute", "--exec"}
+_EXEC_OPTS = {  # options à valeur des lanceurs de paquets, avant le programme
+    "uvx": {"--from", "--with", "--with-editable", "--with-requirements", "-p", "--python", "--index", "--index-url",
+            "--extra-index-url", "--default-index", "-c", "--constraints"},
+    "uv": {"--with", "--with-editable", "--with-requirements", "-p", "--python", "--project", "--directory",
+           "--package", "--group", "--extra", "--env-file", "--index", "--only-group", "--no-group", "--from"},
+    "pipx": {"--spec", "--python", "--pip-args", "--index-url"},
+    "poetry": {"-C", "--directory", "-P", "--project"}, "pdm": {"-p", "--project"}, "hatch": {"-e", "--env"},
+    "rye": set(), "pixi": {"-e", "--environment", "--manifest-path"},
+    "conda": {"-n", "--name", "-p", "--prefix", "--cwd"}, "bun": set(),
+}
+_EXEC_OPTS["mamba"] = _EXEC_OPTS["micromamba"] = _EXEC_OPTS["conda"]
+
+
+def _relance(prog: str, args: list, ctx: _Ctx, out: list) -> None:
+    """05/11 : programmes qui en lancent un autre et n'étaient pas lus : la commande lancée est jugée."""
+    a0 = args[0].text if args and not args[0].dyn else ""
+    if prog == "tmux":
+        _tmux(args, ctx, out)
+    elif prog == "screen":
+        _screen(args, ctx, out)
+    elif prog in _TERMINAUX:
+        _terminal(prog, args, ctx, out)
+    elif prog in _EXEC_OPTS:
+        if prog == "uvx":
+            rest = args
+        elif prog == "uv" and a0 == "tool" and len(args) > 1 and args[1].text == "run":
+            rest = args[2:]
+        elif (prog == "bun" and a0 == "x") or (prog != "uvx" and prog != "bun" and a0 == "run"):
+            rest = args[1:]
+        else:
+            return
+        opts, i = _EXEC_OPTS[prog], 0
+        while i < len(rest) and not rest[i].dyn and rest[i].text.startswith("-"):
+            t = rest[i].text
+            if t == "--":
+                i += 1
+                break
+            i += 2 if (t in opts and "=" not in t) else 1
+        if rest[i:]:
+            _run(list(rest[i:]), ctx.child(), out, None)
+
+
+def _tmux(args: list, ctx: _Ctx, out: list) -> None:
+    i = 0
+    while i < len(args) and not args[i].dyn and args[i].text.startswith("-") and len(args[i].text) > 1:
+        t = args[i].text
+        if t == "-c" and i + 1 < len(args):  # tmux -c 'commande' : lancée par le shell
+            _code([args[i + 1]], "sh", ctx, out)
+        i += 2 if t in ("-L", "-S", "-f", "-T", "-c") else 1
+    groups: list[list] = [[]]
+    for x in args[i:]:  # tmux new -d x \; split-window y : plusieurs commandes
+        if x.text == ";" and not x.dyn:
+            groups.append([])
+        else:
+            groups[-1].append(x)
+    for g in groups:
+        if not g or g[0].dyn or g[0].text not in _TMUX_LANCE:
+            continue
+        j = 1
+        while j < len(g) and not g[j].dyn and g[j].text.startswith("-") and len(g[j].text) > 1:
+            if g[j].text == "--":
+                j += 1
+                break
+            body = g[j].text[1:]
+            k = next((k for k, ch in enumerate(body) if ch in _TMUX_VAL), None)
+            j += 2 if k is not None and not body[k + 1:] else 1
+        tail = g[j:]
+        if not tail:
+            continue
+        if g[0].text in ("if-shell", "if"):
+            for x in tail:
+                _code([x], "sh", ctx, out)
+        else:
+            _code(tail, "sh", ctx, out)  # tmux joint les mots et les donne au shell
+
+
+def _screen(args: list, ctx: _Ctx, out: list) -> None:
+    i = 0
+    while i < len(args) and not args[i].dyn and args[i].text.startswith("-") and len(args[i].text) > 1:
+        t = args[i].text
+        if t == "-X":  # screen -S s -X stuff 'claude -p …\n'
+            rest = args[i + 1:]
+            if rest and rest[0].text in ("stuff", "exec", "screen"):
+                _code(rest[1:], "sh", ctx, out)
+            return
+        if t in ("-ls", "-list", "-wipe"):
+            return
+        if t == "-Logfile":
+            i += 2
+            continue
+        body = t[1:]
+        k = next((k for k, ch in enumerate(body) if ch in _SCREEN_VAL), None)
+        i += 2 if k is not None and not body[k + 1:] else 1
+    if args[i:]:
+        _run(list(args[i:]), ctx.child(), out, None)
+
+
+def _terminal(prog: str, args: list, ctx: _Ctx, out: list) -> None:
+    for k, x in enumerate(args):
+        if x.dyn:
+            continue
+        name, eq, v = x.text.partition("=")
+        if x.text in _TERM_MARQUES or (eq and name in ("--command", "--execute", "--exec")):
+            tail = ([_lit(v)] if eq else []) + list(args[k + 1:])
+            if len(tail) == 1:
+                _code(tail, "sh", ctx, out)  # gnome-terminal -e 'commande' : un texte
+            elif tail:
+                _run(tail, ctx.child(), out, None)
+            return
+    # kitty, foot, wezterm start… : le programme est le premier mot qui n'est pas une option (valeurs inconnues :
+    # chaque départ possible est jugé, quatre au plus)
+    starts = [k for k, x in enumerate(args) if x.dyn or not x.text.startswith("-")][:4]
+    for k in starts:
+        _run(list(args[k:]), ctx.child(), out, None)
 
 
 _GIT_CODE_KEYS = re.compile(r"(core\.(fsmonitor|sshcommand|pager|editor|askpass)|diff\.external|sequence\.editor"
@@ -6730,6 +7116,35 @@ def _du_cli_local(env: dict | None = None) -> bool:
     return bool(vu) and os.path.realpath(vu) == os.path.realpath(str(LOCAL_CLI_DIR))
 
 
+def _cli_local_reel(env: dict | None = None, pid: int | None = None, fichier: Path | None = None) -> bool:
+    """05/11 (essais réels du moteur local, accord de l'utilisateur pour ce chantier) : le hook juge-t-il un outil du
+    VRAI CLI local ? Il faut les trois : son dossier de configuration (`_du_cli_local`) ; un ancêtre du hook
+    inscrit par le cœur dans `LOCAL_CLI_PIDS_FILE` (protégé) ; et cet ancêtre enfant DIRECT du cœur qui l'a
+    inscrit. Un CLI que Claude lancerait lui-même (même avec CLAUDE_CONFIG_DIR) descend du cerveau, pas du cœur :
+    non. Sert à une seule chose : une lecture du LOCAL dans une zone confidentielle n'est pas demandée (rien ne
+    sort de la machine) ; secrets du garde-fou et du compte restent jugés comme pour Claude."""
+    if not _du_cli_local(env):
+        return False
+    try:
+        data = json.loads(Path(fichier or LOCAL_CLI_PIDS_FILE).read_text(encoding="utf-8"))
+        coeur = int(data.get("coeur") or 0)
+        pids = {int(x) for x in data.get("pids") or ()}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+    if coeur <= 1 or not pids:
+        return False
+    from .platform import proc
+
+    cur = os.getpid() if pid is None else pid
+    for _ in range(3):  # hook → (sh) → CLI local : jamais plus loin (un CLI lancé par Claude est sous son Bash)
+        cur = proc.parent(cur) or 0
+        if cur <= 1 or cur == coeur:
+            return False
+        if cur in pids:
+            return proc.parent(cur) == coeur
+    return False
+
+
 def _refus_outil_local(tool: str, tool_input: object, fichier: Path | None = None, env: dict | None = None) -> str:
     """05/11 (lot 5) : raison de refuser SANS CARTE un outil du serveur `astrel_local` ("" : libre). Refusé :
     hors du CLI local, outil inconnu, entrée illisible, clé en plus (« argument ajouté »), et pour
@@ -6755,11 +7170,78 @@ def _refus_outil_local(tool: str, tool_input: object, fichier: Path | None = Non
     return ""
 
 
+# 05/11 (lot 7 partie B du moteur local, autorisation de l'utilisateur pour ce chantier) : outils web et navigateur du
+# CLI LOCAL. Navigateur : 8 outils seulement (les autres ne sont pas montrés au modèle, `--disallowedTools`, et
+# refusés ici en plus) ; `browser_navigate` n'ouvre qu'une adresse VUE dans le tour (registre tenu par le serveur
+# `web_local`, fichier de `ASTREL_LOCAL_REGISTRE_WEB`, même règle que lire_page) : jamais une adresse fabriquée.
+NAVIGATEUR_LOCAL_OUTILS = ("browser_navigate", "browser_navigate_back", "browser_snapshot", "browser_find",
+                           "browser_click", "browser_type", "browser_press_key", "browser_select_option")
+_WEB_LOCAL_OUTILS = ("recherche_web", "lire_page")
+_SERVEURS_WEB_LOCAL = ("mcp__web_local__", "mcp__playwright_local__")
+REGISTRE_WEB_ENV = "ASTREL_LOCAL_REGISTRE_WEB"
+
+
+def _cle_adresse(url: object) -> str:
+    """Forme comparable d'une adresse http(s) (schéma et nom en minuscules, port par défaut et #fragment retirés,
+    « / » pour un chemin vide) ; "" si ce n'en est pas une. Plus stricte que `web_local.normaliser` (pas d'IDNA) :
+    une adresse écrite autrement que dans le registre est REFUSÉE, jamais acceptée par erreur."""
+    m = re.match(r"^(https?)://([^/?#@\s]+)(?=[/?#]|$)([^#\s]*)", str(url or "").strip(), re.I)
+    if not m:
+        return ""
+    schema, hote, reste = m.group(1).lower(), m.group(2).lower().rstrip("."), m.group(3) or "/"
+    hote = re.sub(r":80$", "", hote) if schema == "http" else re.sub(r":443$", "", hote)
+    return f"{schema}://{hote}{reste if reste.startswith('/') else '/' + reste}"
+
+
+def _adresses_du_tour(env: dict | None = None) -> frozenset[str]:
+    """Registre des adresses vues dans le tour (écrit par le serveur `web_local` du CLI local) ; vide s'il manque."""
+    chemin = (os.environ if env is None else env).get(REGISTRE_WEB_ENV) or ""
+    try:
+        p = Path(chemin)
+        if not chemin or not p.is_absolute() or p.is_symlink() or not p.is_file():
+            return frozenset()
+        data = json.loads(p.read_text(encoding="utf-8"))
+        adresses = data.get("adresses") if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return frozenset()
+    return frozenset(c for c in (_cle_adresse(a) for a in adresses or () if isinstance(a, str)) if c)
+
+
+def _refus_web_local(tool_name: str, tool_input: object, env: dict | None = None) -> str:
+    """05/11 (lot 7B) : raison de refuser SANS CARTE un outil web du CLI local ("" : il passe au jugement habituel,
+    `MCP_POLICY`). Sans le contrôle du vrai CLI local (`refused` le fait ; le banc l'appelle directement)."""
+    outil = tool_name.rsplit("__", 1)[-1]
+    if tool_name.startswith("mcp__web_local__"):
+        if outil not in _WEB_LOCAL_OUTILS:
+            return f"outil {outil} inconnu du serveur web du modèle local : refusé par le garde-fou d'Astrel."
+        return ""
+    if outil not in NAVIGATEUR_LOCAL_OUTILS:
+        return (f"l'outil {outil} du navigateur n'est pas ouvert au modèle local : refusé par le garde-fou d'Astrel. "
+                "Outils permis : " + ", ".join(NAVIGATEUR_LOCAL_OUTILS) + ".")
+    if outil == "browser_navigate" and tool_input is not None:
+        url = tool_input.get("url") if isinstance(tool_input, dict) else None
+        cle = _cle_adresse(url)
+        if not cle or cle not in _adresses_du_tour(env):
+            return ("browser_navigate : adresse jamais vue dans ce tour, refusée par le garde-fou d'Astrel. Ouvre "
+                    "une adresse écrite dans la demande ou rendue par recherche_web, recopiée telle quelle ; dans "
+                    "le navigateur, clique sur les liens au lieu de taper leur adresse.")
+    return ""
+
+
 def refused(tool_name: str, tool_input: object = None) -> str:
     """Raison du refus d'office si `tool_name` est dans « refuser » ; sinon vide. 05/11 (lot 5) : outils du
-    serveur `astrel_local` jugés sur leur ENTRÉE (`_refus_outil_local`) ; sans entrée : refusés."""
+    serveur `astrel_local` jugés sur leur ENTRÉE (`_refus_outil_local`) ; sans entrée : refusés.
+    05/11 (lot 7B) : outils `web_local` et `playwright_local` refusés hors du VRAI CLI local (`_cli_local_reel`)
+    quand le HOOK juge (entrée donnée ; le cœur, qui rejuge une carte sans l'entrée, ne voit pas ses ancêtres)."""
     if tool_name.startswith("mcp__astrel_local__"):
         why = _refus_outil_local(tool_name.rsplit("__", 1)[-1], tool_input)
+        if why:
+            return why
+    if tool_name.startswith(_SERVEURS_WEB_LOCAL):
+        if tool_input is not None and not _cli_local_reel():
+            return (f"l'outil {tool_name} n'existe que pour le modèle local d'Astrel : refusé par le garde-fou. "
+                    "N'insiste pas, propose une autre voie.")
+        why = _refus_web_local(tool_name, tool_input)
         if why:
             return why
     if tool_name.startswith("mcp__") and tool_name.rsplit("__", 1)[-1] in REFUSED_MCP_TOOLS:

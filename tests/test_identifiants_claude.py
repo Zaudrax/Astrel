@@ -127,8 +127,6 @@ def test_cli_claude_compte_et_mcp_critiques(cmd):
     "claude mcp list",
     "claude mcp get playwright",
     "claude auth status --json",
-    "claude -p \"bonjour\" --output-format json",
-    "claude -p 'explique claude mcp add'",
     "npx @anthropic-ai/claude-code --version",
     "which claude",
     "claude auth login --help 2>&1 | head -15",    # corpus : l'aide ne connecte rien
@@ -136,6 +134,18 @@ def test_cli_claude_compte_et_mcp_critiques(cmd):
 def test_cli_claude_inoffensif_libre(cmd):
     v = _assess(cmd, "/tmp")
     assert not v.needs_confirm, (cmd, v.desc)
+
+
+@pytest.mark.parametrize("cmd", [
+    "claude -p \"bonjour\" --output-format json",
+    "claude -p 'explique claude mcp add'",
+])
+def test_cli_claude_prompt_agent_imbrique_pas_le_compte(cmd):
+    # 05/11 : un prompt ne touche pas au compte (pas L_CLAUDE_ID), mais lance un agent sans le hook d'Astrel :
+    # plafond (tests/test_agent_imbrique.py).
+    v = _assess(cmd, "/tmp")
+    _garde_fou(v)
+    assert guard.L_CLAUDE_ID not in v.desc and guard.L_AGENT_IMBRIQUE in v.desc, v.desc
 
 
 # --- C) joker qui peut atteindre un fichier du garde-fou ---
@@ -251,8 +261,7 @@ def test_dossier_claude_entier_demande(cmd):
     "cd ~/.claude/projects && grep -r x .",
     "echo ~/.claude",
     "realpath ~/.claude",
-    "claude -p bonjour",
-    "claude mcp list",
+    "claude mcp list",  # 05/11 : « claude -p bonjour » lance un agent imbriqué (tests/test_agent_imbrique.py)
 ])
 def test_dossier_claude_listes_libres(cmd):
     v = _assess(cmd, "/tmp")
@@ -296,9 +305,6 @@ def test_cli_claude_plugins_et_lanceurs_critiques(cmd):
     "claude plugin list",
     "claude plugin marketplace list",
     "claude plugin install --help",
-    "claude -p update",
-    "claude -p 'lance claude update'",
-    "echo bonjour | xargs claude -p",
     "pnpm dlx prettier --check .",
     "node cli.js auth logout",
     "~/.local/share/claude/versions/2.1.285 --version",
@@ -306,3 +312,14 @@ def test_cli_claude_plugins_et_lanceurs_critiques(cmd):
 def test_cli_claude_plugins_voisins_libres(cmd):
     v = _assess(cmd, "/tmp")
     assert not v.guard, (cmd, v.desc)
+
+
+@pytest.mark.parametrize("cmd", [
+    "claude -p update",
+    "claude -p 'lance claude update'",
+    "echo bonjour | xargs claude -p",
+])
+def test_cli_claude_prompt_pas_une_mise_a_jour(cmd):
+    # 05/11 : un prompt n'est pas `claude update` (pas L_CLAUDE_ID) ; il lance un agent imbriqué (plafond).
+    v = _assess(cmd, "/tmp")
+    assert guard.L_CLAUDE_ID not in v.desc and guard.L_AGENT_IMBRIQUE in v.desc, (cmd, v.desc)

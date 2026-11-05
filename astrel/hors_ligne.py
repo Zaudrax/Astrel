@@ -76,6 +76,14 @@ SORTIES = (
      ("senses.checks",), "sautés"),
     ("Vers context7 (agent codeur)", "le nom d'une bibliothèque et la question de documentation du codeur (couper : "
                                      "« off » dans runtime/context7.txt)", ("brain",), "coupé avec le cerveau"),
+    # 05/11 (lot 7 partie A) : outils web du modèle local ; SearXNG (127.0.0.1) ne reçoit une recherche que par
+    # `web_local`, qui consulte `actif()` avant chaque recherche, page et redirection.
+    # 05/11 (lot 7B) : et le navigateur du local, par son mandataire (`proxy_local`, qui consulte `actif()` à chaque
+    # connexion et ferme les tunnels ouverts quand le mode s'allume).
+    ("Recherche web du modèle local", "les mots des recherches de Qwen (vers DuckDuckGo, Brave, Bing, Yahoo et "
+                                      "Wikipédia, par SearXNG installé sur la machine), l'adresse des pages qu'il lit "
+                                      "et les sites que son navigateur ouvre",
+     ("web_local", "mcp_web_local", "proxy_local"), "refusées"),
 )
 RESTE = ("le son du micro (reconnu sur place), la mémoire (vault/), l'index de l'historique (runtime/history.db), "
          "les réglages, le moteur local (Ollama sur la machine)")

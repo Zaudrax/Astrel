@@ -48,7 +48,9 @@ test("mode et accent sans rechargement, gardés pour theme-boot.js", () => {
 });
 
 test("… puis rétablies à l'image suivante", async () => {
-  await new Promise((r) => setTimeout(r, 20));
+  // 05/11 : attente bornée (2 s) au lieu de 20 ms fixes : `node --test` lance les fichiers en
+  // parallèle, une machine chargée retardait les deux images (échec 1 fois sur 3)
+  for (let i = 0; i < 200 && styles.length; i++) await new Promise((r) => setTimeout(r, 10));
   assert.equal(styles.length, 0);
 });
 

@@ -35,6 +35,7 @@ from . import gel
 from . import routeur  # 04/11 : moteur demandé expressément (local ou Claude)
 from . import hors_ligne  # 04/11 : mode « rien ne sort »
 from . import sensible  # 04/11 : données sensibles (lot 3 du moteur local)
+from . import commandes_chat  # 05/11 : commandes « / » du chat
 from . import langue  # 02/11 : langue de la conversation (fr, en)
 from .attente import attente
 from . import images_ia
@@ -508,6 +509,7 @@ from .coeur.propositions_local import PROPOSITIONS_LOCAL_COMMANDS, PropositionsL
 from .coeur.local_tour import TourLocalCoeur  # 04/11 : moteur local (Qwen), demande forcée en local
 from .coeur.hors_ligne import HorsLigneCoeur  # 04/11 : mode « rien ne sort » (lot 2 du moteur local)
 from .coeur.routage import RoutageCoeur  # 04/11 : routage des demandes, barrière des données sensibles (lot 3)
+from .coeur.commandes_chat import CHAT_COMMANDS, CommandesChatCoeur  # 05/11 : commandes « / » du chat
 
 
 def _erreur_auth(ev: "BrainEvent") -> bool:
@@ -539,7 +541,7 @@ def _table_commandes(*paires: tuple[Any, str]) -> dict[str, str]:
 
 class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, ConfirmationsCoeur, TachesCoeur, QuotaCoeur,
              FiabiliteCoeur, CalibrageCoeur, LangueCoeur, CycleCoeur, PropositionsCoeur, TourLocalCoeur,
-             HorsLigneCoeur, RoutageCoeur, PropositionsLocalCoeur):
+             HorsLigneCoeur, RoutageCoeur, PropositionsLocalCoeur, CommandesChatCoeur):
     # 04/11 (T58, pas 2a) : l'état du tour en cours vit dans `self.tour` (`astrel/tour.py`, champs commentés
     # là-bas) ; les anciens noms (`_turn_active`, `_hushed`, `_splitter`…) en sont des descripteurs.
     _turn_active = DuTour("active")
@@ -1262,6 +1264,15 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
 
     def _cmd_say(self, name: str, cmd: dict) -> Any:
         text = str(cmd.get("text", "")).strip()
+        if cmd.get("_from_claude") is not True and cmd.get("_via") != "hud" and str(cmd.get("source") or "clavier") \
+                == "clavier":
+            # 05/11 : commande « / » tapée dans la bulle ou au terminal, jamais envoyée à un modèle (le HUD reconnaît
+            # les siennes : `chat_commande`). /local et /claude : le préfixe du routeur, puis le chemin normal.
+            a = commandes_chat.analyser(text)
+            if a is not None and (not a.ok or a.nom not in commandes_chat.PREFIXES):
+                return self._chat_commande_tapee(a, cmd)
+            if a is not None:
+                text = commandes_chat.texte_routage(a)
         items, claimed = cmd.get("attachments"), []
         if isinstance(items, list) and items:
             # 16/10 : une pièce déjà partie avec une phrase dite ne repart pas.
@@ -2452,6 +2463,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         self.speaker.interrupt()
         self._calibrage_estop()  # 02/11 : un calibrage du micro en cours est annulé, rien n'est écrit
         self._drop_backlog("arrêt d'urgence")
+        self._local_estop()  # 05/11 (lot 7B) : tour local arrêté, réseau de son navigateur coupé
         if self._turn_active:
             self.brain.interrupt()
         self._mission_estop()
@@ -3707,6 +3719,7 @@ Astrel._COMMANDES = _table_commandes(
     (("pause", "resume", "reprendre", "reprends"), "_cmd_pause"),
     (("reset",), "_cmd_reset"),
     (("say",), "_cmd_say"),
+    (CHAT_COMMANDS, "_cmd_chat_commande"),  # 05/11 : commandes « / » de la barre du HUD, l'utilisateur seul
     (("channel", "canal"), "_cmd_channel"),
     (("channels", "canaux"), "_cmd_channels"),
     (("channel_move",), "_cmd_channel_move"),

@@ -38,6 +38,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import uuid
 from pathlib import Path
 
@@ -68,6 +69,74 @@ CANAUX_DEMO = {"default": "general", "channels": [
         ("sport", "Sport", "#ffd54a", {"keywords": ["piscine", "course à pied"]}),
         ("lecture", "Lecture", "#c3f36b", {"keywords": ["livre", "bibliothèque"]}),
     )]}
+
+# 05/11 (README anglais du dépôt public, tools/capture_readme.py) : CONTENU de la démo en anglais avec
+# `--langue en` (ou ASTREL_DEMO_LANGUE=en) : conversation, questions à choix, agents, comptes rendus, canaux ;
+# l'interface passe en anglais aussi (`ui_language`). Les textes du cœur (notices, garde-fou, états) restent
+# écrits en français et traduits par le HUD, comme pour le vrai Astrel. Défaut : français, inchangé.
+LANGUE = {"demo": "fr"}
+VOIX = {"fr": "piper:fr_FR-upmc-medium", "en": "piper:en_US-joe-medium"}  # voix locale de la conversation
+VOIX_NOMS = {"fr": "Piper UPMC", "en": "Piper Joe"}  # noms propres des voix (menu des voix)
+CANAUX_EN = {"general": ("General", None), "maison": ("Home", ["groceries", "cleaning", "moving", "boxes"]),
+             "voyages": ("Travel", ["train", "ticket", "cottage", "holiday"]),
+             "famille": ("Family", ["birthday", "Emma"]), "papiers": ("Paperwork", ["inbox", "bills", "bank", "insurance"]),
+             "sport": ("Sport", ["swimming", "running"]), "lecture": ("Reading", ["book", "library"])}
+CONTENU_EN = {
+    # séquence : question dite, outils, réponse, compte rendu d'un agent de fond, e-mail à confirmer
+    "Qu'est-ce que j'ai dans mes mails ce matin ? Et regarde la météo à Nantes.":
+        "What's in my inbox this morning? And check the weather in Bristol.",
+    "mails de ce matin": "this morning's emails", "météo Nantes": "Bristol weather", "écran principal": "main screen",
+    "Trois mails ce matin, dont la facture d'électricité à régler avant vendredi ✅. "
+    "À Nantes, dix-sept degrés et un ciel dégagé ce soir 🌤️.":
+        "Three emails this morning, including the electricity bill, due before Friday ✅. "
+        "Bristol is at seventeen degrees, with clear skies tonight 🌤️.",
+    "La recherche est finie : trois offres sérieuses, je te les détaille quand tu veux.":
+        "The research is done: three solid offers. I can walk you through them whenever you like.",
+    "À : agence@immo-exemple.fr · Objet : Préavis de départ du logement":
+        "To: letting-agent@example.com · Subject: Notice to end my tenancy",
+    # questions à choix (DEMO_CHOICES)
+    "Le train de 8 h 12 est complet. Je fais quoi ?": "The 8:12 train is fully booked. What should I do?",
+    "Prendre celui de 9 h 40": "Take the 9:40 instead", "Attendre ton retour": "Wait until I hear from you",
+    "Laisser tomber ce trajet": "Skip this trip",
+    "Quel nom pour le nouveau canal ?": "What should we call the new channel?",
+    "Jardin": "Garden", "Potager": "Vegetable patch",
+    "On réserve le restaurant pour samedi ?": "Shall I book the restaurant for Saturday?",
+    "Oui, à 20 h": "Yes, at 8 pm", "Dimanche midi": "Sunday lunch instead", "Pas cette semaine": "Not this week",
+    "Je regarde d'abord": "Let me check first",
+    # agents en cours (mêmes mots que le catalogue anglais des descriptions de la démo)
+    "Trier les mails de la semaine": "Sort this week's emails",
+    "Lire le fil « Facture d'électricité »": "Read the \"Electricity bill\" thread",
+    "Copier les photos sur le disque externe": "Copy the photos to the external drive",
+    "Relire tous les contrats d'assurance": "Review all the insurance contracts",
+    "Lire le contrat n° 7": "Read contract no. 7",
+    # comptes rendus présents à l'ouverture
+    "Deux déménageurs possibles : le moins cher le 21, ou le plus rapide le 14. Dis-moi lequel.":
+        "Two movers are available: the cheaper one on the 21st, or the faster one on the 14th. Which do you prefer?",
+    "/home/user/Documents/Déménagement/devis-comparés.pdf": "~/Documents/Moving/quotes-compared.pdf",
+    "/tmp/astrel-demo/devis-demenageurs.txt": "/tmp/astrel-demo/mover-quotes.txt",
+    "La réservation du gîte est bloquée : le site demande une pièce d'identité.":
+        "The holiday cottage booking is stuck: the site wants a copy of your ID.",
+    "Les photos sont copiées sur le disque externe et vérifiées.":
+        "The photos have been copied to the external drive and checked.",
+    "/media/disque-externe/Photos/2026-10-15": "/media/external-drive/Photos/2026-10-15",
+}
+
+
+def contenu(texte: str) -> str:
+    """CONTENU de la démo dans sa langue (05/11) : anglais d'après `CONTENU_EN`, sinon tel quel."""
+    return CONTENU_EN.get(texte, texte) if LANGUE["demo"] == "en" else texte
+
+
+def canaux_demo() -> dict:
+    """Canaux de la démo dans sa langue (05/11) : libellés et mots-clés anglais avec `--langue en`."""
+    if LANGUE["demo"] != "en":
+        return CANAUX_DEMO
+    out = copy.deepcopy(CANAUX_DEMO)
+    for c in out["channels"]:
+        c["label"], mots = CANAUX_EN[c["id"]]
+        if mots is not None:
+            c["keywords"] = mots
+    return out
 
 INIT = {
     "model": "claude-sonnet-5",
@@ -100,7 +169,7 @@ def sequence() -> None:
     for i in range(40):
         bus.publish("level", source="mic", value=round(0.3 + 0.4 * abs(math.sin(i / 3)), 3))
         time.sleep(0.05)
-    question = "Qu'est-ce que j'ai dans mes mails ce matin ? Et regarde la météo à Nantes."
+    question = contenu("Qu'est-ce que j'ai dans mes mails ce matin ? Et regarde la météo à Nantes.")
     channel, _ = channels.route(question)
     mid = uuid.uuid4().hex[:12]
     bus.publish("transcript", who="user", text=question, source="voix", channel=channel, mid=mid)
@@ -108,6 +177,7 @@ def sequence() -> None:
     time.sleep(1.2)
     for tool, desc in (("mcp__claude_ai_Gmail__search_threads", "mails de ce matin"), ("WebSearch", "météo Nantes"),
                        ("mcp__astrel__screen_capture", "écran principal")):
+        desc = contenu(desc)
         tid = f"t{time.time()}"
         node = graph.record_use(tool)
         bus.publish("tool", tool=tool, id=tid, desc=desc, node=node)
@@ -116,8 +186,8 @@ def sequence() -> None:
         bus.publish("tool_result", tool=tool, id=tid, ok=True, text="ok")
     graph.publish()
     # Émojis comme Claude en met parfois : affichés SANS par le HUD, gardés dans le texte brut (copie, lecture).
-    reply = ("Trois mails ce matin, dont la facture d'électricité à régler avant vendredi ✅. "
-             "À Nantes, dix-sept degrés et un ciel dégagé ce soir 🌤️.")
+    reply = contenu("Trois mails ce matin, dont la facture d'électricité à régler avant vendredi ✅. "
+                    "À Nantes, dix-sept degrés et un ciel dégagé ce soir 🌤️.")
     for word in reply.split(" "):
         bus.publish("reply_delta", text=word + " ", channel=channel, reply_to=mid)
         time.sleep(0.05)
@@ -128,7 +198,7 @@ def sequence() -> None:
     # en silence, avec un bouton « Lire » (mode « à la demande »).
     other = next((c.id for c in channels.items() if c.id not in (channel, channels.default)), channels.default)
     bus.publish("notice", level="info", channel=other, text="✅ Terminé : Comparatif des assurances habitation")
-    report = "La recherche est finie : trois offres sérieuses, je te les détaille quand tu veux."
+    report = contenu("La recherche est finie : trois offres sérieuses, je te les détaille quand tu veux.")
     rid = uuid.uuid4().hex[:12]
     pending = reports.on_demand
     reports.add(rid, report, other, pending)
@@ -142,7 +212,7 @@ def sequence() -> None:
     time.sleep(1)
     bus.publish("confirm", id="demo1", pending=True, tool="mcp__claude_ai_Gmail__send_message",
                 desc="l'envoi d'un e-mail",
-                cmd="À : agence@immo-exemple.fr · Objet : Préavis de départ du logement",
+                cmd=contenu("À : agence@immo-exemple.fr · Objet : Préavis de départ du logement"),
                 question="Attention, l'envoi d'un e-mail. Je continue ?")
     bus.publish("state", state="asking", text="", muted=False, detail="l'envoi d'un e-mail")
 
@@ -250,7 +320,7 @@ choice_count = {"n": 0}
 def publish_choice(channel: str) -> str:
     question, labels = DEMO_CHOICES[choice_count["n"] % len(DEMO_CHOICES)]
     choice_count["n"] += 1
-    return str(choices.ask(question, labels, channel=channel).get("id") or "")
+    return str(choices.ask(contenu(question), [contenu(x) for x in labels], channel=channel).get("id") or "")
 
 
 # 21/10 (plan P14) : images IA de la démo, par le VRAI module du cœur (`astrel.images_ia` : file,
@@ -542,8 +612,8 @@ def demo_details(now: float) -> dict[str, dict]:
         return {"tool": tool, "desc": desc}
 
     return {
-        "d1": base("d1", "agent", "chercheur", "Trier les mails de la semaine", now - 142, effort="medium", tokens=1_234_000,
-                   requests=12, tool_uses=7, step="Lire le fil « Facture d'électricité »",
+        "d1": base("d1", "agent", "chercheur", contenu("Trier les mails de la semaine"), now - 142, effort="medium",
+                   tokens=1_234_000, requests=12, tool_uses=7, step=contenu("Lire le fil « Facture d'électricité »"),
                    consigne="Trie les mails de la semaine par sujet.\nSignale les factures.\n" + DEMO_TRAP,
                    todos=[todo("Lister les mails de la semaine", "completed"),
                           todo("Ranger par sujet", "in_progress"),
@@ -553,10 +623,10 @@ def demo_details(now: float) -> dict[str, dict]:
                             act("Read", "/tmp/regles-tri.md", False, 90),
                             act("mcp__claude_ai_Gmail__get_thread", "Facture d'électricité", None, 4)],
                    errors=1, last_errors=["File does not exist: /tmp/regles-tri.md " + DEMO_TRAP]),
-        "d2": base("d2", "local_bash", "commande", "Copier les photos sur le disque externe", now - 18,
+        "d2": base("d2", "local_bash", "commande", contenu("Copier les photos sur le disque externe"), now - 18,
                    consigne="rsync -a ~/Images/Vacances/ /media/disque-externe/Photos/"),
-        "d3": base("d3", "agent", "auditeur", "Relire tous les contrats d'assurance", now - 2400, effort="high",
-                   tokens=1_400_000, requests=162, tool_uses=162, step="Lire le contrat n° 7",
+        "d3": base("d3", "agent", "auditeur", contenu("Relire tous les contrats d'assurance"), now - 2400, effort="high",
+                   tokens=1_400_000, requests=162, tool_uses=162, step=contenu("Lire le contrat n° 7"),
                    consigne="Relis tous les contrats d'assurance et repère les doublons.",
                    actions=[act("Read", f"~/Documents/Assurances/contrat-{n}.pdf", True, 30 - n) for n in range(12)],
                    truncated=True),
@@ -813,7 +883,7 @@ class DemoSettings:
                                        {"id": "mic", "label": "Tester le micro (3 s)"}]),
             # 20/10 : langue de l'interface, même réglage que astrel/settings.py (le HUD se recharge)
             it("ui_language", "Langue de l'interface", "Langue des textes du HUD, de la bulle et du mini-chat. La voix "
-               "d'Astrel et ses réponses n'en dépendent pas.", "choice", "fr",
+               "d'Astrel et ses réponses n'en dépendent pas.", "choice", LANGUE["demo"],
                choices=[{"value": "fr", "label": "Français"}, {"value": "en", "label": "English"}])]})
         self.groups.insert(2, {"id": "whatsapp", "title": "WhatsApp", "items": [
             it("whatsapp", "WhatsApp", "Ton chat « message à soi-même » : Astrel y répond quand tu t'absentes.",
@@ -1140,11 +1210,16 @@ class DemoSettings:
             self.publish()
             return {"ok": False, "error": text}
         if key == "hors_ligne" and value is True:
-            # 04/11 : la démo a toujours un agent de fond qui tourne → refus avec « Tout arrêter » proposé ;
-            # même texte que astrel/coeur/hors_ligne.OCCUPE (catalogue anglais astrel/locales/en.json)
-            occupe = ("{pourquoi} : rien n'est coupé. Arrête-la d'abord (« ⛔ Stop tout » en haut du HUD), "
-                      "puis réessaie.")
-            return {"ok": False, "stop_tout": True, "error": occupe.format(pourquoi="une tâche de fond de Claude tourne")}
+            # 04/11 : la démo a toujours un agent de fond qui tourne → refus avec « Tout arrêter » proposé.
+            # 05/11 : la réponse du VRAI `_settings_command` (raison, notice `setting_error`, `stop_tout`, page),
+            # par `refus_reglage` : avant, la démo donnait `stop_tout` et le cœur le perdait, le contrôle ne voyait rien.
+            from astrel.coeur.reglages import refus_reglage
+            from astrel.settings import SettingError
+
+            res = self.hors_ligne_entrer()
+            refus = refus_reglage(SettingError(key, str(res.get("error") or "refusé")), res)
+            self.publish()  # la page suit par l'évènement `settings` (la démo ne la met pas dans la réponse)
+            return refus
         if item["kind"] == "int":
             value = int(value)
         if item["kind"] == "text":
@@ -1159,6 +1234,15 @@ class DemoSettings:
         if key.startswith("confirmations."):  # 24/10 (plan P29 lot B) : le résumé suit
             self._cases()
         return self.publish()
+
+    @staticmethod
+    def hors_ligne_entrer() -> dict:
+        """05/11 : le VRAI `_hors_ligne_entrer` du cœur, qui refuse avant de rien toucher : la démo a toujours un
+        agent de fond qui tourne (même raison que `_hors_ligne_occupe`)."""
+        from astrel.coeur.hors_ligne import HorsLigneCoeur
+
+        occupe = types.SimpleNamespace(_hors_ligne_occupe=lambda: "une tâche de fond de Claude tourne")
+        return HorsLigneCoeur._hors_ligne_entrer(occupe, "HUD")
 
     def apply(self) -> dict:
         for g in self.groups:
@@ -1487,7 +1571,11 @@ class DemoCalibrage:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true")
+    # 05/11 : contenu (et interface) de la démo en anglais, pour la capture du README anglais
+    ap.add_argument("--langue", choices=("fr", "en"), default="en" if os.environ.get("ASTREL_DEMO_LANGUE") == "en" else "fr")
     args = ap.parse_args()
+    LANGUE["demo"] = args.langue
+    CANAUX_DEMO.update(canaux_demo())  # libellés et mots-clés des canaux dans la langue de la démo
     # 15/10 : la demo ne doit JAMAIS ecraser le vrai jeton du HUD (runtime/hud-token) : le
     # vrai Astrel ne le relit pas, la bulle et ./hud.sh se retrouvaient avec un jeton faux.
     config.HUD_TOKEN_FILE = Path(tempfile.mkdtemp(prefix="astrel-demo-")) / "hud-token"
@@ -1540,6 +1628,7 @@ def main() -> int:
         return {"ok": True, "autre": autre}
     local_memo: dict[str, tuple[str, str]] = {}  # 05/11 (lot 6) : demandes locales « en mémoire » (mid → texte, canal)
     local_log: list[dict] = []  # commandes local_* reçues (contrôles du HUD)
+    local_ancien = {"on": False}  # 05/11 : comme un cœur d'avant le lot 6 (HUD rouvert, cœur pas relancé)
 
     def demo_local(cmd: dict) -> dict:
         """05/11 (lot 6 du moteur local) : `demo_local {text, channel}` (tests du HUD) publie une demande et sa
@@ -1550,12 +1639,15 @@ def main() -> int:
         from astrel.coeur import local_tour
 
         name = str(cmd["cmd"])
+        if name == "demo_local" and "coeur_ancien" in cmd:  # 05/11 : `demo_local {coeur_ancien}` (tests du HUD)
+            local_ancien["on"] = bool(cmd.get("coeur_ancien"))
+            return {"ok": True}
         if name == "demo_local":
             ch, mid = str(cmd.get("channel") or channels.default), uuid.uuid4().hex[:12]
             texte = str(cmd.get("text") or "explique la photosynthèse")
             bus.publish("transcript", who="user", text=f"en local : {texte}", source="clavier", channel=ch, mid=mid,
                         engine="local")
-            garde = not cmd.get("hors_ligne") and not cmd.get("oubliee")  # `oubliee` : comme après une relance
+            garde = not cmd.get("hors_ligne") and not cmd.get("oubliee") and not local_ancien["on"]  # `oubliee` : relance
             if garde:
                 local_memo[mid] = (texte, ch)
             bus.publish("reply", text=str(cmd.get("reply") or "(démo) Réponse du modèle local."), channel=ch,
@@ -1563,6 +1655,8 @@ def main() -> int:
                         **({"vers_claude": True} if garde else {"hors_ligne": True} if cmd.get("hors_ligne") else {}))
             return {"ok": True, "mid": mid}
         local_log.append({"cmd": name, "mid": cmd.get("mid"), "via": cmd.get("_via")})
+        if local_ancien["on"]:
+            return {"ok": False, "error": f"commande inconnue : {name}"}
         if cmd.get("_from_claude") is True or cmd.get("_via") != "hud":
             return {"ok": False, "error": f"{name} est réservé au HUD de l'utilisateur"}
         if name == "local_demandes":
@@ -1580,6 +1674,61 @@ def main() -> int:
         bus.publish("transcript", who="user", text=texte, source="clavier", channel=ch, mid=mid)
         bus.publish("reply", text="(démo) Réponse de Claude.", usage={}, channel=ch, reply_to=mid, mid=uuid.uuid4().hex[:12])
         return {"ok": True, "mid": cmd.get("mid"), "envoye": True}
+
+    chat_log: list[dict] = []  # 05/11 : commandes `chat_commande` reçues (contrôles du HUD)
+    chat_libre = {"on": False}  # 05/11 : la démo a des agents de fond : /clear refusée, sauf `demo_chat {libre}`
+
+    def demo_chat(cmd: dict) -> dict:
+        """05/11 : commandes « / » du chat. `chat_commande {nom, arg}` : la VRAIE analyse et les vrais refus du cœur
+        (`commandes_chat`), effets simulés (réglages, mode d'usage, modèle, notice) ; `demo_chat {libre?}` (tests du
+        HUD) : le journal des commandes reçues, et /clear permise ou non."""
+        from astrel import commandes_chat
+        from astrel.coeur import commandes_chat as cc
+
+        if cmd["cmd"] == "demo_chat":
+            if "libre" in cmd:
+                chat_libre["on"] = bool(cmd["libre"])
+            return {"ok": True, "items": list(chat_log)}
+        chat_log.append({"nom": cmd.get("nom"), "arg": cmd.get("arg"), "channel": cmd.get("channel"),
+                         "via": cmd.get("_via")})
+        if cmd.get("_from_claude") is True or cmd.get("_via") != "hud":
+            return {"ok": False, "error": cc.REFUS_HUD}
+        nom, arg = str(cmd.get("nom") or "").strip(), str(cmd.get("arg") or "").strip()
+        a = commandes_chat.analyser(f"/{nom} {arg}" if arg else f"/{nom}")
+        if a is None or not a.ok:
+            return {"ok": False, "error": a.erreur if a else commandes_chat.INCONNUE.format(nom=nom[:30])}
+        if a.nom == "aide":
+            return {"ok": True, "text": commandes_chat.aide()}
+        if a.nom == "clear":
+            if not chat_libre["on"]:
+                return {"ok": False, "error": cc.CLEAR_TACHE}
+            bus.publish("notice", level="info", text="Nouvelle conversation : contexte remis à zéro.")
+            return {"ok": True, "vider": True}
+        if a.nom == "mode":
+            r = settings.set("moteur_mode", a.arg)
+            return {"ok": r.get("ok") is not False, "mode": a.arg, **({"error": r["error"]} if r.get("ok") is False else {})}
+        if a.nom in ("horsligne", "enligne"):
+            # 05/11 : comme le cœur, /horsligne passe par l'interrupteur (pas de notice « Réglage refusé »)
+            r = settings.hors_ligne_entrer() if a.nom == "horsligne" else settings.set("hors_ligne", False)
+            return {"ok": r.get("ok") is not False, **{k: r[k] for k in ("error", "stop_tout") if k in r}}
+        if a.nom == "modele":
+            model["active"] = a.arg
+            bus.publish("model", active=a.arg, label=model_label(a.arg), id="")
+            bus.publish("notice", level="info", text=f"Modèle principal : {model_label(model['active'])}.")
+            return {"ok": True, "model": a.arg}
+        if a.nom in cc.MODES_USAGE:
+            bus.publish("usage", mode=cc.MODES_USAGE[a.nom], followup=8.0)
+            return {"ok": True, "usage": cc.MODES_USAGE[a.nom]}
+        if a.nom == "tout-arreter":
+            return {"ok": False, "error": cc.TOUT_ARRETER_HUD}
+        if a.nom == "reflechir":  # 05/11 : comme le cœur (`_tour_local(..., reflexion=True)`), réponse simulée
+            ch, mid = str(cmd.get("channel") or channels.default), uuid.uuid4().hex[:12]
+            bus.publish("transcript", who="user", text=f"/reflechir {a.arg}", source="clavier", channel=ch, mid=mid,
+                        engine="local")
+            bus.publish("reply", text="(démo) Réponse du modèle local, après réflexion.", channel=ch, reply_to=mid,
+                        mid=uuid.uuid4().hex[:12], engine="local")
+            return {"ok": True, "local": True}
+        return {"ok": False, "error": commandes_chat.INCONNUE.format(nom=a.nom)}
 
     staged: list[dict] = []  # pièces jointes en attente déposées par le HUD (16/10)
     last_sent: list[str] = []  # id des pièces parties avec la dernière phrase dite (`demo_voice`)
@@ -1740,6 +1889,8 @@ def main() -> int:
             return channels.select(wanted) if wanted else channels.describe()
         elif cmd.get("cmd") == "channel_move":
             return channels.move(str(cmd.get("mid") or ""), str(cmd.get("channel") or ""))
+        elif cmd.get("cmd") in ("chat_commande", "demo_chat"):  # 05/11 : commandes « / » du chat, comme le cœur
+            return demo_chat(cmd)
         elif cmd.get("cmd") == "say":
             from astrel import attachments
             try:
@@ -1769,7 +1920,8 @@ def main() -> int:
             if text.strip().lower() in ("démo chemins", "demo chemins"):  # 04/11 : chemins copiés d'un clic
                 threading.Thread(target=stream_markdown, args=(channel, mid, PATHS_DEMO), daemon=True).start()
                 return {"ok": True}
-            bus.publish("reply", text=f"(démo) Reçu dans le canal {channel}.", usage={}, channel=channel,
+            recu = f"(demo) Received in the {channel} channel." if LANGUE["demo"] == "en" else f"(démo) Reçu dans le canal {channel}."
+            bus.publish("reply", text=recu, usage={}, channel=channel,
                         reply_to=mid, mid=uuid.uuid4().hex[:12])
             return {"ok": True}
         elif cmd.get("cmd") == "demo_confirm":  # tests du HUD : une question qui arrive pendant la frappe
@@ -1994,9 +2146,10 @@ def main() -> int:
         elif cmd.get("cmd") == "sensor":
             return sensors.set(cmd.get("name", ""), bool(cmd.get("on")))
         elif cmd.get("cmd") == "voices":
-            return {"ok": True, "voices": [{"spec": "piper:fr_FR-upmc-medium", "label": "Piper UPMC", "online": False},
+            voix = VOIX[LANGUE["demo"]]
+            return {"ok": True, "voices": [{"spec": voix, "label": VOIX_NOMS[LANGUE["demo"]], "online": False},
                                            {"spec": "gemini:Charon", "label": "Gemini Charon", "online": True}],
-                    "active": "piper:fr_FR-upmc-medium"}
+                    "active": voix}
         elif cmd.get("cmd") == "models":
             return {"ok": True, "active": model["active"],
                     "models": [{"model": k, "label": label, "desc": desc}
@@ -2051,8 +2204,8 @@ def main() -> int:
     bus.publish("grants", items=[{"key": "bash:une tâche planifiée", "until": time.time() + 1500}])
     bus.publish("state", state="booting", text="", muted=False, detail="")
     graph.set_init(INIT)
-    graph.set_voice("piper:fr_FR-upmc-medium")
-    bus.publish("voice", engine="piper:fr_FR-upmc-medium", fallback="", active="piper:fr_FR-upmc-medium", degraded=False)
+    graph.set_voice(VOIX[LANGUE["demo"]])
+    bus.publish("voice", engine=VOIX[LANGUE["demo"]], fallback="", active=VOIX[LANGUE["demo"]], degraded=False)
     bus.publish("session", id="demo", model=INIT["model"], version="demo")
     bus.publish("model", active="sonnet", label="Sonnet", id=INIT["model"])
     publish_demo_effort("high", "sonnet")  # 23/10 (plan P28) : sélecteur d'effort à côté du modèle
@@ -2060,14 +2213,14 @@ def main() -> int:
     now = time.time()
     # 15/10 : coût par agent (contrat des lots, idée 10) ; d3 dépasse le seuil (alerte, sans voix).
     demo_tasks[:] = [
-        {"id": "d1", "kind": "agent", "desc": "Trier les mails de la semaine", "background": True,
-         "started": now - 142, "step": "Lire le fil « Facture d'électricité »", "tool_uses": 7, "channel": "general",
+        {"id": "d1", "kind": "agent", "desc": contenu("Trier les mails de la semaine"), "background": True,
+         "started": now - 142, "step": contenu("Lire le fil « Facture d'électricité »"), "tool_uses": 7, "channel": "general",
          "tokens": 1_234_000, "requests": 12, "elapsed_s": 142.0, "alert": False,
          "refs": ["p2"]},  # plan P38 lot 2 : sa consigne cite P2 (core._todo_refs) → badge « agent en cours »
-        {"id": "d2", "kind": "local_bash", "desc": "Copier les photos sur le disque externe", "background": True,
+        {"id": "d2", "kind": "local_bash", "desc": contenu("Copier les photos sur le disque externe"), "background": True,
          "started": now - 18, "step": "", "tool_uses": 0, "channel": "maison"},
-        {"id": "d3", "kind": "agent", "desc": "Relire tous les contrats d'assurance", "background": True,
-         "started": now - 2400, "step": "Lire le contrat n° 7", "tool_uses": 162, "channel": "general",
+        {"id": "d3", "kind": "agent", "desc": contenu("Relire tous les contrats d'assurance"), "background": True,
+         "started": now - 2400, "step": contenu("Lire le contrat n° 7"), "tool_uses": 162, "channel": "general",
          # 04/11 (T50) : `tokens` = travail (hors cache relu), le total à part
          "tokens": 1_400_000, "tokens_total": 101_000_000, "cache_lu": 99_600_000,
          "requests": 162, "elapsed_s": 2400.0, "alert": True},
@@ -2085,17 +2238,18 @@ def main() -> int:
     # de la page (rejeu de l'historique, comme après une reconnexion).
     other =next((c.id for c in channels.items() if c.id != channels.default), channels.default)
     rid = uuid.uuid4().hex[:12]
-    decision = "Deux déménageurs possibles : le moins cher le 21, ou le plus rapide le 14. Dis-moi lequel."
+    decision = contenu("Deux déménageurs possibles : le moins cher le 21, ou le plus rapide le 14. Dis-moi lequel.")
     reports.add(rid, decision, other, True)
     bus.publish("reply", text=decision, usage={}, channel=other, reply_to="", mid=rid, report=True, pending_read=True,
                 report_kind="decision",
-                report_files=["/home/user/Documents/Déménagement/devis-comparés.pdf", "/tmp/astrel-demo/devis-demenageurs.txt"])
-    bus.publish("reply", text="La réservation du gîte est bloquée : le site demande une pièce d'identité.", usage={},
+                report_files=[contenu("/home/user/Documents/Déménagement/devis-comparés.pdf"),
+                              contenu("/tmp/astrel-demo/devis-demenageurs.txt")])
+    bus.publish("reply", text=contenu("La réservation du gîte est bloquée : le site demande une pièce d'identité."), usage={},
                 channel=channels.default, reply_to="", mid=uuid.uuid4().hex[:12], report=True, pending_read=False,
                 report_kind="blocage", report_files=[])
-    bus.publish("reply", text="Les photos sont copiées sur le disque externe et vérifiées.", usage={},
+    bus.publish("reply", text=contenu("Les photos sont copiées sur le disque externe et vérifiées."), usage={},
                 channel=channels.default, reply_to="", mid=uuid.uuid4().hex[:12], report=True, pending_read=False,
-                report_kind="resultat", report_files=["/media/disque-externe/Photos/2026-10-15"])
+                report_kind="resultat", report_files=[contenu("/media/disque-externe/Photos/2026-10-15")])
     publish_choice(channels.default)
     time.sleep(1.5)
     bus.publish("state", state="sleeping", text="", muted=False, detail="")

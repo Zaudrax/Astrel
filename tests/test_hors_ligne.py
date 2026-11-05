@@ -294,6 +294,33 @@ def test_activation_refusee_pendant_une_tache(j):
     assert not hors_ligne.actif() and j.brain.stops == 0 and j.whatsapp.calls == []
 
 
+def _refus(r: dict) -> dict:
+    return {k: r.get(k) for k in ("ok", "error", "setting_error", "stop_tout")}
+
+
+def test_reglages_refus_pendant_une_tache_garde_stop_tout(j, events):
+    """05/11 : « Rien ne sort » coché dans Réglages pendant une tâche de Claude : la réponse de `settings_set` garde
+    la raison ET `stop_tout` (Réglages propose « Tout arrêter ») ; la démo du HUD, sur laquelle tools/hud_check_rendu.py
+    se fie, répond EXACTEMENT pareil (avant : la démo donnait `stop_tout`, le vrai cœur le perdait)."""
+    import importlib.util
+
+    j._tasks = {"t1": {}}
+    r = j._settings_command("settings_set", {"key": "hors_ligne", "value": True, "_via": "hud"})
+    assert r["ok"] is False and r["stop_tout"] is True and "Stop tout" in r["error"]
+    assert r["setting_error"] == {"key": "hors_ligne", "message": r["error"]} and r["groups"]
+    assert not hors_ligne.actif() and j.brain.stops == 0 and j.whatsapp.calls == []
+    notice = [e for e in events if e.get("type") == "notice" and e.get("setting_error")]
+    assert notice[-1]["setting_error"] == r["setting_error"]
+
+    spec = importlib.util.spec_from_file_location("hud_demo_refus", ROOT / "tools" / "hud_demo.py")
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    vu = len(events)
+    d = demo.DemoSettings().set("hors_ligne", True)
+    assert _refus(d) == _refus(r)
+    assert [e["setting_error"] for e in events[vu:] if e.get("type") == "notice"] == [r["setting_error"]]
+
+
 def test_refuse_a_claude_dans_les_deux_sens(j):
     r = j._settings_command("settings_set", {"key": "hors_ligne", "value": True, "_from_claude": True})
     assert r["ok"] is False and not hors_ligne.actif()

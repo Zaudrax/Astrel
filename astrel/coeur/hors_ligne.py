@@ -76,6 +76,7 @@ class HorsLigneCoeur:
             except SettingError as exc:
                 return {"ok": False, "error": exc.message}
             self._cerveau_arreter()  # cycle T46 : plus aucune relance programmée
+            self._local_web_couper(hors_ligne.REFUS)  # 05/11 (lot 7B) : navigateur du local coupé tout de suite
             if self._local_active():  # le mode léger lance aussi un CLI : quitté, sans retour automatique
                 self.brain.local = ""
                 modeles_locaux.local.set_active(False)

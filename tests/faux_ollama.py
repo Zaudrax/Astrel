@@ -14,13 +14,14 @@ class FauxOllama:
     def __init__(self, installed: dict[str, int] | None = None, manifests: dict[str, int] | None = None,
                  pull_steps: int = 4, pull_delay: float = 0.0, reply: str = "Bonjour, je suis en mode léger.",
                  create_error: str = "", chat: list[str] | None = None, chat_error_gpu: str = "",
-                 loaded: list[str] | None = None) -> None:
+                 loaded: list[str] | None = None, thinking: list[str] | None = None) -> None:
         self.installed = dict(installed or {})
         # /api/chat : morceaux de la réponse ; `chat_error_gpu` : erreur rendue tant que `num_gpu` est demandé
         # (repli du moteur local) ; `loaded` : modèles déjà chargés (/api/ps).
         self.chat = list(chat or ["Bonjour. ", "Je réponds en local."])
         self.chat_error_gpu = chat_error_gpu
         self.loaded = list(loaded or [])
+        self.thinking = list(thinking or ["Je réfléchis ", "à la demande."])  # 05/11 : morceaux si `think`
         self.manifests = dict(manifests or {})
         self.pull_steps, self.pull_delay = pull_steps, pull_delay
         self.reply, self.create_error = reply, create_error
@@ -123,6 +124,10 @@ class FauxOllama:
                 self.send_header("Content-Type", "application/x-ndjson")
                 self.send_header("Transfer-Encoding", "chunked")
                 self.end_headers()
+                if body.get("think"):  # 05/11 : réflexion demandée → morceaux `thinking` avant la réponse (comme Ollama)
+                    for part in owner.thinking:
+                        self._chunk(json.dumps({"message": {"role": "assistant", "content": "", "thinking": part},
+                                                "done": False}).encode() + b"\n")
                 for part in owner.chat:
                     self._chunk(json.dumps({"message": {"role": "assistant", "content": part},
                                             "done": False}).encode() + b"\n")

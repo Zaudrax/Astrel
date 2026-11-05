@@ -26,6 +26,20 @@ from ..voice import available_voices
 from ..core import _mic_probe, _settings_on_sensor, _speaks, log  # aides du cœur (le paquet charge core d'abord)
 
 
+REFUS_GARDE = ("stop_tout",)  # 05/11 : indicateurs du refus d'un module gardés dans la réponse de `settings_set`
+
+
+def refus_reglage(exc: SettingError, cause: dict | None = None) -> dict:
+    """Refus d'un `settings_set` : notice `setting_error` et réponse (sans la page, ajoutée par l'appelant). 05/11 :
+    garde `stop_tout` de la cause (« Rien ne sort » pendant une tâche : Réglages propose « Tout arrêter ») ; la démo
+    du HUD (tools/hud_demo.py) passe par ici pour répondre comme le cœur."""
+    err = {"key": exc.key, "message": exc.message}
+    log.info("réglage %s refusé : %s", exc.key, exc.message)
+    bus.publish("notice", level="warning", text=f"Réglage refusé ({exc.key}) : {exc.message}", setting_error=err)
+    garde = {k: cause[k] for k in REFUS_GARDE if cause and k in cause}
+    return {"ok": False, "error": exc.message, "setting_error": err, **garde}
+
+
 class ReglagesCoeur:
     """Page « Réglages » du HUD : liaison des réglages, capteurs, WhatsApp, micro et voix,"""
 
@@ -323,6 +337,7 @@ class ReglagesCoeur:
                     value = json.loads(raw)
                 except ValueError:
                     value = raw.strip()
+            cause: dict | None = None  # 05/11 : refus d'un module (`stop_tout` gardé par `refus_reglage`)
             try:
                 if key.startswith("confirmations") and not totalgate.may_change_confirmations(cmd):
                     # 24/10 (P29 lot B) : cases de confirmation, l'utilisateur depuis le HUD seulement.
@@ -337,6 +352,7 @@ class ReglagesCoeur:
                     res = self._hors_ligne_switch(bool(validate(key, value)),
                                                   by="HUD" if cmd.get("_via") == "hud" else "terminal")
                     if not res.get("ok"):
+                        cause = res
                         raise SettingError(key, str(res.get("error") or "refusé"))
                     return {**res, **reglages.publish()}
                 if key == "brain_effort" and self._effort_reason() == "ext":
@@ -346,11 +362,8 @@ class ReglagesCoeur:
                 before = reglages.value(key) if key in ("brain_effort", "conversation_language") else None
                 reglages.set(key, value)
             except SettingError as exc:
-                err = {"key": exc.key, "message": exc.message}
-                log.info("réglage %s refusé : %s", exc.key, exc.message)
-                bus.publish("notice", level="warning", text=f"Réglage refusé ({exc.key}) : {exc.message}",
-                            setting_error=err)
-                return {"ok": False, "error": exc.message, "setting_error": err, **reglages.publish()}
+                refus = refus_reglage(exc, cause)  # notice d'abord, puis la page (ordre d'avant)
+                return {**refus, **reglages.publish()}
             if key == "brain_effort" and reglages.value(key) != before:
                 self._apply_effort()
             if key == "plan_mode":

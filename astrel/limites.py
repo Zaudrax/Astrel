@@ -135,14 +135,19 @@ MISSION_INTERDIT = "mission_interdit"
 # 04/11 (secrets du compte, autorisation de l'utilisateur) : clés SSH et GPG, jetons du cloud, mots de passe et cookies
 # des navigateurs, trousseaux (`guard.SecretsCompte`). Lus : plafond, comme un secret d'Astrel.
 SECRETS_UTILISATEUR = "secrets_utilisateur"
+# 05/11 (trou confirmé, autorisation explicite de l'utilisateur) : un AUTRE agent IA lancé par Claude (claude -p, codex,
+# gemini, aider…) ne charge pas le hook d'Astrel : il agirait sans garde-fou. Plafond (ni Total, ni levée, ni
+# « oui pour 30 min ») ; sa case existe et reste cochée par défaut, comme toutes (décision du 24/10, lot B).
+AGENT_IMBRIQUE = "agent_imbrique"
 PLAFONDS = frozenset({IDENTIFIANTS_CLAUDE, SECRETS, SECRETS_LARGES, JOURNAUX, ETAT_GARDE_FOU, CODE_IDENTITE,
-                      CITATION, MISSION_INTERDIT, SECRETS_UTILISATEUR})
+                      CITATION, MISSION_INTERDIT, SECRETS_UTILISATEUR, AGENT_IMBRIQUE})
 
 # Ligne d'information du plafond (lecture seule dans les Réglages).
 PLAFOND_TEXTES = (
     "identifiants et serveurs MCP de Claude Code",
     "secrets (jeton du HUD, clés API, identifiants WhatsApp)",
     "secrets de ton compte (clés SSH, mots de passe, jetons, profils des navigateurs)",  # 04/11
+    "lancement d'un autre agent IA sans le garde-fou (claude, codex, gemini…)",  # 05/11
     "journaux (audit, Sans confirmation, levée)",
     "arrêt d'urgence, autonomie, autorisations, mission, plans, réglages et limites",
     "code qui dit qui est Claude (totalgate, state, ipc, proc, server, limites)",
@@ -278,6 +283,8 @@ CASES: tuple[Case, ...] = (
     Case(JOURNAUX, "garde_fou", "Modifier un journal (audit, sans confirmation, levée, cases)", True),
     Case(CITATION, "garde_fou", "Commande qui cite le garde-fou ou un journal sans signe d'écriture", True),
     Case(IDENTIFIANTS_CLAUDE, "garde_fou", "Compte, réglages et serveurs MCP de Claude Code", True),
+    Case(AGENT_IMBRIQUE, "garde_fou", "Lancer un autre agent IA, qui agirait sans le garde-fou (claude -p, codex, "
+                                      "gemini, aider…)", True),  # 05/11
     Case(SECRETS, "secrets", "Lire ou modifier un secret nommé (jeton du HUD, clés API, WhatsApp, clé qui signe ces cases)", True),
     Case(SECRETS_LARGES, "secrets", "Recherche récursive dans un dossier qui contient un secret", True),
     Case(SECRETS_UTILISATEUR, "secrets", "Lire un secret de ton compte (clés SSH et GPG, jetons du cloud, mots de "

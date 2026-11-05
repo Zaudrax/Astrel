@@ -42,6 +42,7 @@ FULL = (
     "astrel/minichat.py", "tools/check_install.py",
     # 05/11 (lot 5 du moteur local) : Réglages › Commandes autorisées, erreurs des propositions montrées au HUD
     "astrel/commandes_locales.py", "astrel/propositions_local.py", "astrel/coeur/propositions_local.py",
+    "astrel/commandes_chat.py", "astrel/coeur/commandes_chat.py",  # 05/11 : commandes « / » du chat (refus, aide)
 )
 # Jamais lus : le garde-fou (fichiers protégés, ses descriptions sont ajoutées à la main au
 # catalogue), les serveurs MCP (réponses à Claude), le prompt et les outils de Claude.
@@ -203,6 +204,7 @@ NOT_SCREEN = {
     'Ensuite réponds seulement [SILENT].',
     "[Rappel automatique de la mémoire par Astrel, pas un message de l'utilisateur ; à lire avec memory_read seulement "
     "si utile] .",
+    "en local : ", "avec Claude : ",  # 05/11 : préfixes que /local et /claude écrivent pour le routeur (commandes_chat)
 }
 
 # Libellé d'un seul mot ou titre (« Outils », « Paquet de skills ») : lu seulement en mode FULL.

@@ -1,0 +1,90 @@
+# Réglages du SearXNG LOCAL d'Astrel (05/11/2026, lot 7 partie A du moteur local, docs/chantiers/HYBRIDE-QWEN.md).
+# Modèle versionné SANS secret : `tools/searxng.sh --installer` l'écrit dans runtime/searxng/settings.yml (0600)
+# en remplaçant @SECRET@ par une clé tirée au hasard et @PORT@ par le port (ASTREL_SEARXNG_PORT, 8899 par défaut).
+# Seuls les moteurs de `keep_only` (et ceux définis plus bas) sont chargés ; le reste vient des réglages par
+# défaut de la version fixée. Essais réels du 05/11 : duckduckgo, bing, yahoo et Wikipédia répondent ; brave répond
+# puis se suspend (« too many requests ») après une vingtaine de recherches en 10 min ; RETIRÉS : google (« access
+# denied » à chaque essai) et qwant (CAPTCHA dès la 1re requête, suspendu 1 h) ; mojeek et startpage sont
+# « inactive » dans cette version (preuve de travail exigée).
+
+use_default_settings:
+  engines:
+    keep_only:
+      - duckduckgo
+      - brave
+      - bing
+      - yahoo
+      - wikipedia
+
+general:
+  debug: false
+  instance_name: "Astrel (local)"
+  enable_metrics: false   # aucune statistique gardée
+
+search:
+  safe_search: 0
+  autocomplete: ""        # pas de suggestion envoyée pendant la frappe (personne ne tape ici)
+  favicon_resolver: ""
+  default_lang: "fr"
+  # json : le format lu par astrel/web_local.py ; html : la page de contrôle à la main.
+  formats:
+    - html
+    - json
+  ban_time_on_fail: 5
+  max_ban_time_on_fail: 120
+
+server:
+  # 127.0.0.1 SEUL (jamais 0.0.0.0 ni ::) ; granian reçoit les mêmes valeurs de tools/searxng.sh.
+  port: @PORT@
+  bind_address: "127.0.0.1"
+  base_url: false
+  secret_key: "@SECRET@"
+  # Limiteur coupé : il sert à protéger une instance PUBLIQUE des robots, exige Valkey, et le seul client ici
+  # est Astrel sur la même machine (127.0.0.1). La cadence vers les moteurs est bornée par astrel/web_local.py.
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+
+valkey:
+  url: false
+
+outgoing:
+  request_timeout: 4.0
+  max_request_timeout: 8.0
+  enable_http2: true
+
+plugins:
+  searx.plugins.calculator.SXNGPlugin:
+    active: false
+  searx.plugins.hash_plugin.SXNGPlugin:
+    active: false
+  searx.plugins.self_info.SXNGPlugin:
+    active: false         # « quelle est mon IP » : rien à rendre au modèle local
+  searx.plugins.unit_converter.SXNGPlugin:
+    active: false
+  searx.plugins.time_zone.SXNGPlugin:
+    active: false
+  searx.plugins.tracker_url_remover.SXNGPlugin:
+    active: true          # retire les paramètres de pistage des adresses rendues
+
+engines:
+  - name: yahoo
+    disabled: false
+  # Bing mélange souvent des résultats hors sujet (essai « CVE-2024-3094 xz ») : poids réduit.
+  - name: bing
+    disabled: false
+    weight: 0.5
+  # Wikipédia dans la LISTE des résultats (pas seulement l'encadré), dans la langue de la recherche (fr).
+  - name: wikipedia
+    display_type: ["infobox", "list"]
+  # Wikipédia FR en recherche PLEIN TEXTE (le moteur « wikipedia » ne cherche qu'un titre exact) : API MediaWiki
+  # officielle, sans clé.
+  - name: wikipedia fr
+    engine: mediawiki
+    shortcut: wpfr
+    base_url: "https://fr.wikipedia.org/"
+    search_type: text
+    categories: [general]
+    timeout: 4.0
+    disabled: false

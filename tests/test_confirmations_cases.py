@@ -54,6 +54,7 @@ EXEMPLES = {
     L.JOURNAUX: ("Write", config.AUDIT_LOG, "autonome"),
     L.CITATION: ("Bash", "tail -5 logs/audit.jsonl | python3 -m json.tool", "autonome"),
     L.IDENTIFIANTS_CLAUDE: ("Bash", "claude mcp add x y", "autonome"),
+    L.AGENT_IMBRIQUE: ("Bash", "claude -p bonjour", "autonome"),  # 05/11 : agent imbriqué sans le hook
     L.SECRETS: ("Bash", "cat config/secrets.json", "autonome"),
     L.SECRETS_LARGES: ("Bash", "grep -rn token runtime", "autonome"),
     L.SECRETS_UTILISATEUR: ("Bash", "cat ~/.ssh/id_ed25519", "autonome"),  # 04/11 : secrets du compte

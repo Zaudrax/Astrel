@@ -170,6 +170,10 @@ def _economie_isolee(tmp_path, monkeypatch):
     monkeypatch.setattr(outils_local, "BANC_DIR", tmp_path / "banc")
     monkeypatch.setattr(outils_local, "CONFIG_CLI", tmp_path / "outils-local")
     monkeypatch.setattr(outils_local, "_VERSION", {"v": "0.0.0-test"})
+    # 05/11 : pids des CLI locaux (lus par le hook pour les zones) : jamais ceux de la machine.
+    from astrel import guard as _guard
+    monkeypatch.setattr(outils_local, "PIDS_CLI", tmp_path / "outils-local-pids.json")
+    monkeypatch.setattr(_guard, "LOCAL_CLI_PIDS_FILE", tmp_path / "outils-local-pids.json")
     # 05/11 (lot 5) : ni la liste des commandes de l'utilisateur, ni les propositions du modèle local de la machine.
     from astrel import commandes_locales, guard, propositions_local
     monkeypatch.setattr(commandes_locales, "FICHIER", tmp_path / "commandes-locales.json")

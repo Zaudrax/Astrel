@@ -9,7 +9,7 @@ Anthropic's CLI, on the user's own subscription. You say "Astrel", you talk, it 
 files, browser, desktop) and answers out loud. A local dashboard, the HUD, shows what it is doing
 while it does it.
 
-![The HUD: conversation thread, multiple-choice question, running agents](docs/images/hud.png)
+![The HUD: conversation thread, multiple-choice question, running agents](docs/images/hud-en.png)
 
 ![The bubble: idle, listening, thinking, speaking, asking, mic muted](docs/images/bulle.gif)
 

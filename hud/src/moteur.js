@@ -6,6 +6,7 @@
 // 2. « Envoyer à Claude » sous une réponse locale : `local_vers_claude {mid}` (HUD seul) renvoie la DEMANDE
 //    d'origine, que le cœur garde en mémoire (`local_demandes` : la liste de leurs mid, relue à chaque connexion).
 //    Une demande sensible passe d'abord par la carte « routage » ; oubliée ou hors ligne : grisé, la raison écrite.
+//    05/11 : cœur plus ancien que le HUD (« commande inconnue ») : grisé, « relance Astrel », pas « plus en mémoire ».
 // Rien en innerHTML : nœuds et textContent seulement.
 
 import { command, on } from "./conn.js";
@@ -128,6 +129,11 @@ function readSettings(ev) {
 
 const memo = new Set();     // mid des demandes locales que le cœur garde encore
 const boxes = new Set();    // réponses locales qui portent le bouton : { m, req, madeOffline, state }
+// 05/11 (essais réels de l'utilisateur) : un HUD rouvert prend le code du disque, le cœur garde celui de son démarrage.
+// Cœur d'avant le lot 6 (« commande inconnue : local_demandes ») : tous les boutons disaient « plus en mémoire ».
+let coreOld = false;
+const unknownCmd = (r) => /^commande inconnue : local_/.test(String(r?.error || ""));
+let refreshing = null;      // mid ajoutés pendant une relecture de `local_demandes` (pas effacés par sa réponse)
 
 function paint(x) {
   const { btn, why } = x;
@@ -135,6 +141,7 @@ function paint(x) {
   if (x.state === "sent") reason = t("local.to_claude_sent");
   else if (x.state === "card") reason = t("local.to_claude_card");
   else if (x.madeOffline) reason = t("local.why_made_offline");
+  else if (coreOld) reason = t("local.why_core_old");
   else if (offline()) reason = t("local.why_offline");
   else if (!memo.has(x.req)) reason = t("local.why_forgotten");
   const can = !reason && !x.busy;
@@ -156,7 +163,10 @@ function paintAll() {
 export function localReplyActions(m, ev) {
   if (!m || ev?.engine !== "local" || m.localBox || !ev.reply_to) return;
   const req = String(ev.reply_to);
-  if (ev.vers_claude) memo.add(req);
+  if (ev.vers_claude) {
+    memo.add(req);
+    refreshing?.add(req);
+  }
   const box = el("div", "local-actions");
   const btn = el("button", "read-btn to-claude");
   btn.type = "button";
@@ -176,6 +186,7 @@ export function localReplyActions(m, ev) {
     paint(x);
     const r = await command("local_vers_claude", { mid: req });
     x.busy = false;
+    if (unknownCmd(r)) { coreOld = true; paintAll(); return; }
     if (r?.ok === false) {
       if (r.raison === "oubliee") memo.delete(req);
       toast(t("local.to_claude_failed", { error: tx(r.error) || t("common.send_failed") }), "error");
@@ -189,9 +200,14 @@ export function localReplyActions(m, ev) {
 }
 
 async function refreshMemo() {
+  const pendant = new Set();
+  refreshing = pendant;
   const r = await command("local_demandes");
+  if (refreshing === pendant) refreshing = null;
+  coreOld = unknownCmd(r);
   memo.clear();
   if (r?.ok !== false && Array.isArray(r?.mids)) for (const mid of r.mids) memo.add(String(mid));
+  for (const mid of pendant) memo.add(mid); // réponse arrivée pendant la relecture : sa liste ne l'avait pas encore
   if (typeof r?.hors_ligne === "boolean") st.offSetting = r.hors_ligne;
   paintBadge();
   paintAll();

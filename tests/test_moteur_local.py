@@ -82,18 +82,21 @@ def _moteur(faux, **kw):
 
 
 def test_reponse_en_flux_et_corps_de_requete():
-    with FauxOllama(chat=["Bonjour", ". Voilà."]) as faux:
+    with FauxOllama(chat=["Voici", ". Voilà."]) as faux:
         m = _moteur(faux)
-        assert "".join(m.repondre("salut")) == "Bonjour. Voilà."
+        assert "".join(m.repondre("salut")) == "Voici. Voilà."
         body = next(b for meth, path, b in faux.requests if path == "/api/chat")
+    # 05/11 (soir, décision de l'utilisateur après le banc de qualité) : réflexion COUPÉE par défaut
     assert body["model"] == "qwen3.5:9b" and body["stream"] is True and body["think"] is False
-    assert body["options"] == {"num_ctx": moteur_local.NUM_CTX, "num_gpu": moteur_local.NUM_GPU_TOUT}
+    assert body["options"] == {"num_ctx": moteur_local.NUM_CTX, "num_gpu": moteur_local.NUM_GPU_TOUT,
+                               **moteur_local.ECHANTILLONNAGE_SANS_REFLEXION}  # 05/11 (lot 8, R7)
     assert body["keep_alive"] == moteur_local.KEEP_ALIVE
     assert body["messages"][0]["role"] == "system" and body["messages"][-1] == {"role": "user", "content": "salut"}
     assert m.derniere["tokens"] == 20 and m.derniere["tokens_s"] == 40.0
 
 
-def test_historique_en_memoire_borne_et_rejoue():
+def test_historique_en_memoire_borne_et_rejoue(monkeypatch):
+    monkeypatch.setattr(moteur_local, "VERIFICATION", False)  # une requête par demande
     with FauxOllama(chat=["ok"]) as faux:
         m = _moteur(faux)
         for i in range(10):
@@ -109,6 +112,20 @@ def test_historique_en_memoire_borne_et_rejoue():
 def test_reflexion_jamais_rendue():
     with FauxOllama(chat=["<think>je réfléchis", " encore</think>", "Réponse."]) as faux:
         assert "".join(_moteur(faux).repondre("x")) == "Réponse."
+
+
+def test_reflexion_a_la_demande_jamais_dite_ni_gardee():
+    """05/11 : réflexion coupée par défaut (décision de l'utilisateur du soir, banc de qualité), À LA DEMANDE pour une
+    question (`reflexion=True`) ; les morceaux `thinking` d'Ollama ne sont ni rendus (donc ni dits ni affichés),
+    ni gardés dans l'historique."""
+    assert moteur_local.REFLEXION is False
+    with FauxOllama(chat=["Réponse", " juste."]) as faux:
+        m = _moteur(faux)
+        assert "".join(m.repondre("17 fois 23 ?", reflexion=True)) == "Réponse juste."
+        body = next(b for meth, path, b in faux.requests if path == "/api/chat")
+    assert body["think"] is True
+    assert list(m._hist)[-1] == {"role": "assistant", "content": "Réponse juste."}
+    assert "réfléchis" not in json.dumps(list(m._hist), ensure_ascii=False)
 
 
 def test_repli_sans_num_gpu_sur_memoire_de_la_carte():
@@ -326,8 +343,8 @@ def test_stop_arrete_la_reponse_locale(j, faux):
     lent = threading.Event()
     reel = j._moteur_local.repondre
 
-    def repondre(demande, langue="fr", stop=None):
-        for morceau in reel(demande, langue, stop):
+    def repondre(demande, langue="fr", stop=None, **kw):  # 05/11 (lot 8) : reflexion, verification
+        for morceau in reel(demande, langue, stop, **kw):
             yield morceau
             lent.wait(0.2)
 
@@ -390,3 +407,115 @@ def test_essai_reel_ollama():
     texte = "".join(m.repondre("Réponds seulement : bonjour."))
     assert texte.strip() and m.derniere["tokens_s"] > 5
     print("essai réel :", m.derniere)
+
+
+def test_reflexion_sans_fin_repart_sans_reflexion(monkeypatch):
+    """05/11 (mesure réelle : plusieurs minutes de réflexion sur une question simple ; lot 8 : budget en JETONS,
+    une ligne `thinking` du flux = un jeton) : au-delà du budget, la même demande repart sans réflexion ; rien de
+    la réflexion n'est rendu."""
+    monkeypatch.setattr(moteur_local, "REFLEXION_BUDGET", 3)
+    monkeypatch.setattr(moteur_local, "VERIFICATION", False)
+    with FauxOllama(chat=["Réponse."], thinking=["x" * 30] * 5) as faux:
+        m = _moteur(faux)
+        assert "".join(m.repondre("question", reflexion=True)) == "Réponse."
+        corps = [b for meth, path, b in faux.requests if path == "/api/chat"]
+    assert [c["think"] for c in corps] == [True, False] and m.derniere["relances"] == ["budget"]
+
+
+def test_reflexion_sous_le_budget_garde_la_reponse_reflechie(monkeypatch):
+    monkeypatch.setattr(moteur_local, "REFLEXION_BUDGET", 5)
+    monkeypatch.setattr(moteur_local, "VERIFICATION", False)
+    with FauxOllama(chat=["Réponse."], thinking=["x"] * 5) as faux:
+        m = _moteur(faux)
+        assert "".join(m.repondre("question", reflexion=True)) == "Réponse."
+        corps = [b for meth, path, b in faux.requests if path == "/api/chat"]
+    assert [c["think"] for c in corps] == [True] and m.derniere["reflexion_jetons"] == 5
+
+
+def test_reflexion_sans_reponse_relancee_sans_reflexion():
+    """Lot 8 (Ollama #18916 : « réflexion seule, contenu vide ») : la même demande repart sans réflexion (réponse
+    vide : aucune relecture)."""
+    with FauxOllama(chat=[""]) as faux:
+        m = _moteur(faux)
+        assert "".join(m.repondre("question", reflexion=True)) == ""
+        corps = [b for meth, path, b in faux.requests if path == "/api/chat"]
+    assert [c["think"] for c in corps] == [True, False] and m.derniere["relances"] == ["vide"]
+
+
+def test_sortie_filtree_affichee_dite_et_gardee(monkeypatch):
+    """Lot 8 (R3) : salutation et présentation retirées par le cœur, aussi dans l'historique du local. 05/11 : un
+    prénom de TEST (le profil de la machine n'est pas celui du dépôt public)."""
+    from astrel import sortie_locale
+    monkeypatch.setattr(sortie_locale, "prenom", lambda: "Lea")
+    with FauxOllama(chat=["Bonjour Lea ! ", "En tant qu'Astrel local, ", "je dirais Tokyo."]) as faux:
+        m = _moteur(faux)
+        assert "".join(m.repondre("capitale du Japon ?")) == "Je dirais Tokyo."
+    assert list(m._hist)[-1]["content"] == "Je dirais Tokyo."
+
+
+def test_relecture_corrige_avant_de_rendre(monkeypatch):
+    """Lot 8 : `VERIFICATION` → le brouillon est relu (une 2e requête, sans historique) ; un commentaire sur la
+    relecture fait garder le brouillon."""
+    monkeypatch.setattr(moteur_local, "VERIFICATION", True)
+    with FauxOllama(chat=["Réponse relue."]) as faux:
+        m = _moteur(faux)
+        assert "".join(m.repondre("question")) == "Réponse relue."
+        corps = [b for meth, path, b in faux.requests if path == "/api/chat"]
+    assert len(corps) == 2 and "Brouillon" in corps[1]["messages"][-1]["content"]
+    assert len(corps[1]["messages"]) == 2 and m.derniere["relecture"] == "identique"
+    with FauxOllama(chat=["Le brouillon est juste."]) as faux:
+        m = _moteur(faux)
+        assert "".join(m.repondre("question")) == "Le brouillon est juste."  # brouillon gardé (même texte ici)
+    assert m.derniere["relecture"] == "gardé"
+    with FauxOllama(chat=["C'est correct sur le fond."]) as faux:  # verdict en phrase (banc final) : brouillon
+        m = _moteur(faux)
+        list(m.repondre("question"))
+    assert m.derniere["relecture"] == "gardé"
+    with FauxOllama(chat=["OK."]) as faux:  # verdict : le brouillon part tel quel
+        m = _moteur(faux)
+        assert "".join(m.repondre("question")) == "OK."
+    assert m.derniere["relecture"] == "ok"
+
+
+def test_message_local_ajoute_les_faits_du_coeur():
+    assert moteur_local.message_local("Combien font 17 fois 23 ?") == \
+        "Combien font 17 fois 23 ?\n\n[Contrôle d'Astrel : 17 × 23 = 391.]"
+    assert moteur_local.message_local("Explique TCP") == "Explique TCP"
+
+
+def test_adresse_inventee_marquee_non_verifiee_a_l_affichage(j, events):
+    """Lot 8 (R1) : une adresse que le tour n'a pas vue est marquée dans la réponse AFFICHÉE ; celle que l'utilisateur
+    a écrite ne l'est pas ; l'historique du local garde le texte sans la marque."""
+    with FauxOllama(chat=["Va sur faux-site.fr ou sur exemple.org."]) as f:
+        _brancher(j, f)
+        j.handle("en local : que dit exemple.org ?", source="clavier", channel="general")
+        _attendre(j)
+    reply = [e for e in events if e.get("type") == "reply" and e.get("engine") == "local"][-1]
+    assert reply["text"] == "Va sur faux-site.fr (adresse non vérifiée) ou sur exemple.org."
+    assert "non vérifiée" not in json.dumps(list(j._moteur_local._hist), ensure_ascii=False)
+
+
+def test_reflexion_a_la_demande_passe_du_tour_local_au_moteur(j, monkeypatch):
+    """Lot 8 : `_tour_local(..., reflexion=True)` (commande « /reflechir ») fait réfléchir CETTE question ; sans
+    rien, le défaut du moteur (coupée). La relecture (active par défaut) ne réfléchit jamais."""
+    with FauxOllama(chat=["ok."]) as f:
+        _brancher(j, f)
+        j._tour_local("q", "q", "clavier", "general", reflexion=True)
+        _attendre(j)
+        j._tour_local("q", "q", "clavier", "general")
+        _attendre(j)
+        thinks = [b["think"] for meth, path, b in f.requests if path == "/api/chat"]
+    assert thinks == [True, False, False, False]  # question réfléchie, sa relecture ; puis question, relecture
+
+
+def test_jeu_d_echantillonnage_selon_la_reflexion(monkeypatch):
+    """Lot 8 (R7) : sans réflexion, le jeu officiel « sans réflexion » ; avec, celui du Modelfile (aucune option) ;
+    une relance sans réflexion prend le sien."""
+    monkeypatch.setattr(moteur_local, "VERIFICATION", False)
+    monkeypatch.setattr(moteur_local, "REFLEXION_BUDGET", 3)
+    with FauxOllama(chat=["ok."], thinking=["x"] * 5) as faux:
+        m = _moteur(faux)
+        list(m.repondre("q", reflexion=True))
+        corps = [b for meth, path, b in faux.requests if path == "/api/chat"]
+    assert "temperature" not in corps[0]["options"] and corps[0]["think"] is True
+    assert corps[1]["think"] is False and corps[1]["options"]["temperature"] == 0.7 and corps[1]["options"]["top_p"] == 0.8

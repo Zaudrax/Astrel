@@ -9,6 +9,7 @@
     "mcp__playwright__browser_run_code_unsafe",
     "mcp__playwright2__browser_run_code_unsafe",
     "mcp__playwright3__browser_run_code_unsafe",
-    "mcp__playwright4__browser_run_code_unsafe"
+    "mcp__playwright4__browser_run_code_unsafe",
+    "mcp__playwright_local__browser_run_code_unsafe"
   ]
 }

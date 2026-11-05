@@ -208,6 +208,100 @@ def test_installation_prepare_le_pont_whatsapp(monkeypatch, capsys):
     assert "Préparer WhatsApp" in capsys.readouterr().out
 
 
+def _installation_sans_rien(monkeypatch, code_de):
+    """main() d'install.py sans rien lancer : (commande, dossier) de chaque appel retenus."""
+    calls = []
+
+    def fake_run(cmd, cwd=inst.ROOT, check=True):
+        calls.append((list(map(str, cmd)), Path(cwd).name, check))
+        return code_de(Path(cwd).name)
+
+    class Check:
+        MANQUE, ALERTE = "MANQUE", "ALERTE"
+
+        @staticmethod
+        def run_checks():
+            return []
+
+    monkeypatch.setattr(inst, "run", fake_run)
+    monkeypatch.setattr(inst, "load_check_install", lambda root=inst.ROOT: Check)
+    monkeypatch.setattr(inst.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(inst, "initial_autonomy", lambda **k: False)
+    monkeypatch.setattr(inst, "initial_affichage", lambda **k: False)
+    monkeypatch.setattr(inst, "copy_examples", lambda: [])
+    assert inst.main(["--sans-modeles", "--sans-demarrage"]) == 0
+    return calls
+
+
+def test_installation_prepare_le_worker_des_images(monkeypatch, capsys):
+    """05/11 (T45) : `npm ci` dans imagegen/ (playwright-core FIXÉ par le package-lock), sur les trois
+    systèmes (rien ne dépend du système ici) ; un échec n'arrête pas l'installation."""
+    assert json.loads((ROOT / "imagegen" / "package-lock.json").read_text(encoding="utf-8"))["packages"][
+        "node_modules/playwright-core"]["version"] == json.loads(
+        (ROOT / "imagegen" / "package.json").read_text(encoding="utf-8"))["dependencies"]["playwright-core"]
+    for sys_name in ("linux", "macos", "windows"):
+        monkeypatch.setattr(inst, "system", lambda s=sys_name: s)
+        calls = _installation_sans_rien(monkeypatch, lambda nom: 0)
+        assert (["npm", "ci", "--no-audit", "--no-fund", "--silent"], "imagegen", False) in calls, sys_name
+    _installation_sans_rien(monkeypatch, lambda nom: 1 if nom == "imagegen" else 0)
+    out = capsys.readouterr().out
+    assert "images et vidéos IA non préparées" in out and "cd imagegen && npm ci" in out and "Installé." in out
+
+
+def test_installation_sans_npm_dit_ce_qui_manque(monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr(inst, "run", lambda cmd, cwd=inst.ROOT, check=True: calls.append(Path(cwd).name) or 0)
+    monkeypatch.setattr(inst, "load_check_install", lambda root=inst.ROOT: type(
+        "C", (), {"MANQUE": "MANQUE", "ALERTE": "ALERTE", "run_checks": staticmethod(lambda: [])}))
+    monkeypatch.setattr(inst.shutil, "which", lambda name: None if name == "npm" else f"/usr/bin/{name}")
+    monkeypatch.setattr(inst, "initial_autonomy", lambda **k: False)
+    monkeypatch.setattr(inst, "initial_affichage", lambda **k: False)
+    monkeypatch.setattr(inst, "copy_examples", lambda: [])
+    assert inst.main(["--sans-modeles", "--sans-demarrage"]) == 0
+    assert not {"imagegen", "whatsapp", "mcp-servers"} & set(calls)
+    assert "ni images et vidéos IA" in capsys.readouterr().out
+
+
+def _faux_imagegen(tmp_path, attendu="1.64.1", installe=None):
+    d = tmp_path / "imagegen"
+    d.mkdir(parents=True)
+    if attendu:
+        (d / "package-lock.json").write_text(json.dumps(
+            {"lockfileVersion": 3, "packages": {"node_modules/playwright-core": {"version": attendu}}}))
+    if installe:
+        (d / "node_modules" / "playwright-core").mkdir(parents=True)
+        (d / "node_modules" / "playwright-core" / "package.json").write_text(json.dumps({"version": installe}))
+    return tmp_path
+
+
+def test_controle_du_worker_des_images(tmp_path):
+    """05/11 (T45) : check_install vérifie imagegen/node_modules contre le package-lock (ALERTE seulement)."""
+    ok = chk.check_imagegen(_faux_imagegen(tmp_path / "a", installe="1.64.1"))
+    assert (ok.status, ok.detail) == (chk.OK, "playwright-core 1.64.1")
+    absent = chk.check_imagegen(_faux_imagegen(tmp_path / "b"))
+    assert absent.status == chk.ALERTE and absent.fix == "cd imagegen && npm ci"
+    ecart = chk.check_imagegen(_faux_imagegen(tmp_path / "c", installe="1.50.0"))
+    assert ecart.status == chk.ALERTE and "1.50.0 installé, 1.64.1 attendu" in ecart.detail
+    sans_lock = chk.check_imagegen(_faux_imagegen(tmp_path / "d", attendu=None))
+    assert sans_lock.status == chk.INFO
+    (tmp_path / "b" / "imagegen" / "node_modules" / "playwright-core").mkdir(parents=True)
+    (tmp_path / "b" / "imagegen" / "node_modules" / "playwright-core" / "package.json").write_text("{abîmé")
+    assert chk.check_imagegen(tmp_path / "b").status == chk.ALERTE
+
+
+def test_controle_apres_installation_cite_le_worker(monkeypatch):
+    monkeypatch.setattr(chk, "venv_python", lambda: Path(sys.executable))
+    noms = [c.name for c in chk.check_installed()]
+    assert "images et vidéos IA (Node)" in noms
+
+
+def test_mise_a_jour_reinstalle_les_dossiers_npm_ci():
+    """05/11 (T45) : update.py suit aussi les package-lock de whatsapp/ et imagegen/ (npm ci)."""
+    for nom in upd.NPM_CI:
+        assert upd.WATCHED[nom] == [f"{nom}/package.json", f"{nom}/package-lock.json"]
+        assert (ROOT / nom / "package-lock.json").is_file()
+
+
 # --- icône du lanceur (22/10, plan P25) : jamais le vrai ~/.local, un HOME temporaire ---
 
 def _faux_depot(tmp_path, choix=None):
@@ -307,3 +401,18 @@ def test_installation_linux_ecrit_le_lanceur_et_l_icone(tmp_path, monkeypatch):
     assert ["systemctl", "--user", "enable", "astrel.service", "astrel-bubble.service"] in calls
     assert (home / ".local/share/icons/hicolor/48x48/apps/astrel-hud.png").is_file()
     assert ["systemctl", "--user", "daemon-reload"] in calls
+
+
+def test_ci_lance_tous_les_tests_node():
+    """05/11 (T45) : le job « linux » lance TOUS les tests Node (avant : seuls ceux que pytest relançait,
+    7 fichiers du HUD sur 13, ni le pont WhatsApp ni le worker des images), après `npm ci` comme install.py."""
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    linux = ci[ci.index("\n  linux:"):ci.index("\n  portage:")]
+    portage = ci[ci.index("\n  portage:"):]
+    for dossier, cmd in (("hud", "node --test tests/*.test.mjs"), ("whatsapp", "node --test"),
+                         ("imagegen", "node --test --test-concurrency=1")):
+        assert f"working-directory: {dossier}\n        run: {cmd}\n" in linux, dossier
+        assert any(ROOT.joinpath(dossier).glob("**/*.test.mjs")), dossier
+    assert "(cd whatsapp && npm ci" in linux and "(cd imagegen && npm ci" in linux
+    assert "run: node --test tests/*.test.mjs" in portage and "npm ci --no-audit --no-fund && node --test\n" in portage
+    assert "actions/setup-node@v4" in portage and portage.count('node-version: "22"') == 1

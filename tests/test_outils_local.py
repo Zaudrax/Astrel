@@ -78,7 +78,7 @@ def test_modele_derive_contexte_fixe_et_toute_la_carte():
     assert outils_local.preparer_modele("qwen3.5:9b", "http://127.0.0.1:11434", http) == "astrel-qwen3.5-9b"
     url, corps = http.corps
     assert url.endswith("/api/create") and corps["from"] == "qwen3.5:9b"
-    assert corps["parameters"] == {"num_ctx": 32768, "num_gpu": 999}
+    assert corps["parameters"] == {"num_ctx": 32768, "num_gpu": 999, "temperature": 0.6, "presence_penalty": 0.0}
 
 
 @pytest.mark.parametrize("rep", [_Rep(500, {}), OSError("refus")])

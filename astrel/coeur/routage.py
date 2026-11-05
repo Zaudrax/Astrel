@@ -71,7 +71,9 @@ class RoutageCoeur:
         etat = routeur.Etat(canaux_locaux=locaux, projet=projet, source=source,
                             scan=lambda _t, p: sensible.scan(scanne, p),
                             lecture_locale=not self._outils_locaux_raison(),  # 04/11 (lot 4)
-                            actions_locales=not self._outils_locaux_actions_raison())  # 05/11 (lot 5)
+                            actions_locales=not self._outils_locaux_actions_raison(),  # 05/11 (lot 5)
+                            web_local=not self._outils_locaux_web_raison(),  # 05/11 (lot 7B)
+                            navigateur_local=not self._outils_locaux_navigateur_raison())
         # Canal Local : celui DONNÉ avec le message (comme au lot 1), pas le canal ouvert par défaut.
         return routeur.decider(text, channel, pieces, {"moteur_mode": mode}, etat)
 
@@ -110,7 +112,8 @@ class RoutageCoeur:
             return True
         if dec.moteur == routeur.LOCAL:
             self._routage_notice(dec, channel)
-            self._tour_local(text, dec.texte, source, channel, shown, joined, outils=dec.outils)
+            self._tour_local(text, dec.texte, source, channel, shown, joined, outils=dec.outils,
+                             navigateur=dec.navigateur)
             return True
         return False
 

@@ -23,6 +23,7 @@ import { initPropositions } from "./propositions.js";
 import { initPropositionsLocal } from "./propositions-local.js"; // 05/11 (lot 5 du moteur local)
 import { initRecherche, openSearch } from "./recherche.js";
 import { initMoteur, localReplyActions } from "./moteur.js"; // 05/11 (lot 6 du moteur local)
+import { initCommandes, runSlash } from "./commandes-ui.js"; // 05/11 : commandes « / » de la barre
 import { hydrateIcons, icon, setIcon, setLabel, stripEmoji } from "./icons.js";
 import { applyI18n, assistantName, locale, t, tx } from "./i18n.js";
 import { msgTime } from "./heure.js";
@@ -1171,6 +1172,8 @@ function addMsg(who, text, { src = null, channel = defaultChannel, mid = "", rep
     node.append(copy);
   }
   setMid(m, mid);
+  // 05/11 (/clear) : rejoué après un rechargement, mais vidé de l'affichage de son canal : pas remis dans le fil.
+  if (replay && Number(ts) > 0 && Number(ts) <= clearedAt(shownIn(channel))) return m;
   node.addEventListener("contextmenu", (e) => moveMenu(m, e));
   messages.push(m);
   $("#transcript").append(node);
@@ -1207,14 +1210,30 @@ function pruneChannel(channel) {
   // Une image ou une vidéo IA en cours aussi (21/10, 28/10) : sa carte attend le résultat.
   const inChannel = messages.filter((x) => x.channel === channel && !(x.choice && !x.choice.answered)
     && !(x.imageJob && !imageDone(x)) && !(x.videoJob && !videoDone(x)));
-  for (const old of inChannel.slice(0, Math.max(0, inChannel.length - PER_CHANNEL))) {
-    old.node.remove();
-    messages.splice(messages.indexOf(old), 1);
-    if (old.mid) byMid.delete(old.mid);
-    if (old.choice) choices.delete(old.choice.id);
-    if (old.imageJob) imageCards.delete(old.imageJob);
-    if (old.videoJob) videoCards.delete(old.videoJob);
-  }
+  for (const old of inChannel.slice(0, Math.max(0, inChannel.length - PER_CHANNEL))) dropMsg(old);
+}
+function dropMsg(old) {
+  old.node.remove();
+  messages.splice(messages.indexOf(old), 1);
+  if (old.mid) byMid.delete(old.mid);
+  if (old.choice) choices.delete(old.choice.id);
+  if (old.imageJob) imageCards.delete(old.imageJob);
+  if (old.videoJob) videoCards.delete(old.videoJob);
+}
+
+// 05/11 (/clear, /nouveau) : la conversation repart à neuf ; l'AFFICHAGE du canal ouvert est vidé (l'historique, la
+// recherche Ctrl+K et les autres canaux restent). Gardés comme par pruneChannel : question à choix sans réponse,
+// image ou vidéo IA en cours. L'heure est retenue (localStorage) : un HUD rechargé ne rejoue pas ce qui a été vidé.
+// (fonctions déclarées, pas de constante : appelées par addMsg, possiblement avant cette ligne)
+function clearedAll() {
+  try { const o = JSON.parse(localStorageGet("astrel-fil-vide") || "{}"); return o && typeof o === "object" ? o : {}; } catch { return {}; }
+}
+function clearedAt(channel) { return Number(clearedAll()[channel]) || 0; }
+function clearView(channel) {
+  for (const m of messages.filter((x) => shownIn(x.channel) === channel && !(x.choice && !x.choice.answered)
+    && !(x.imageJob && !imageDone(x)) && !(x.videoJob && !videoDone(x)))) dropMsg(m);
+  localStorageSet("astrel-fil-vide", JSON.stringify({ ...clearedAll(), [channel]: Date.now() / 1000 }));
+  updateJump();
 }
 
 // Défilement du fil : il ne recolle en bas que si l'utilisateur y était déjà, et
@@ -1763,6 +1782,19 @@ async function sendAskNow() {
   const input = $("#ask");
   const text = input.value.trim();
   if ((!text && !attached.length) || input.dataset.sending) return;
+  // 05/11 : commande « / » (commandes-ui.js) : jamais envoyée à un modèle ; une espace devant envoie le texte tel quel.
+  let sendText = text;
+  if (!/^\s/.test(input.value)) {
+    input.dataset.sending = "1";
+    refreshSend();
+    let slash = null;
+    try { slash = await runSlash(text); } finally { delete input.dataset.sending; }
+    if (slash?.done) {
+      if (slash.ok && input.value.trim() === text) { input.value = ""; fitAsk(); }
+      return;
+    }
+    if (slash?.send) sendText = slash.send; // /local, /claude : « en local : … », « avec Claude : … »
+  }
   input.dataset.sending = "1";
   input.classList.add("sending");
   refreshSend();
@@ -1797,7 +1829,7 @@ async function sendAskNow() {
   }
   const sent = attached.filter((a) => !a.pending);
   if (!text && !sent.length) { release(); return; }
-  const args = { text, channel: activeChannel };
+  const args = { text: sendText, channel: activeChannel };
   // `id` : le cœur ne joint pas deux fois une pièce déjà partie avec une phrase dite.
   if (sent.length) args.attachments = sent.map(({ id, name, type, data }) => ({ id, name, type, data }));
   // 17/10 : les dictées versées dans la barre partent dans CE message (le cœur les marque
@@ -2180,6 +2212,24 @@ addEventListener("keydown", (e) => {
 });
 initSettings(toast); // Réglages (15/10) : hud/src/settings.js
 initMoteur(toast); // 05/11 (lot 6 du moteur local) : sélecteur « Qui répond », « Envoyer à Claude »
+// 05/11 : commandes « / » de la barre (hud/src/commandes-ui.js), jamais envoyées à un modèle
+initCommandes({
+  command, toast, stop: stopNow, channel: () => activeChannel, clearView, fit: fitAsk, submit: sendAsk,
+  composing: () => composing, usage: () => usageMode,
+  stopAll: async () => {
+    if ($("#estop-chip").classList.contains("on")) { toast(t("slash.estop_already"), "info"); return true; }
+    return askStopAll();
+  },
+  offerStopAll: async (error) => {
+    if (await openModal({ title: t("settings.stop_all_title"), text: tx(error) || "", note: t("slash.stop_all_note"),
+      ok: t("estop.confirm_ok"), danger: true })) await estopCommand(true);
+  },
+  note: (plain, node) => {
+    const m = addMsg("astrel", plain, { channel: activeChannel });
+    m.body.replaceChildren(node);
+    m.node.classList.add("cmd-help");
+  },
+});
 initCalibrage(); // 02/11 : assistant de calibrage du micro (hud/src/calibrage.js)
 // 28/10 (plan P40 lot A5) : panneau « Images » sous la barre, Réglages › Images, évènement `ia_etat`
 initImages({ toast, channel: () => activeChannel });
@@ -3568,14 +3618,18 @@ async function estopCommand(on) {
   if (!r.ok) toast(r.error || t("common.refused"), "error");
   return !!r.ok;
 }
-$("#estop-chip").onclick = async () => {
-  const on = !$("#estop-chip").classList.contains("on");
-  if (on && !(await openModal({
+// 05/11 : la MÊME boîte pour le bouton et pour /tout-arreter (commandes-ui.js) ; vrai si l'arrêt est fait.
+async function askStopAll() {
+  if (!(await openModal({
     title: t("estop.confirm_title"),
     text: t("estop.confirm_text"),
     ok: t("estop.confirm_ok"), danger: true,
-  }))) return;
-  await estopCommand(on);
+  }))) return false;
+  return estopCommand(true);
+}
+$("#estop-chip").onclick = async () => {
+  if (!$("#estop-chip").classList.contains("on")) await askStopAll();
+  else await estopCommand(false);
 };
 // 04/11 (mode « rien ne sort » refusé pendant une tâche de Claude) : Réglages propose « Tout arrêter » ; la
 // boîte de settings.js tient lieu de confirmation, la commande est celle du bouton « Stop tout ».

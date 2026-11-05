@@ -29,6 +29,11 @@ _NIR = re.compile(r"(?<!\d)([12])[ .]?(\d{2})[ .]?(0[1-9]|1[0-2]|[2-9]\d)[ .]?(\
 _CHEMIN = re.compile(r"(?:(?<=\s)|^|(?<=[\"'(«]))((?:~|\.{1,2})?/[^\s\"'`)»,;]+|[A-Za-z]:\\[^\s\"'`)»,;]+)")
 
 
+def chemins(texte: str) -> list[str]:
+    """Chemins écrits dans le texte (absolus, ~/…, ./…), tels quels. 05/11 : aussi pour `outils_local.dossiers_cites`."""
+    return [m.group(1) for m in _CHEMIN.finditer(str(texte or ""))]
+
+
 def _iban_valide(brut: str) -> bool:
     s = brut.replace(" ", "")
     if not 15 <= len(s) <= 34:
@@ -96,6 +101,82 @@ def _chemin_sensible(brut: str, racines_secret: list[Path], zs: list[Path]) -> s
     if _dedans(p, zs):
         return "chemin dans une zone confidentielle"
     return ""
+
+
+# --- 05/11 (essais réels de l'utilisateur) : faits EXACTS donnés au moteur LOCAL seulement ---------------------
+# Qwen a dit « suspect » l'IBAN d'exemple, valide (« le 189 est trop long »). Le cœur fait le calcul et l'ajoute
+# au message envoyé au LOCAL (`local_tour`), jamais à Claude ; le numéro n'y est pas recopié en entier.
+# Longueur officielle de l'IBAN des pays les plus courants (registre SWIFT) : une clé fausse n'est signalée que
+# si la longueur est celle du pays (sinon ce n'est sans doute pas un IBAN).
+IBAN_LONGUEUR = {"FR": 27, "MC": 27, "DE": 22, "BE": 16, "ES": 24, "IT": 27, "CH": 21, "LU": 20, "NL": 18,
+                 "GB": 22, "PT": 25, "IE": 22, "AT": 20, "PL": 28, "SE": 24, "DK": 18, "FI": 18, "NO": 15}
+_RIB_LETTRES = {c: str(v) for v, lettres in enumerate(("", "AJ", "BKS", "CLT", "DMU", "ENV", "FOW", "GPX",
+                                                        "HQY", "IRZ")) for c in lettres}
+_FAITS = {
+    "fr": {"tete": "Contrôle d'Astrel :", "iban_ok": "IBAN {m} : clé de contrôle valide (calcul mod 97)",
+           "longueur": ", longueur conforme pour {pays} ({n} caractères)",
+           "rib_ok": ", clé RIB {cle} valide", "rib_ko": ", clé RIB {cle} INVALIDE",
+           "iban_ko": "IBAN {m} : clé de contrôle INVALIDE (calcul mod 97) : faute de frappe probable",
+           "carte": "numéro de carte {m} : clé de Luhn valide",
+           "nir": "numéro de sécurité sociale {m} : clé valide",
+           "existe": "Ces calculs ne disent pas si le compte, la carte ou la personne existent."},
+    "en": {"tete": "Astrel check:", "iban_ok": "IBAN {m}: valid check digits (mod 97 computation)",
+           "longueur": ", correct length for {pays} ({n} characters)",
+           "rib_ok": ", French RIB key {cle} valid", "rib_ko": ", French RIB key {cle} INVALID",
+           "iban_ko": "IBAN {m}: INVALID check digits (mod 97 computation): probably a typo",
+           "carte": "card number {m}: valid Luhn check digit",
+           "nir": "French social security number {m}: valid key",
+           "existe": "These computations do not tell whether the account, card or person exists."},
+}
+
+
+def _cle_rib(bban: str) -> tuple[str, bool] | None:
+    """Clé RIB d'un BBAN français (banque 5, guichet 5, compte 11, clé 2) : (clé lue, valide ?)."""
+    if len(bban) != 23:
+        return None
+    try:
+        conv = "".join(_RIB_LETTRES.get(c, c) for c in bban.upper())
+        banque, guichet, compte, cle = int(conv[:5]), int(conv[5:10]), int(conv[10:21]), int(conv[21:23])
+    except ValueError:
+        return None
+    return bban[21:23], 97 - (89 * banque + 15 * guichet + 3 * compte) % 97 == cle
+
+
+def faits(texte: str, langue: str = "fr") -> str:
+    """Ligne « [Contrôle d'Astrel : …] » des numéros reconnus (IBAN, carte, NIR), "" si aucun. Pour le moteur
+    LOCAL seulement : le numéro est masqué (début et fin), le modèle a la demande entière à côté."""
+    t = _FAITS.get(langue, _FAITS["fr"])
+    haut, out, pris = str(texte or "").upper(), [], []
+    for m in _IBAN.finditer(haut):
+        s = m.group(1).replace(" ", "")
+        pays, attendu = s[:2], IBAN_LONGUEUR.get(s[:2])
+        masque = f"{s[:4]}…{s[-3:]}"
+        if _iban_valide(m.group(1)):
+            f = t["iban_ok"].format(m=masque)
+            if attendu == len(s):
+                f += t["longueur"].format(pays=pays, n=attendu)
+            rib = _cle_rib(s[4:]) if pays in ("FR", "MC") else None
+            if rib:
+                f += t["rib_ok" if rib[1] else "rib_ko"].format(cle=rib[0])
+        elif attendu == len(s):
+            f = t["iban_ko"].format(m=masque)
+        else:
+            continue
+        out.append(f)
+        pris.append(m.span(1))
+    for m in _CARTE.finditer(haut):
+        if any(a <= m.start(1) < b for a, b in pris):
+            continue  # les chiffres d'un IBAN ne sont pas une carte
+        s = re.sub(r"[ -]", "", m.group(1))
+        if _carte_valide(m.group(1)):
+            out.append(t["carte"].format(m=f"…{s[-4:]}"))
+            pris.append(m.span(1))
+    for m in _NIR.finditer(haut):
+        if not any(a <= m.start() < b for a, b in pris) and _nir_valide(m):
+            out.append(t["nir"].format(m=f"{m.group(1)} {m.group(2)}…"))
+    if not out:
+        return ""
+    return f"[{t['tete']} " + " ; ".join(out) + ". " + t["existe"] + "]"
 
 
 def scan(texte: str, pieces: Iterable[str] = (), zones_conf: list[Path] | None = None) -> list[str]:

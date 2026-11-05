@@ -529,6 +529,7 @@ async def run(url):
         await check_moteur_local(p)  # 04/11 : badge « Local », réponse locale à côté de celle de Claude
         await check_selecteur_moteur(p)  # 05/11 (lot 6 du moteur local) : « Qui répond » à côté du modèle
         await check_local_vers_claude(p)  # 05/11 (lot 6 du moteur local) : « Envoyer à Claude » sous une réponse locale
+        await check_commandes_chat(p)  # 05/11 : commandes « / » de la barre (liste, complétion, exécution, /aide)
         await check_sans_graphe(p)  # 23/10 (plan P28) : graphe 3D, Recadrer, Orbite retirés
         await check_affichage_simple(p)  # 22/10 (plan P23, lots A et B) : recharge la page
         await check_theme_a_la_connexion(p)  # 21/10 (relecture P17) : recharge la page
@@ -2364,10 +2365,15 @@ async def check_hors_ligne(p: Page) -> None:
     offre = await p.until("[...document.querySelectorAll('.modal.danger')].some(m => "
                           "m.querySelector('.modal-ok')?.textContent.trim() === 'Tout arrêter')", 3)
     titre = await p.js("document.querySelector('.modal.danger h2, .modal.danger .modal-title')?.textContent.trim() || ''")
+    # 05/11 : la démo répond comme le VRAI cœur (`refus_reglage` : raison sous la ligne par `setting_error`, ET
+    # `stop_tout`) ; avant, elle donnait `stop_tout` seule et le défaut du cœur (indicateur perdu) passait inaperçu.
+    raison = await p.js("(document.querySelector('.modal.wide .setting[data-key=\"hors_ligne\"] .setting-error')"
+                        "?.textContent || '').trim()")
     await p.js("document.querySelector('.modal.danger .modal-ok').click(), true")
     envoye = await p.until(f"window.__sent.filter(m => m.cmd === 'estop' && m.mode === 'on').length > {n_estop}", 3)
-    check(f"hors ligne refusé pendant une tâche : « {titre} », bouton « Tout arrêter » ({offre}) → estop envoyé ({envoye})",
-          offre and envoye and titre == "Une tâche de Claude tourne")
+    check(f"hors ligne refusé pendant une tâche : « {titre} », raison « {raison[:40]}… », bouton « Tout arrêter » "
+          f"({offre}) → estop envoyé ({envoye})",
+          offre and envoye and titre == "Une tâche de Claude tourne" and "Stop tout" in raison)
     await p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': 'estop', 'mode': 'off'}))})")  # démo remise en route
     await asyncio.sleep(0.3)
     await p.js("document.querySelectorAll('.modal-back .modal-x, .modal-back .modal-cancel').forEach(b => b.click()), true")  # vraie fermeture : retirer la fenêtre laisserait son écouteur clavier (Entrée, Échap bloqués)
@@ -5708,6 +5714,255 @@ async def check_local_vers_claude(p: Page) -> None:
         c.querySelector('.choice-question')?.textContent.includes('données sensibles')).at(-1);
         return [...c.querySelectorAll('.choice-btn')].every(b => b.classList.contains('hidden')); })()""", 3)
     check("lot 6 : carte annulée (rien ne part)", fini)
+    # 05/11 (essai réel de l'utilisateur) : HUD rouvert sur le code du disque, cœur pas relancé (d'avant le lot 6 :
+    # « commande inconnue : local_demandes », pas de `vers_claude`) : « relance Astrel », jamais « plus en mémoire ».
+    await demo("demo_local", coeur_ancien=True)
+    await nouvelle(text="vérifie ce RIB : FR76 3000 6000 0112 3456 7890 189")
+    await fake_event(p, {"type": "hello"})  # reconnexion : `local_demandes` relu
+    ancien = await p.until(f"{last}.querySelector('.local-why').textContent.startsWith('Astrel tourne encore')", 3)
+    b = await p.js(box)
+    await demo("demo_local", coeur_ancien=False)
+    await fake_event(p, {"type": "hello"})
+    await nouvelle(text="explique les marées")
+    rendu = await p.js(box)
+    check(f"lot 6 : cœur plus ancien que le HUD → grisé « {b['why']} » ; cœur à jour → actif ({not rendu['dis']})",
+          ancien and b["dis"] and "relance Astrel" in b["why"] and not rendu["dis"] and not rendu["why"])
+
+
+async def check_commandes_chat(p: Page) -> None:
+    """05/11 (demande : « pouvoir mettre des commandes dans le chat, genre /clear ») : « / » en tête de la barre ouvre
+    la liste (listbox/option, aria-activedescendant, focus gardé), filtrée en tapant, flèches, Tab complète, Entrée
+    complète et lance, Échap ferme SANS arrêter de réponse ; /aide dans le fil (rien envoyé) ; /mode → `chat_commande` ;
+    /xyz → « commande inconnue », rien envoyé ; « /data/… » et « ␣/tmp » partent en `say` tels quels ; /local → `say`
+    « en local : … » ; /stop → `stop` ; /tout-arreter → la boîte de « Stop tout » ; /clear refusée (tâche de fond)
+    puis acceptée : fil du canal vidé à l'écran ; ↑, Maj+Entrée et le bouton Envoyer intacts. 05/11 : /reflechir →
+    `chat_commande`, réponse locale dans le fil ; nombre de commandes lu dans la table du cœur."""
+    sys.path.insert(0, str(ROOT))
+    from astrel import commandes_chat
+
+    await p.send("Emulation.setDeviceMetricsOverride", width=1600, height=1000, deviceScaleFactor=1, mobile=False)
+    await p.until("!!window.__ws && window.__ws.readyState === 1", 10)
+    await p.js("document.querySelectorAll('.modal-back, .menu, .toast').forEach(b => b.remove()), true")
+    ask_demo = lambda cmd, **a: p.js(f"{ASK_DEMO_JS}({json.dumps(cmd)}, {json.dumps(a)})")
+    sent = lambda cmd: p.js(f"window.__sent.filter(m => m.cmd === {json.dumps(cmd)}).length")
+    last = lambda cmd: p.js(f"window.__sent.filter(m => m.cmd === {json.dumps(cmd)}).at(-1) || null")
+    menu = """(() => { const l = document.querySelector('#slash-menu'), a = document.querySelector('#ask');
+        const o = l ? [...l.querySelectorAll('[role=option]')] : [];
+        return { open: !!l && !l.hidden, role: l?.getAttribute('role'), label: l?.getAttribute('aria-label'),
+          names: o.map(x => x.querySelector('.slash-name').textContent), desc: o.map(x => x.querySelector('.slash-desc').textContent),
+          sel: o.findIndex(x => x.getAttribute('aria-selected') === 'true'), ad: a.getAttribute('aria-activedescendant') || '',
+          ids: o.map(x => x.id), controls: a.getAttribute('aria-controls'), auto: a.getAttribute('aria-autocomplete'),
+          focus: document.activeElement === a, value: a.value, html: l ? l.innerHTML.includes('<script') : false,
+          above: l && !l.hidden ? l.getBoundingClientRect().bottom <= document.querySelector('#composer').getBoundingClientRect().top + 1 : null }; })()"""
+
+    async def vider():  # après l'accusé de l'envoi précédent (sinon Entrée ne part pas : `dataset.sending`)
+        await p.until("!document.querySelector('#ask').dataset.sending", 5)
+        await p.js("(() => { const a = document.querySelector('#ask'); a.value = ''; a.dispatchEvent(new Event('input')); a.focus(); })()")
+
+    async def taper(texte):
+        await p.js("document.querySelector('#ask').focus(), true")
+        await p.send("Input.insertText", text=texte)
+        await asyncio.sleep(0.05)
+
+    async def toast(start, t=3):
+        return await p.until(f"[...document.querySelectorAll('.toast')].some(x => x.textContent.startsWith({json.dumps(start)}))", t)
+
+    await vider()
+    await taper("/")
+    m = await p.js(menu)
+    check(f"« / » : liste ouverte au-dessus de la barre, {len(m['names'])} commandes, rôle {m['role']} « {m['label']} », "
+          f"barre aria-controls={m['controls']} aria-autocomplete={m['auto']}, "
+          f"1re active ({m['ad']}), focus gardé",
+          m["open"] and len(m["names"]) == len(commandes_chat.COMMANDES) and m["role"] == "listbox"
+          and m["label"] == "Commandes du chat"
+          and m["controls"] == "slash-menu" and m["auto"] == "list" and m["sel"] == 0 and m["ad"] == m["ids"][0]
+          and m["focus"] and m["above"] and all(m["desc"]) and not m["html"])
+    await p.shot("commandes-liste.png")
+    await taper("cl")
+    m = await p.js(menu)
+    check(f"filtrée en tapant « /cl » : {m['names']}", m["open"] and m["names"] == ["/clear", "/claude <texte>"])
+    await p.key("ArrowDown", vk=40)
+    m2 = await p.js(menu)
+    await p.key("ArrowDown", vk=40)
+    m3 = await p.js(menu)
+    await p.key("ArrowUp", vk=38)
+    m4 = await p.js(menu)
+    check(f"flèches : ↓ → 2e ({m2['ad']}), ↓ revient à la 1re ({m3['sel']}), ↑ → 2e ({m4['sel']}), texte inchangé",
+          m2["sel"] == 1 and m2["ad"] == m2["ids"][1] and m3["sel"] == 0 and m4["sel"] == 1 and m4["value"] == "/cl")
+    # Échap : la liste se ferme, rien d'autre (une réponse en cours n'est pas arrêtée). Carte de confirmation et
+    # question à choix de la démo d'abord répondues (Échap leur revient, voulu : contrôlé par check_recherche_chemins_echap).
+    if await p.js("!document.querySelector('#confirm').classList.contains('hidden')"):
+        await p.js("document.querySelector('#confirm-no').click(), true")
+        await p.until("document.querySelector('#confirm').classList.contains('hidden')", 3)
+    await p.js("""[...document.querySelectorAll('.msg.choice:not(.answered):not(.cancelled) .choice-question')].forEach(q =>
+        window.__ws.onmessage({ data: JSON.stringify({ type: 'choice_answered', id: q.id.replace(/^choice-q-/, ''), value: '-' }) })), true""")
+    await p.js("document.querySelector('#ask').focus(), true")
+    await ask_demo("demo_answering")
+    await p.until("!!document.querySelector('.msg.astrel.live')", 4)
+    stops = await sent("stop")
+    await p.key("Escape", vk=27)
+    await asyncio.sleep(0.3)
+    m = await p.js(menu)
+    check(f"Échap ferme la liste sans arrêter la réponse en cours (stop envoyés : {await sent('stop') - stops}), texte gardé",
+          not m["open"] and m["ad"] == "" and await sent("stop") == stops and m["value"] == "/cl"
+          and await p.js("!!document.querySelector('.msg.astrel.live')"))
+    await p.key("Escape", vk=27)  # liste fermée : Échap arrête la réponse, comme avant
+    await p.until(f"window.__sent.filter(m => m.cmd === 'stop').length > {stops}", 3)
+    check("liste fermée : Échap arrête de nouveau la réponse (■)", await sent("stop") == stops + 1)
+    await p.until("!document.querySelector('.msg.astrel.live')", 4)
+
+    # Tab complète « /mo » → « /mode », valeurs ; « h » ; Entrée lance
+    await vider()
+    await taper("/mo")
+    await p.key("Tab", vk=9)
+    m = await p.js(menu)
+    check(f"Tab complète « /mo » → « {m['value']} » et montre ses valeurs {m['names']}",
+          m["value"] == "/mode " and m["names"] == ["/mode auto", "/mode local", "/mode claude", "/mode hybride"] and m["focus"])
+    await taper("h")
+    cmds, says = await sent("chat_commande"), await sent("say")
+    await p.key("Enter", vk=13, text="\r")
+    await p.until(f"window.__sent.filter(m => m.cmd === 'chat_commande').length > {cmds}", 3)
+    c = await last("chat_commande") or {}
+    ok_toast = await toast("Qui répond : Hybride")
+    check(f"Entrée sur « /mode h » : complète et lance `chat_commande` ({ {k: c.get(k) for k in ('nom', 'arg')} }), "
+          f"rien en `say`, barre vidée, toast",
+          c.get("nom") == "mode" and c.get("arg") == "hybride" and await sent("say") == says and ok_toast
+          and await p.until("document.querySelector('#ask').value === ''", 3))
+    await vider()
+    await taper("/mode auto")
+    await p.key("Enter", vk=13, text="\r")
+    await p.until(f"window.__sent.filter(m => m.cmd === 'chat_commande').length > {cmds + 1}", 3)
+    check("« /mode auto » tapé en entier : Entrée l'envoie aussitôt", ((await last("chat_commande")) or {}).get("arg") == "auto")
+
+    # /aide : liste dans le fil, rien envoyé
+    await vider()
+    cmds, says = await sent("chat_commande"), await sent("say")
+    await taper("/aide")
+    await p.key("Enter", vk=13, text="\r")
+    got = await p.until("!!document.querySelector('#transcript .msg.cmd-help:not(.hidden)')", 3)
+    h = await p.js("""(() => { const m = [...document.querySelectorAll('#transcript .msg.cmd-help')].at(-1);
+        return { n: m.querySelectorAll('.cmd-help-list li').length, first: m.querySelector('.cmd-help-name').textContent,
+                 title: m.querySelector('.cmd-help-title').textContent, alias: m.textContent.includes('/nouveau') }; })()""") if got else {}
+    check(f"/aide : liste dans le fil ({h.get('n')} commandes, « {h.get('title', '')[:30]}… »), rien envoyé",
+          got and h["n"] == len(commandes_chat.COMMANDES) and h["first"] == "/aide" and h["alias"]
+          and await sent("say") == says
+          and await sent("chat_commande") == cmds and await p.js("document.querySelector('#ask').value === ''"))
+    await p.shot("commandes-aide.png")
+
+    # inconnue, chemin, espace devant
+    await taper("/xyz")
+    await p.key("Enter", vk=13, text="\r")
+    inconnue = await toast("Commande inconnue : /xyz.")
+    check("« /xyz » : « Commande inconnue… », rien envoyé, le texte reste dans la barre", inconnue
+          and await sent("say") == says and await sent("chat_commande") == cmds
+          and await p.js("document.querySelector('#ask').value") == "/xyz")
+    await vider()
+    await taper("/home/user/Projets/x.py est-ce que ça marche ?")
+    ferme = not (await p.js(menu))["open"]
+    await p.key("Enter", vk=13, text="\r")
+    await p.until(f"window.__sent.filter(m => m.cmd === 'say').length > {says}", 3)
+    chemin = ((await last("say")) or {}).get("text")
+    await vider()
+    await taper(" /tmp est plein ?")
+    await p.key("Enter", vk=13, text="\r")
+    await p.until(f"window.__sent.filter(m => m.cmd === 'say').length > {says + 1}", 3)
+    espace = ((await last("say")) or {}).get("text")
+    check(f"« /data/… » : pas une commande (liste fermée : {ferme}), envoyé tel quel ; « ␣/tmp… » : envoyé « {espace} »",
+          ferme and chemin == "/home/user/Projets/x.py est-ce que ça marche ?" and espace == "/tmp est plein ?")
+    # /local : say avec le préfixe du routeur
+    await vider()
+    await taper("/local résume ce fichier")
+    await p.key("Enter", vk=13, text="\r")
+    await p.until(f"window.__sent.filter(m => m.cmd === 'say').length > {says + 2}", 3)
+    local = ((await last("say")) or {}).get("text")
+    check(f"/local : part en `say` « {local} » (préfixe du routeur), barre vidée une fois reçu",
+          local == "en local : résume ce fichier" and await p.until("document.querySelector('#ask').value === ''", 3))
+    # ↑ : le dernier message (rien ne s'ouvre), Maj+Entrée dans « /cl »
+    await vider()
+    await p.key("ArrowUp", vk=38)
+    rappel = await p.js("document.querySelector('#ask').value")
+    check(f"↑ dans la barre vide : dernier message repris (« {rappel} »), liste fermée",
+          rappel == "en local : résume ce fichier" and not (await p.js(menu))["open"])
+    await vider()
+    # 05/11 (lot 8) : /reflechir → `chat_commande {nom: reflechir}` (le cœur : moteur local, réflexion activée)
+    n_cmd = await sent("chat_commande")
+    await taper("/reflechir pourquoi le ciel est bleu ?")
+    await p.key("Enter", vk=13, text="\r")
+    await p.until(f"window.__sent.filter(m => m.cmd === 'chat_commande').length > {n_cmd}", 3)
+    refl = (await last("chat_commande")) or {}
+    rep = await p.until("[...document.querySelectorAll('#transcript .msg.engine-local')].some(m => "
+                        "m.textContent.includes('après réflexion'))", 3)
+    check(f"/reflechir : `chat_commande` « {refl.get('nom')} » / « {refl.get('arg')} », réponse locale dans le fil, "
+          "rien en `say`", refl.get("nom") == "reflechir" and refl.get("arg") == "pourquoi le ciel est bleu ?" and rep
+          and await sent("say") == says + 3)
+    cmds = await sent("chat_commande")  # la suite compte à partir d'ici
+    await vider()
+    await taper("/cl")
+    await p.key("Enter", vk=13, shift=True)
+    await asyncio.sleep(0.2)
+    check("Maj+Entrée avec la liste ouverte : rien n'est lancé ni complété", await sent("chat_commande") == cmds
+          and await sent("say") == says + 3)
+    # /stop : la commande de ■
+    await vider()
+    stops = await sent("stop")
+    await taper("/stop")
+    await p.key("Enter", vk=13, text="\r")
+    await p.until(f"window.__sent.filter(m => m.cmd === 'stop').length > {stops}", 3)
+    check("/stop : la commande `stop` de ■, rien en `say` ni `chat_commande`", await sent("stop") == stops + 1
+          and await sent("say") == says + 3 and await sent("chat_commande") == cmds)
+    # /tout-arreter : la boîte de « Stop tout », Annuler : rien
+    await vider()
+    estops = await sent("estop")
+    await taper("/tout-arreter")
+    await p.key("Enter", vk=13, text="\r")
+    boite = await p.until("[...document.querySelectorAll('.modal-back .modal-title')].some(t => t.textContent === 'Arrêt d\\'urgence ?')", 3)
+    await p.js("document.querySelector('.modal-back .modal-cancel')?.click(), true")
+    await asyncio.sleep(0.3)
+    check(f"/tout-arreter : la boîte de « Stop tout » ({boite}), Annuler n'envoie rien, le texte reste",
+          boite and await sent("estop") == estops and await p.js("document.querySelector('#ask').value") == "/tout-arreter")
+    # /clear : refusée (agents de fond de la démo), puis acceptée : fil du canal vidé à l'écran
+    await vider()
+    ch = await p.js("document.querySelector('.channel-tab.on')?.dataset.chan || 'general'")
+    visibles = "[...document.querySelectorAll('#transcript .msg')].filter(m => !m.classList.contains('hidden')).length"
+    avant = await p.js(visibles)
+    await taper("/clear")
+    await p.key("Enter", vk=13, text="\r")
+    refus = await toast("Pas de nouvelle conversation : une tâche de fond tourne")
+    check(f"/clear pendant une tâche de fond : refusée avec la raison, fil gardé ({avant} messages)",
+          refus and await p.js(visibles) == avant and await p.js("document.querySelector('#ask').value") == "/clear")
+    await ask_demo("demo_chat", libre=True)
+    # par le bouton Envoyer : le même chemin qu'Entrée
+    await p.js("document.querySelector('#send-btn').click(), true")
+    vide = await p.until(f"{visibles} < {avant}", 3)
+    restant = await p.js("""[...document.querySelectorAll('#transcript .msg')].filter(m => !m.classList.contains('hidden'))
+        .map(m => m.className)""")
+    garde = await p.js(f"JSON.parse(localStorage.getItem('astrel-fil-vide') || '{{}}')[{json.dumps(ch)}] > 0")
+    notice = await toast("Nouvelle conversation")
+    await ask_demo("demo_chat", libre=False)
+    log = ((await ask_demo("demo_chat")) or {}).get("items") or []
+    check(f"/clear par le bouton Envoyer : session remise à zéro (notice {notice}), fil du canal vidé à l'écran "
+          f"(reste {restant}), heure retenue ({garde}), via HUD ({log[-1:]})",
+          vide and notice and garde and all(any(k in c for k in ("choice", "image-job", "video-job")) for c in restant)
+          and log and log[-1]["nom"] == "clear"
+          and log[-1]["via"] == "hud" and await p.js("document.querySelector('#ask').value === ''"))
+    await p.shot("commandes-clear.png")
+    # rechargé : ce qui a été vidé n'est pas rejoué, ce qui est venu après l'est ; puis l'heure retirée (contrôles suivants)
+    await vider()
+    await taper("après le vidage")
+    await p.key("Enter", vk=13, text="\r")
+    await p.until("[...document.querySelectorAll('#transcript .msg.astrel')].some(m => m.textContent.includes('(démo) Reçu'))", 4)
+    await p.send("Page.reload")
+    await p.until("!!document.querySelector('.channel-tab') && !!window.__ws && window.__ws.readyState === 1", 15)
+    await asyncio.sleep(1.0)
+    apres = await p.js("""[...document.querySelectorAll('#transcript .msg.user')].filter(m => !m.classList.contains('hidden'))
+        .map(m => m.querySelector('span:not(.src)')?.textContent || '')""")
+    check(f"rechargé après /clear : le fil vidé n'est pas rejoué, le message d'après l'est ({apres})",
+          apres == ["après le vidage"])
+    await p.js("localStorage.removeItem('astrel-fil-vide'), true")
+    await p.send("Page.reload")
+    await p.until("!!document.querySelector('.channel-tab') && !!window.__ws && window.__ws.readyState === 1", 15)
+    await asyncio.sleep(1.0)
+    await p.js("document.querySelector('#ask').blur(), true")
 
 
 async def check_liens_et_barre(p: Page) -> None:
