@@ -12,13 +12,14 @@ import ipaddress
 import json
 import os
 import socket
-import stat
 import subprocess
 import threading
 from pathlib import Path
 
 import httpx
 import pytest
+
+from conftest import mode_prive
 
 from astrel import config, hors_ligne, mcp_web_local, proxy_local, web_local
 from astrel.settings import reglages
@@ -392,7 +393,7 @@ def test_journal_hotes_sans_chemin_ni_parametres(lancer, tmp_path):
     assert [(l["hote"], l["port"], l["verdict"]) for l in lignes] == [("site-public.fr", 80, "ok"),
                                                                      ("192.168.1.1", 80, "refus")]
     assert lignes[0]["octets"] > 0
-    assert stat.S_IMODE(journal.stat().st_mode) == 0o600
+    assert mode_prive(journal)  # 05/11 : pas de bits de mode sous Windows
     assert m.bilan()["connexions"] == 2 and m.bilan()["refus"] == 1
 
 

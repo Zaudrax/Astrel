@@ -223,22 +223,25 @@ test('images : début et fin vérifiées comme les pièces jointes (videos_ia.im
     fs.symlinkSync(path.join(dehors, 'x.png'), path.join(d.racine, 'lien.png'))
     assert.match(refus(path.join(d.racine, 'lien.png')), /hors des pièces jointes/, 'lien symbolique vers dehors')
   } finally { fs.rmSync(dehors, { recursive: true, force: true }) }
-  // Dossiers privés d'Astrel sous /home/user/Projets
-  const r = ['/home/user/Projets']
+  // Dossiers privés d'Astrel sous le dossier des projets (05/11 : celui qui contient Astrel en tient lieu)
+  const projets = fs.realpathSync(path.dirname(ASTREL))
+  const r = [projets]
   assert.match(refusImage(path.join(ASTREL, 'config', 'x.png'), r), /privé/)
   assert.match(refusImage(path.join(ASTREL, 'runtime', 'imagegen', 'profils', 'a', 'x.png'), r), /privé/)
   assert.equal(refusImage(path.join(ASTREL, 'runtime', 'attachments', 'x.png'), r), '')
-  assert.equal(refusImage('/home/user/Projets/Videos-IA/clip-derniere.png', r), '', 'dernière image d\'un clip : réutilisable')
+  assert.equal(refusImage(path.join(projets, 'Videos-IA', 'clip-derniere.png'), r), '', 'dernière image d\'un clip : réutilisable')
 })
 
 test('racines de test ignorées hors mode test (le cœur retire ASTREL_IMAGEGEN_RYTHME)', () => {
   assert.ok(racinesImages().includes(fs.realpathSync(RACINE_TESTS)))
-  const env = { ...process.env, ASTREL_VIDEO_RACINES: RACINE_TESTS }
+  // 05/11 : dossier des projets donné par le cœur (ASTREL_WORKDIR, ia_web.env_worker), jamais écrit en dur
+  const projets = fs.realpathSync(path.dirname(ASTREL))
+  const env = { ...process.env, ASTREL_VIDEO_RACINES: RACINE_TESTS, ASTREL_WORKDIR: projets }
   delete env.ASTREL_IMAGEGEN_RYTHME
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', 'const v = await import("./video.mjs"); console.log(JSON.stringify(v.racinesImages()))'], { cwd: DIR, env, encoding: 'utf8' })
   const lues = JSON.parse(r.stdout)
   assert.ok(!lues.includes(fs.realpathSync(RACINE_TESTS)), r.stdout)
-  assert.ok(lues.includes('/home/user/Projets'))
+  assert.ok(lues.includes(projets), r.stdout)
 })
 
 test('textes de Flow : activité, crédits, pointe (avant envoi), refus (après), reprise HH:MM locale', () => {

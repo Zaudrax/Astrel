@@ -372,6 +372,7 @@ def test_lancement_reel_d_un_processus(lieux, monkeypatch, tmp_path):
     assert fin["etat"] == "fini" and img.etat.compte("amw")["n"] == 1
     env = images_ia._env_worker()
     assert "ASTREL_IMAGEGEN_RYTHME" not in env and "CLE_API_OPENAI" not in env and "HOME" in env
+    assert env["ASTREL_WORKDIR"] == str(config.WORKDIR)  # 05/11 : dossier des projets, lu par imagegen/pieces.mjs
 
 
 def test_worker_absent(lieux, monkeypatch):

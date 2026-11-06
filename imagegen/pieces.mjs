@@ -3,7 +3,7 @@
 //
 // Règles (mêmes que astrel/videos_ia.image_depart et video.mjs refusImage, filtre de P40 A3) :
 //   - 6 fichiers au plus, chemins ABSOLUS ;
-//   - fichier réel sous runtime/attachments (dossier d'Astrel) ou ~/Projets ;
+//   - fichier réel sous runtime/attachments (dossier d'Astrel) ou le dossier des projets (dossierProjets) ;
 //   - jamais un dossier privé d'Astrel (runtime hors pièces jointes et images IA, config,
 //     hooks, vault, logs), jamais un profil de compte (runtime/imagegen/profils : cookies),
 //     jamais un élément caché ni un nom de secret ;
@@ -15,6 +15,7 @@
 // ajoute des dossiers permis (fausses images sous /tmp).
 
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Echec, SIGNATURES_IMAGE } from './noyau.mjs'
@@ -33,9 +34,17 @@ const PRIVES = ['runtime', 'config', 'hooks', 'vault', 'logs']
 const sous = (p, r) => p !== r && p.startsWith(r.endsWith(path.sep) ? r : r + path.sep)
 const reelOu = (p) => { try { return fs.realpathSync(p) } catch { return path.resolve(p) } }
 
+/** Dossier des projets (05/11, plus écrit en dur) : celui du cœur (`ASTREL_WORKDIR` = config.WORKDIR, posé par
+ * ia_web.env_worker), sinon ~/Projets (même défaut que config.WORKDIR). */
+export function dossierProjets (env = process.env) {
+  const v = String(env.ASTREL_WORKDIR || '').trim()
+  if (!v) return path.join(os.homedir(), 'Projets')
+  return v === '~' || v.startsWith('~/') || v.startsWith('~\\') ? path.join(os.homedir(), v.slice(1)) : path.resolve(v)
+}
+
 /** Dossiers d'où une pièce jointe peut venir (chemins réels). */
 export function racinesPieces () {
-  const r = [path.join(RACINE_ASTREL, 'runtime', 'attachments'), '~/Projets']
+  const r = [path.join(RACINE_ASTREL, 'runtime', 'attachments'), dossierProjets()]
   if (TEST && process.env.ASTREL_IMAGEGEN_RACINES) {
     r.push(...process.env.ASTREL_IMAGEGEN_RACINES.split(':').filter((x) => path.isAbsolute(x)))
   }

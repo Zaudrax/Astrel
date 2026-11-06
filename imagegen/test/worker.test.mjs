@@ -17,6 +17,8 @@ import { MOTEURS, classer } from '../moteurs.mjs'
 process.env.ASTREL_IMAGEGEN_RYTHME = 'test'
 const { Echec, seance, verifierBase } = await import('../noyau.mjs')
 const { compteur, verifierJob } = await import('../worker.mjs')
+const { dossierProjets } = await import('../pieces.mjs')
+const PROJETS = dossierProjets() // 05/11 : le dossier des projets de la machine, jamais écrit en dur
 
 const DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const PAGE = fs.readFileSync(path.join(DIR, 'test', 'fausse-gemini.html'))
@@ -155,7 +157,7 @@ test('verifierJob : entrée refusée proprement', () => {
   assert.equal(code({ ...ok, profil: 'relatif' }), 'entree')
   assert.equal(code({ ...ok, prompt: '   ' }), 'entree')
   assert.equal(code({ ...ok, prompt: 'x'.repeat(4001) }), 'entree')
-  assert.equal(code({ ...ok, fichiers: ['/home/user/Projets/absente-p40-a3.png'] }), 'fichiers') // lot A3 : filtre (pieces.mjs)
+  assert.equal(code({ ...ok, fichiers: [path.join(PROJETS, 'absente-p40-a3.png')] }), 'fichiers') // lot A3 : filtre (pieces.mjs)
   assert.equal(code({ ...ok, url: 'javascript:alert(1)' }), 'entree')
 })
 
@@ -560,8 +562,8 @@ test('A3 verifierJob : profil anonyme réservé à Bing, pièces jointes filtré
   assert.match(code({ ...base1, service: 'bing' }), /^entree .*sans compte : profil « anonyme »/)
   assert.equal(code({ ...base1, service: 'bing', profil: '/tmp/p/anonyme' }), 'ok')
   assert.match(code({ ...base1, service: 'gemini', profil: '/tmp/p/anonyme' }), /^entree .*réservé aux services sans compte/)
-  assert.match(code({ ...base1, service: 'bing', profil: '/tmp/p/anonyme', fichiers: ['/home/user/Projets/x.png'] }), /^fichiers .*ne prend pas de pièce jointe/)
-  assert.match(code({ ...base1, service: 'gemini', fichiers: Array(7).fill('/home/user/Projets/x.png') }), /^fichiers 6 pièces jointes au plus/)
+  assert.match(code({ ...base1, service: 'bing', profil: '/tmp/p/anonyme', fichiers: [path.join(PROJETS, 'x.png')] }), /^fichiers .*ne prend pas de pièce jointe/)
+  assert.match(code({ ...base1, service: 'gemini', fichiers: Array(7).fill(path.join(PROJETS, 'x.png')) }), /^fichiers 6 pièces jointes au plus/)
   assert.match(code({ ...base1, service: 'gemini', fichiers: ['/etc/hostname'] }), /^fichiers .*hors des pièces jointes/)
 })
 

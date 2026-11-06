@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import mode_prive
+
 from astrel import config, guard, moteur_local, outils_local, routeur, sensible
 from astrel.coeur import local_tour
 from faux_ollama import FauxOllama
@@ -375,4 +377,4 @@ def test_registre_des_pids_protege_et_ecrit_par_le_coeur(tmp_path):
     import os
     assert json.loads(f.read_text()) == {"coeur": os.getpid(), "pids": [7, 4242]}
     suivre(4242, False)
-    assert json.loads(f.read_text())["pids"] == [7] and (f.stat().st_mode & 0o777) == 0o600
+    assert json.loads(f.read_text())["pids"] == [7] and mode_prive(f)  # 05/11 : pas de bits de mode sous Windows

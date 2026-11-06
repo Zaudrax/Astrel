@@ -105,6 +105,7 @@ export const FR = {
   "state.speaking": "Je parle",
   "state.asking": "Confirmation",
   "state.off": "Micro coupé",
+  "state.timer_title": "Temps écoulé depuis le début de la réflexion du modèle local", // 05/11
   "pause.note": "Voix en pause — je travaille sans parler",
   "pause.note_title": "Cliquer pour reprendre",
   "pause.pause": "Mettre la voix en pause",
@@ -1349,6 +1350,7 @@ export const EN = {
   "state.speaking": "Speaking",
   "state.asking": "Confirmation",
   "state.off": "Mic off",
+  "state.timer_title": "Time elapsed since the local model started thinking",
   "pause.note": "Voice paused — I keep working without talking",
   "pause.note_title": "Click to resume",
   "pause.pause": "Pause the voice",

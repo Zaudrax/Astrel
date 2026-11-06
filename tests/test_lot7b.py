@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import mode_prive
+
 from astrel import config, guard, hors_ligne, mcp_web_local, outils_local, routeur, searxng_local
 
 # Les 25 outils de @playwright/mcp 0.0.82 (version fixée de mcp-servers/package.json, `tools/list` du 05/11).
@@ -117,7 +119,7 @@ def test_registre_ecrit_en_0600_avec_les_formes_normalisees(tmp_path, monkeypatc
     f = tmp_path / "registre-web.json"
     mcp_web_local.ecrire_registre(f)
     assert json.loads(f.read_text()) == {"adresses": ["https://exemple.fr/", "https://exemple.fr/a?b=1"]}
-    assert stat.S_IMODE(os.stat(f).st_mode) == 0o600
+    assert mode_prive(f)  # 05/11 : pas de bits de mode sous Windows
     monkeypatch.setattr(guard, "_cli_local_reel", lambda *a, **k: True)
     monkeypatch.setenv(guard.REGISTRE_WEB_ENV, str(f))
     assert guard.refused("mcp__playwright_local__browser_navigate", {"url": "https://exemple.fr/a?b=1"}) == ""
@@ -295,7 +297,7 @@ def test_tour_web_registre_adresses_et_pages_montrees(tmp_path, monkeypatch):
     assert o.derniere["pages"] == pages and "https://fr.wikipedia.org/wiki/Paris" in o.derniere["urls_vues"]
     v = vus[0]
     assert set(v["mcp"]["mcpServers"]) == {"web_local"} and v["adresses"] == ["https://fr.wikipedia.org/wiki/Paris"]
-    assert v["mode"] == 0o600
+    assert os.name == "nt" or v["mode"] == 0o600  # 05/11 : pas de bits de mode sous Windows
     args = v["mcp"]["mcpServers"]["web_local"]["args"]
     assert v["env"]["ASTREL_LOCAL_REGISTRE_WEB"] == args[args.index("--registre-fichier") + 1]
     assert "--disallowedTools" not in v["cmd"]
@@ -498,9 +500,9 @@ def test_searxng_lance_par_enfants_popen_et_attendu(monkeypatch, tmp_path):
     monkeypatch.setattr(searxng_local.time, "sleep", lambda s: None)
     assert searxng_local.assurer(attente_s=5) == ""
     cmd, kw = lances[0]
-    assert cmd[-1] == "--lancer" and cmd[1].endswith("tools/searxng.sh")
+    assert cmd[-1] == "--lancer" and cmd[1] == searxng_local.SCRIPT.as_posix()  # 05/11 : en « / » (Git Bash)
     assert not any(k.startswith(("ANTHROPIC_", "CLAUDE")) for k in kw["env"])
-    assert stat.S_IMODE(os.stat(tmp_path / "searxng.log").st_mode) == 0o600
+    assert mode_prive(tmp_path / "searxng.log")
     assert searxng_local.lance_par_le_coeur()
     monkeypatch.setattr(searxng_local, "_proc", None)
 

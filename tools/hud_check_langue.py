@@ -421,6 +421,31 @@ async def commandes_en(p: Page) -> None:
     await p.shot("apres-en-commandes.png")
 
 
+async def reflexion_en(p: Page) -> None:
+    """05/11 (soir) : réflexion du modèle local en anglais : détail du cœur traduit par le catalogue (jetons, relance
+    sans réflexion), titre du compteur ; le compteur lui-même (mm:ss) ne change pas de langue."""
+    demo = lambda cmd, **a: p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': cmd, **a}))}), true")
+    lire = """(() => { const w = document.querySelector('.state-timer');
+        return { label: document.querySelector('#state-label').textContent, detail: document.querySelector('#state-detail').textContent,
+          shown: !!w && w.getClientRects().length > 0, time: w?.textContent || '', title: w?.title || '' }; })()"""
+    await demo("demo_reflexion", etape="reflexion", jetons=1299, depuis_s=5)
+    await wait(p, "document.querySelector('#state-detail').textContent.startsWith('local model')", 4)
+    a = await p.js(lire)
+    await scan(p, "réflexion du modèle local")
+    await demo("demo_reflexion", etape="budget")
+    await wait(p, "document.querySelector('#state-detail').textContent.includes('too long')", 4)
+    b = await p.js(lire)
+    await scan(p, "réflexion du modèle local, relance sans réflexion")
+    await p.shot("apres-en-reflexion-locale.png")
+    await demo("demo_reflexion", etape="fin")
+    await wait(p, "document.querySelector('#state-label').textContent !== 'Thinking'", 4)
+    check(f"réflexion locale en anglais : « {a['label']} », « {a['detail']} », « {b['detail']} », compteur "
+          f"« {a['time']} » (« {a['title'][:40]}… »)",
+          a["label"] == "Thinking" and a["detail"] == "local model · thinking (up to ~4 min) · ~1200 tokens · Esc to stop"
+          and b["detail"] == "local model · thinking took too long: direct answer… · Esc to stop" and a["shown"]
+          and re.fullmatch(r"00:0[4-9]", a["time"]) and a["title"].startswith("Time elapsed"))
+
+
 async def run(url: str) -> None:
     targets = json.load(urllib.request.urlopen(f"http://127.0.0.1:{CDP_PORT}/json"))
     ws_url = next(t["webSocketDebuggerUrl"] for t in targets if t["type"] == "page")
@@ -492,6 +517,7 @@ async def run(url: str) -> None:
         await chat_lot2_en(p)  # 04/11 : chemins copiés, Échap = ■, recherche dans tous les canaux
         await moteur_en(p)  # 05/11 (lot 6 du moteur local) : « Qui répond », « Envoyer à Claude »
         await commandes_en(p)  # 05/11 : commandes « / » de la barre
+        await reflexion_en(p)  # 05/11 (soir) : réflexion du modèle local (détail, compteur)
         await p.js("document.querySelector('#activity').classList.add('hidden')")
         # 28/10 (plan P40 lot A5) : panneau « Images » sous la barre, en Auto puis en Manuel
         await click(p, "#images-btn")

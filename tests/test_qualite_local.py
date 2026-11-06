@@ -149,6 +149,47 @@ def test_faits_en_anglais_et_numero_masque():
     assert "4111 1111 1111 1112" not in faits_local.faits("carte 4111 1111 1111 1112", "fr", AUJ)
 
 
+# 05/11 (essai de l'utilisateur, 19:28 : « /reflechir combien de jours entre le 1er janvier et le 14 juillet ? » → 203 et
+# 202, faux, aucune ligne de faits : les dates n'avaient pas d'année) : dates SANS année.
+@pytest.mark.parametrize("demande, langue, attendu", [
+    ("Combien de jours entre le 1er janvier et le 14 juillet ?", "fr",
+     "194 jours du 1er janvier au 14 juillet en 2026 (195 en comptant les deux dates) ; une année bissextile : "
+     "195 jours (196 en comptant les deux dates)"),
+    ("Combien de jours du 3 mars au 10 mai ?", "fr", "68 jours du 3 mars au 10 mai en 2026 (69 en comptant les deux dates).]"),
+    ("Combien de jours du 1er décembre au 10 janvier ?", "fr",
+     "40 jours du 1er décembre 2026 au 10 janvier 2027 (41 en comptant les deux dates).]"),
+    ("Combien de jours du 1er décembre au 10 mars ?", "fr", "99 jours du 1er décembre 2026 au 10 mars 2027 (100 en "
+     "comptant les deux dates) ; une année bissextile : 100 jours"),
+    ("How many days between January 1 and July 14?", "en",
+     "194 days from January 1 to July 14 in 2026 (195 counting both dates) ; in a leap year: 195 days"),
+    ("How many days from 3 March to 10th May?", "en", "68 days from March 3 to May 10 in 2026"),
+    # une année écrite dans la demande vaut pour l'autre date, et tranche la question de l'année bissextile
+    ("Combien de jours du 1er janvier au 14 juillet 2028 ?", "fr",
+     "195 jours du 1er janvier 2028 au 14 juillet 2028 (196 en comptant les deux dates).]"),
+])
+def test_ecart_entre_dates_sans_annee(demande, langue, attendu):
+    f = faits_local.faits(demande, langue, AUJ)
+    assert attendu in f, f
+
+
+def test_ecart_sans_annee_annee_bissextile_en_cours():
+    f = faits_local.faits("Combien de jours entre le 1er janvier et le 14 juillet ?", "fr", dt.date(2028, 3, 1))
+    assert "195 jours du 1er janvier au 14 juillet en 2028 (196 en comptant les deux dates) ; une année non " \
+           "bissextile : 194 jours" in f
+
+
+@pytest.mark.parametrize("demande, langue", [
+    ("Le 14 juillet et le 15 août sont fériés.", "fr"),  # pas une question de durée
+    ("Combien de jours entre le 31 avril et le 3 mai ?", "fr"),  # date impossible : rien de deviné
+    ("Combien de jours entre le 29 février et le 3 mai ?", "fr"),  # 2026 n'a pas de 29 février
+    ("How many days may 2 people stay?", "en"),  # « may » n'est pas le mois
+    ("Combien de jours le 14 juillet ?", "fr"),  # une seule date
+])
+def test_ecart_sans_annee_rien_de_devine(demande, langue):
+    assert "jours du" not in faits_local.faits(demande, langue, AUJ)
+    assert "days from" not in faits_local.faits(demande, langue, AUJ)
+
+
 # ================================================================== R0 : banc de qualité
 
 def test_banc_de_qualite_complet_et_notation_deterministe():

@@ -530,6 +530,7 @@ async def run(url):
         await check_selecteur_moteur(p)  # 05/11 (lot 6 du moteur local) : « Qui répond » à côté du modèle
         await check_local_vers_claude(p)  # 05/11 (lot 6 du moteur local) : « Envoyer à Claude » sous une réponse locale
         await check_commandes_chat(p)  # 05/11 : commandes « / » de la barre (liste, complétion, exécution, /aide)
+        await check_reflexion_locale(p)  # 05/11 (soir) : réflexion du local visible (détail, temps écoulé)
         await check_sans_graphe(p)  # 23/10 (plan P28) : graphe 3D, Recadrer, Orbite retirés
         await check_affichage_simple(p)  # 22/10 (plan P23, lots A et B) : recharge la page
         await check_theme_a_la_connexion(p)  # 21/10 (relecture P17) : recharge la page
@@ -5890,8 +5891,9 @@ async def check_commandes_chat(p: Page) -> None:
     await p.key("Enter", vk=13, text="\r")
     await p.until(f"window.__sent.filter(m => m.cmd === 'chat_commande').length > {n_cmd}", 3)
     refl = (await last("chat_commande")) or {}
+    # 05/11 (soir) : la démo simule la réflexion (≈ 3,2 s d'étapes) avant la réponse
     rep = await p.until("[...document.querySelectorAll('#transcript .msg.engine-local')].some(m => "
-                        "m.textContent.includes('après réflexion'))", 3)
+                        "m.textContent.includes('après réflexion'))", 10)
     check(f"/reflechir : `chat_commande` « {refl.get('nom')} » / « {refl.get('arg')} », réponse locale dans le fil, "
           "rien en `say`", refl.get("nom") == "reflechir" and refl.get("arg") == "pourquoi le ciel est bleu ?" and rep
           and await sent("say") == says + 3)
@@ -5963,6 +5965,92 @@ async def check_commandes_chat(p: Page) -> None:
     await p.until("!!document.querySelector('.channel-tab') && !!window.__ws && window.__ws.readyState === 1", 15)
     await asyncio.sleep(1.0)
     await p.js("document.querySelector('#ask').blur(), true")
+
+
+REFLEXION_JS = """(() => { const w = document.querySelector('.state-timer'), d = document.querySelector('#state-detail');
+    return { label: document.querySelector('#state-label').textContent, detail: d.textContent,
+      entier: d.scrollWidth <= d.clientWidth + 1 && getComputedStyle(d).whiteSpace === 'normal',
+      shown: !!w && w.getClientRects().length > 0, time: w?.querySelector('.state-timer-time').textContent || '',
+      role: w?.getAttribute('role') || '', title: w?.title || '', under: w?.previousElementSibling?.id === 'state-label',
+      color: w ? getComputedStyle(w).color : '', anim: w ? getComputedStyle(w.querySelector('.state-timer-dot')).animationName : '' }; })()"""
+
+
+async def check_reflexion_locale(p: Page) -> None:
+    """05/11 (essai de l'utilisateur, 19:28 : « /reflechir » = 4 min 14 s de « Je réfléchis » seul, Astrel cru planté) :
+    pendant une réflexion du modèle local, le détail du VRAI cœur (`local_tour.detail_reflexion`) en entier sous
+    « Je réfléchis », temps écoulé (mm:ss) compté depuis le début de l'état et qui avance ; jetons pensés ; relance
+    sans réflexion : détail changé, compteur gardé ; point pulsé coupé par prefers-reduced-motion ; repos : plus
+    rien ; un autre détail de réflexion (Claude) : pas de compteur ; /reflechir de la démo puis Échap : arrêté."""
+    sys.path.insert(0, str(ROOT))
+    from astrel.coeur import local_tour
+
+    demo = lambda cmd, **a: p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': cmd, **a}))}), true")
+    await p.until("!!window.__ws && window.__ws.readyState === 1", 10)
+    await p.js("document.querySelectorAll('.modal-back, .menu, .toast').forEach(b => b.remove()), true")
+    await demo("demo_reflexion", etape="reflexion", jetons=0, depuis_s=65)
+    ok = await p.until("document.querySelector('#state-detail').textContent.startsWith('modèle local')", 4)
+    a = await p.js(REFLEXION_JS)
+    check(f"réflexion locale : « {a['label']} », détail « {a['detail']} » en entier ({a['entier']}), temps écoulé "
+          f"« {a['time']} » sous l'étiquette (role {a['role']}, « {a['title'][:30]}… »)",
+          ok and a["label"] == "Je réfléchis" and a["detail"] == local_tour.detail_reflexion("reflexion", 0, 4)
+          and a["entier"] and a["shown"] and a["under"] and a["role"] == "timer"
+          and re.fullmatch(r"01:0[4-9]", a["time"]) and a["title"].startswith("Temps écoulé"))
+    await asyncio.sleep(1.3)
+    b = await p.js(REFLEXION_JS)
+    check(f"le compteur avance à la seconde ({a['time']} → {b['time']})", b["time"] > a["time"])
+    await demo("demo_reflexion", etape="reflexion", jetons=1299)
+    await p.until("document.querySelector('#state-detail').textContent.includes('jetons')", 3)
+    c = await p.js(REFLEXION_JS)
+    await demo("demo_reflexion", etape="budget")
+    await p.until("document.querySelector('#state-detail').textContent.includes('trop longue')", 3)
+    d = await p.js(REFLEXION_JS)
+    await p.shot("reflexion-locale.png")
+    check(f"jetons « {c['detail']} » ; relance sans réflexion « {d['detail']} », compteur gardé ({d['time']})",
+          c["detail"] == local_tour.detail_reflexion("reflexion", 1299, 4) and d["detail"] == local_tour.DETAIL_DIRECTE
+          and d["shown"] and d["time"] >= b["time"] and d["entier"])
+    check(f"point pulsé ({d['anim']}), couleur du compteur par jeton ({d['color']})",
+          d["anim"] == "state-timer-pulse" and d["color"] not in ("", "rgba(0, 0, 0, 0)"))
+    await p.send("Emulation.setEmulatedMedia", features=[{"name": "prefers-reduced-motion", "value": "reduce"}])
+    r = await p.js(REFLEXION_JS)
+    await p.send("Emulation.setEmulatedMedia", features=[{"name": "prefers-reduced-motion", "value": ""}])
+    check(f"mouvement réduit : point fixe ({r['anim']}), compteur toujours là ({r['time']})",
+          r["anim"] == "none" and r["shown"])
+    await demo("demo_reflexion", etape="fin")
+    await p.until("document.querySelector('#state-label').textContent !== 'Je réfléchis'", 3)
+    f = await p.js(REFLEXION_JS)
+    check(f"repos : « {f['label']} », plus de détail ni de compteur", not f["shown"] and f["detail"] == "")
+    await fake_event(p, {"type": "state", "state": "thinking", "detail": "transcription", "muted": False})
+    g = await p.js(REFLEXION_JS)
+    await fake_event(p, {"type": "state", "state": "sleeping", "detail": "", "muted": False})
+    check(f"autre réflexion (« {g['detail']} ») : pas de compteur", not g["shown"] and g["detail"] == "transcription")
+
+    # /reflechir tapé : le tour simulé de la démo (étapes du cœur), Échap l'arrête
+    stops = await p.js("window.__sent.filter(m => m.cmd === 'stop').length")
+    reponses = ("[...document.querySelectorAll('#transcript .msg.engine-local')].filter(m => "
+                "m.textContent.includes('après réflexion')).length")
+    avant = await p.js(reponses)
+    await p.until("!document.querySelector('#ask').dataset.sending", 5)
+    await p.js("(() => { const a = document.querySelector('#ask'); a.value = ''; a.dispatchEvent(new Event('input')); a.focus(); })()")
+    await p.send("Input.insertText", text="/reflechir combien de jours entre le 1er janvier et le 14 juillet ?")
+    await asyncio.sleep(0.1)
+    await p.key("Enter", vk=13, text="\r")
+    vu = await p.until("document.querySelector('.state-timer')?.getClientRects().length > 0", 4)
+    h = await p.js(REFLEXION_JS)
+    # panneau Activité ouvert, question à choix de la démo à l'écran : Échap les sert d'abord, sans arrêter (règle
+    # du 04/11) ; mis de côté le temps de la touche
+    await p.js("document.querySelector('#activity').classList.add('hidden'), "
+               "document.querySelectorAll('.msg.choice:not(.hidden)').forEach(m => m.classList.add('hidden', 'reflexion-cache')), true")
+    await p.key("Escape", vk=27)
+    fini = await p.until("document.querySelector('.state-timer')?.getClientRects().length === 0", 4)
+    n = await p.js("window.__sent.filter(m => m.cmd === 'stop').length")
+    await p.js("document.querySelectorAll('.reflexion-cache').forEach(m => m.classList.remove('hidden', 'reflexion-cache')), true")
+    await asyncio.sleep(3.5)  # la démo arrêtée ne répond plus
+    demande = await p.js("[...document.querySelectorAll('#transcript .msg.engine-local')].some(m => "
+                         "m.textContent.includes('combien de jours'))")
+    rep = await p.js(reponses) - avant
+    check(f"/reflechir : compteur et détail « {h['detail'][:40]}… » ({vu}), Échap = ■ ({n - stops} arrêt), compteur "
+          f"retiré ({fini}), demande dans le fil ({demande}), aucune réponse après l'arrêt ({rep})",
+          vu and h["detail"].startswith(local_tour.DETAIL_PREFIXE) and n == stops + 1 and fini and demande and rep == 0)
 
 
 async def check_liens_et_barre(p: Page) -> None:

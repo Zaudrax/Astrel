@@ -304,7 +304,7 @@ def accepte_pieces(service: str) -> bool:
 # --------------------------------------------------------------------------- pièces jointes
 
 # Filtre du CŒUR (P40 A4), le même que imagegen/pieces.mjs (qui le réapplique) et que
-# videos_ia.image_depart : pièces jointes d'Astrel ou ~/Projets, hors secrets et dossiers
+# videos_ia.image_depart : pièces jointes d'Astrel ou dossier des projets (`config.WORKDIR`), hors secrets et dossiers
 # privés (medias.refusal), fichier ordinaire à un seul nom, 5 Mo, PNG/JPEG/WebP lus dans les OCTETS.
 PIECES_MAX = 6
 PIECE_MAX_OCTETS = 5 * 1024 * 1024
@@ -323,7 +323,8 @@ def piece(brut: Any) -> tuple[str, str]:
         st = os.stat(reel, follow_symlinks=False)
     except (OSError, RuntimeError, ValueError):  # ValueError : caractère NUL dans le chemin
         return "", "fichier introuvable"
-    racines = [attachments.ATTACH_DIR.resolve(), config.WORKDIR.resolve()]
+    # 05/11 : le dossier des projets de la machine (config.WORKDIR), plus un chemin écrit en dur
+    racines = [attachments.ATTACH_DIR.resolve(), Path(config.WORKDIR).resolve()]
     if not any(reel != r and reel.is_relative_to(r) for r in racines):
         return "", "hors des pièces jointes et du dossier des projets"
     raison = medias.refusal(reel)
@@ -928,10 +929,12 @@ def node() -> str | None:
 
 
 def env_worker() -> dict[str, str]:
-    """Environnement du worker : sans clé ni variable de Claude, sans le rythme de test."""
+    """Environnement du worker : sans clé ni variable de Claude, sans le rythme de test ; avec le dossier
+    des projets du cœur (`ASTREL_WORKDIR`, 05/11 : racine permise des pièces jointes, imagegen/pieces.mjs)."""
     drop = ("ANTHROPIC_", "CLE_API_", "CLAUDE", "OPENAI_", "GEMINI_")
     env = {k: v for k, v in os.environ.items() if not k.startswith(drop)}
     env.pop("ASTREL_IMAGEGEN_RYTHME", None)
+    env["ASTREL_WORKDIR"] = str(config.WORKDIR)
     return env
 
 

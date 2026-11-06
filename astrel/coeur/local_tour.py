@@ -24,6 +24,12 @@ veut traiter sur sa machine (« en local : … », canal Local) part chez Qwen (
   navigateur pour une demande qui vise un site interactif (`navigateur=True`, routeur) ; SearXNG lancé au besoin
   (`searxng_local`) ; chaque page lue ou ouverte est montrée dans le fil (notice, puis ligne « Pages ouvertes »
   sous la réponse) ; Stop tout et « rien ne sort » coupent le réseau du navigateur (`_local_web_couper`).
+- 05/11 (essais de l'utilisateur) : retour au repos dans `_tour_local_fil` (`_local_repos`), même après une panne avant le
+  flux ou dans la fin du tour (`tests/test_tour_local_etat.py`).
+- 05/11 (essai de l'utilisateur, 19:28 : « /reflechir » = 4 min 14 s de « Je réfléchis » seul, Astrel cru planté) : un
+  tour AVEC réflexion publie un détail d'état (`detail_reflexion` : durée maximale, jetons pensés, relance sans
+  réflexion, relecture) ; le HUD y ajoute le temps écoulé (préfixe `DETAIL_PREFIXE`, même texte dans
+  hud/src/main.js). Jamais par-dessus le détail d'un autre (Claude, l'écoute) ; effacé à la fin du tour.
 
 Mixin de `Astrel` (core.py), comme les autres de `astrel/coeur/`.
 """
@@ -55,6 +61,28 @@ PAGE_OUVERTE = "Le modèle local a ouvert : {url}"
 WEB_INDISPONIBLE = "Recherche web du modèle local indisponible : {raison}"
 PAGES_TITRE = {"fr": "Pages ouvertes par le modèle local :", "en": "Pages opened by the local model:"}
 PAGES_MAX = 12  # adresses listées sous la réponse
+# 05/11 (essai de l'utilisateur, 19:28) : détail de « Je réfléchis » pendant une réflexion du local (catalogue en.json).
+DETAIL_PREFIXE = "modèle local · "  # le HUD affiche le temps écoulé derrière ce préfixe (hud/src/main.js)
+DETAIL_REFLEXION = DETAIL_PREFIXE + "réflexion (jusqu'à ~{min} min) · Échap pour arrêter"
+DETAIL_REFLEXION_JETONS = DETAIL_PREFIXE + "réflexion (jusqu'à ~{min} min) · ~{jetons} jetons · Échap pour arrêter"
+DETAIL_DIRECTE = DETAIL_PREFIXE + "réflexion trop longue : réponse directe… · Échap pour arrêter"
+DETAIL_SANS_REPONSE = DETAIL_PREFIXE + "réflexion sans réponse : réponse directe… · Échap pour arrêter"
+DETAIL_RELECTURE = DETAIL_PREFIXE + "relecture de la réponse · Échap pour arrêter"
+JETONS_PAS = 100  # jetons affichés par centaines : le détail change peu
+
+
+def detail_reflexion(etape: str, jetons: int = 0, minutes: int = 4) -> str:
+    """Détail de l'état pour une étape de `moteur_local.repondre(sur_etape=…)` ("" : étape inconnue)."""
+    if etape == "reflexion":
+        n = max(0, int(jetons)) // JETONS_PAS * JETONS_PAS
+        m = max(1, int(minutes))
+        return DETAIL_REFLEXION_JETONS.format(min=m, jetons=n) if n else DETAIL_REFLEXION.format(min=m)
+    return {"budget": DETAIL_DIRECTE, "vide": DETAIL_SANS_REPONSE, "relecture": DETAIL_RELECTURE}.get(etape, "")
+
+
+def _detail_courant() -> str:
+    """Détail de l'état tel qu'il est publié (dernier évènement `state`)."""
+    return str((bus.last("state") or {}).get("detail") or "")
 
 class TourLocalCoeur:
     """Demandes traitées par le moteur local, à côté du cerveau Claude."""
@@ -182,6 +210,7 @@ class TourLocalCoeur:
         # Posé AVANT le fil : la boucle de la voix (`_wait_reply_start`) voit tout de suite le tour local.
         e["stop"].clear()
         e["chut"], e["actif"] = False, True
+        e["detail"], e["detail_cede"] = "", False  # 05/11 : détail de la réflexion, voir `_local_detail`
         threading.Thread(target=self._tour_local_fil, args=(demande, source, ch, mid, outils, reflexion, navigateur),
                          name="tour-local", daemon=True).start()
 
@@ -190,9 +219,64 @@ class TourLocalCoeur:
         e = self._local_etat()
         try:
             self._tour_local_reponse(demande, source, ch, mid, outils, reflexion, navigateur)
+        except Exception:
+            log.exception("tour local : fin en échec")
         finally:
             e["actif"] = False
+            # 05/11 : repos posé ICI, quoi qu'il soit arrivé dans le tour (panne avant le flux ou dans sa fin :
+            # « Je réfléchis » restait affiché jusqu'au tour suivant) ; avant de rendre le verrou : un tour local
+            # suivant ne peut pas voir son « Je réfléchis » effacé par celui-ci.
+            self._local_repos()
+            self._local_detail_fin()  # 05/11 : repos non posé (Claude, parole) : le détail de la réflexion part
             e["verrou"].release()
+
+    def _local_repos(self) -> None:
+        """Fin d'un tour local : « Je réfléchis » laisse place au repos si rien d'autre ne retient l'état
+        (Astrel qui parle : fin de parole ; Claude au travail : sa fin de tour ; conversation : la boucle)."""
+        try:
+            if not self.speaker.busy and not self._in_conversation and not self._turn_active:
+                self.status.set(self._rest_state(), only=(state.THINKING, state.WORKING))
+        except Exception:
+            log.exception("état de fin du tour local non publié")
+
+    # --- 05/11 (essai de l'utilisateur, 19:28) : détail de « Je réfléchis » pendant une réflexion du local
+
+    def _local_detail(self, texte: str) -> None:
+        """Pose `texte` en détail de l'état « Je réfléchis », tant que la ligne est à ce tour : déjà prise par un
+        autre (Claude, l'écoute) ou état changé, le tour n'y touche plus (jamais un détail écrasé)."""
+        e = self._local_etat()
+        mien = e.get("detail") or ""
+        if e.get("detail_cede") or not texte or texte == mien:
+            return
+        try:
+            if _detail_courant() != mien or not self.status.set(detail=texte, only=(state.THINKING,)):
+                e["detail_cede"] = True
+                return
+            e["detail"] = texte
+        except Exception:
+            log.exception("détail de la réflexion locale non publié")
+
+    def _local_detail_fin(self) -> None:
+        """Fin du tour : son détail est effacé s'il est encore affiché (le repos l'a déjà retiré sinon)."""
+        e = self._local_etat()
+        mien, e["detail"] = e.get("detail") or "", ""
+        try:
+            if mien and _detail_courant() == mien:
+                self.status.set(detail="", only=(state.THINKING,))
+        except Exception:
+            log.exception("détail de la réflexion locale non effacé")
+
+    def _local_sur_etape(self, etape: str, jetons: int) -> None:
+        """`moteur_local.repondre(sur_etape=…)` : l'étape de la réflexion devient le détail de l'état."""
+        self._local_detail(detail_reflexion(etape, jetons, self._local_etat().get("minutes") or 4))
+
+    def _local_reflexion_minutes(self) -> int:
+        """Durée annoncée d'une réflexion jusqu'au budget, en minutes (vitesse mesurée du modèle)."""
+        try:
+            s = float(self._moteur_local.reflexion_max_s())
+        except Exception:
+            s = moteur_local.REFLEXION_BUDGET / moteur_local.REFLEXION_JETONS_S
+        return max(1, round(s / 60))
 
     def _local_flux(self, demande: str, ch: str, outils: bool, stop: threading.Event,
                     reflexion: bool | None = None, navigateur: bool = False, sur_page=None):
@@ -233,7 +317,14 @@ class TourLocalCoeur:
                                                 canal=ch, lecture=lecture, **kw), True
         # 05/11 (lot 8) : réflexion à la demande pour CETTE question (`reflexion=True`), sinon le défaut du moteur
         # (coupée) ; relecture : le défaut du moteur (active).
-        return self._moteur_local.repondre(message, lang, stop=stop, reflexion=reflexion), False
+        if not (moteur_local.REFLEXION if reflexion is None else reflexion):
+            return self._moteur_local.repondre(message, lang, stop=stop, reflexion=reflexion), False
+        # 05/11 (essai de l'utilisateur, 19:28) : réflexion visible (détail de l'état, temps écoulé dans le HUD)
+        e = self._local_etat()
+        e["minutes"] = self._local_reflexion_minutes()
+        self._local_detail(detail_reflexion("reflexion", 0, e["minutes"]))
+        return self._moteur_local.repondre(message, lang, stop=stop, reflexion=reflexion,
+                                           sur_etape=self._local_sur_etape), False
 
     def _tour_local_reponse(self, demande: str, source: str, ch: str, mid: str, outils: bool = False,
                             reflexion: bool | None = None, navigateur: bool = False) -> None:
@@ -249,11 +340,12 @@ class TourLocalCoeur:
             pages.append(url)
             bus.publish("notice", level="info", channel=ch, engine="local", text=PAGE_OUVERTE.format(url=url))
 
-        flux, avec_outils = self._local_flux(demande, ch, outils, e["stop"], reflexion, navigateur, sur_page)
-        log.info("tour local (%s, %d caractères%s) → %s", source, len(demande), ", outils de lecture" if avec_outils
-                 else "", self._moteur_local.tag)
-        t0 = time.monotonic()
+        avec_outils, t0 = False, time.monotonic()
         try:
+            # 05/11 : dans le `try` : une panne en préparant le flux est dite (notice) comme les autres
+            flux, avec_outils = self._local_flux(demande, ch, outils, e["stop"], reflexion, navigateur, sur_page)
+            log.info("tour local (%s, %d caractères%s) → %s", source, len(demande), ", outils de lecture"
+                     if avec_outils else "", self._moteur_local.tag)
             for morceau in flux:
                 morceaux.append(morceau)
                 bus.publish("reply_delta", text=morceau, channel=ch, reply_to=mid, engine="local")
@@ -299,8 +391,7 @@ class TourLocalCoeur:
                      ", arrêté" if e["stop"].is_set() else "")
             if dit and source == "voix" and not self._in_conversation and self._followup_s() > 0:
                 self._followup = True  # comme après une réponse de Claude dite : il peut enchaîner
-            if not self.speaker.busy and not self._in_conversation and not self._turn_active:
-                self.status.set(self._rest_state(), only=(state.THINKING, state.WORKING))
+            # (retour au repos : `_tour_local_fil`, après ce bloc, même s'il a échoué)
 
     # --- 05/11 (lot 6) : « Envoyer à Claude » sous une réponse locale
 

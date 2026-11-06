@@ -13,7 +13,9 @@ Ollama : ici Claude reste vivant, la demande locale passe à côté. Choix mesur
 L'historique de la conversation locale vit EN MÉMOIRE seulement (jamais sur disque) et est borné.
 05/11 (lot 8, banc tools/banc_qualite_local.py) : réflexion bornée en jetons (`REFLEXION_BUDGET`), réponse vide après
 réflexion relancée sans réflexion, sortie filtrée par le cœur (`sortie_locale`), faits exacts du cœur dans le message
-(`message_local`, `faits_local`), relecture optionnelle (`VERIFICATION`)."""
+(`message_local`, `faits_local`), relecture optionnelle (`VERIFICATION`).
+05/11 (essai de l'utilisateur, 19:28) : `repondre(sur_etape=…)` suit une réflexion pour l'affichage (jetons comptés,
+relance sans réflexion, relecture) : détail de « Je réfléchis » posé par `coeur/local_tour.py`."""
 from __future__ import annotations
 
 import json
@@ -45,6 +47,10 @@ REFLEXION = os.environ.get("ASTREL_LOCAL_REFLEXION", "0").strip().lower() in ("1
 # pas de budget lui-même) ; au-delà, la même demande repart sans réflexion. Choisi au banc de qualité pour la
 # JUSTESSE (décision du 05/11 : « même si c'est lent ») : borne de sécurité contre les boucles.
 REFLEXION_BUDGET = 8_000
+# 05/11 (essai de l'utilisateur, 19:28 : 8 000 jetons de réflexion en 4 min 14 s, RTX 4060) : vitesse de repli pour la
+# durée annoncée pendant une réflexion (`MoteurLocal.reflexion_max_s`), avant toute mesure du tour.
+REFLEXION_JETONS_S = 31.5
+ETAPE_PAS_S = 1.0  # `sur_etape("reflexion", n)` : une fois par seconde au plus
 # 05/11 (lot 8, décision de l'utilisateur : la justesse avant le premier mot) : relecture du brouillon par le modèle
 # avant qu'il parte (faits du tour, consignes, inventions), en VERDICT (« OK » ou la réponse corrigée). Banc, 3
 # passages sans réflexion : 96,4 % (pass^3 89,3 %) contre 93,8 % (85,3 %) sans relecture ; 1er mot 3,8 s au lieu de 1,1 s.
@@ -361,10 +367,15 @@ class MoteurLocal:
         self._hist: deque[dict[str, str]] = deque()
         self._lock = threading.Lock()
         self.derniere: dict[str, Any] = {}   # mesures du dernier tour (premier mot, vitesse)
+        self._vitesse = 0.0                  # 05/11 : jetons/s du dernier tour mesuré (durée de réflexion annoncée)
 
     @property
     def tag(self) -> str:
         return self._tag or modele()
+
+    def reflexion_max_s(self) -> float:
+        """05/11 : durée d'une réflexion qui va jusqu'au budget, en secondes (vitesse mesurée, sinon le repli)."""
+        return REFLEXION_BUDGET / (self._vitesse or REFLEXION_JETONS_S)
 
     # --- historique (mémoire seulement) ---
 
@@ -434,11 +445,15 @@ class MoteurLocal:
                                         [*hist, {"role": "user", "content": demande}])]}
 
     def repondre(self, demande: str, langue: str = "fr", stop: threading.Event | None = None,
-                 reflexion: bool | None = None, verification: bool | None = None) -> Iterator[str]:
+                 reflexion: bool | None = None, verification: bool | None = None,
+                 sur_etape: Callable[[str, int], None] | None = None) -> Iterator[str]:
         """Morceaux de la réponse (réflexion retirée, sortie filtrée), au fil de l'eau. Lève `ErreurLocale`.
         05/11 (lot 8) : `VERIFICATION` → le brouillon est relu par le modèle avant de partir (rien n'est rendu
         avant la relecture : la justesse passe avant le premier mot, décision de l'utilisateur).
-        `reflexion`, `verification` : choix du tour (réflexion à la demande), sinon `REFLEXION`, `VERIFICATION`."""
+        `reflexion`, `verification` : choix du tour (réflexion à la demande), sinon `REFLEXION`, `VERIFICATION`.
+        05/11 (essai de l'utilisateur : 4 min de réflexion invisible) : `sur_etape(etape, jetons)` suit le tour pour
+        l'affichage : « reflexion » (jetons pensés, une fois par seconde au plus), « budget » ou « vide » (repart
+        sans réflexion), « relecture » ; jamais le texte pensé."""
         self._verifier_cible()
         http = (self._client or _client_http)()
         t0 = time.monotonic()  # premier mot compté depuis la demande
@@ -448,11 +463,13 @@ class MoteurLocal:
             filtre, morceaux, premier = sortie_locale.FiltreSortie(demande, langue), [], None
             corps = self.corps(demande, langue, reflexion)
             if VERIFICATION if verification is None else verification:
-                brouillon = "".join(self._generer(http, corps, stop, t0)).strip()
+                brouillon = "".join(self._generer(http, corps, stop, t0, sur_etape=sur_etape)).strip()
+                if brouillon and not (stop is not None and stop.is_set()):
+                    _signaler(sur_etape, "relecture", 0)
                 # relecture SANS réflexion (mesurée ainsi au banc ; la réflexion à la demande vaut pour la question)
                 source = self._relire(http, demande, brouillon, langue, stop, t0, False) if brouillon else iter(())
             else:
-                source = self._generer(http, corps, stop, t0)
+                source = self._generer(http, corps, stop, t0, sur_etape=sur_etape)
             for brut in source:
                 texte = filtre.feed(brut)
                 if texte:
@@ -493,10 +510,10 @@ class MoteurLocal:
         yield brouillon if garde else final
 
     def _generer(self, http: Any, corps: dict, stop: threading.Event | None, t0: float,
-                 relecture: bool = False) -> Iterator[str]:
+                 relecture: bool = False, sur_etape: Callable[[str, int], None] | None = None) -> Iterator[str]:
         """Un tour du modèle (réflexion retirée). Réflexion au-delà de `REFLEXION_BUDGET` jetons, ou finie sans
         aucun texte de réponse (Ollama #18916), ou mémoire de la carte : la même demande repart (sans réflexion,
-        ou sans `num_gpu`)."""
+        ou sans `num_gpu`). `sur_etape` : voir `repondre`."""
         from .brain import ThinkFilter
 
         reflexion, essais = bool(corps.get("think")), 0
@@ -507,6 +524,7 @@ class MoteurLocal:
                 options = {**options, **ECHANTILLONNAGE_SANS_REFLEXION}  # relance sans réflexion : son jeu (R7)
             corps = {**corps, "think": reflexion, "options": options}
             filtre, rendus, pensee, cause = ThinkFilter(), 0, 0, ""
+            signale = time.monotonic()
             try:
                 for ligne in self._flux(http, corps):
                     if stop is not None and stop.is_set():
@@ -519,6 +537,9 @@ class MoteurLocal:
                         if reflexion and not rendus and pensee > REFLEXION_BUDGET:
                             cause = "budget"  # fermer le flux arrête la génération chez Ollama
                             break
+                        if sur_etape is not None and reflexion and time.monotonic() - signale >= ETAPE_PAS_S:
+                            signale = time.monotonic()  # 05/11 : le compte, jamais le texte pensé
+                            _signaler(sur_etape, "reflexion", pensee)
                     texte = filtre.feed(str(msg.get("content") or ""))
                     if texte:
                         rendus += 1
@@ -545,6 +566,7 @@ class MoteurLocal:
                 log.warning("moteur local : réflexion %s (%d jetons en %.0f s) : réponse sans réflexion",
                             "au-delà du budget" if cause == "budget" else "sans réponse", pensee, time.monotonic() - t0)
                 self.derniere.setdefault("relances", []).append(cause)
+                _signaler(sur_etape, cause, pensee)
                 reflexion = False
                 continue
             return
@@ -580,8 +602,20 @@ class MoteurLocal:
                               "charge_s": round(float(fin.get("load_duration") or 0) / 1e9, 1),
                               "num_gpu": self._num_gpu, "essais": essais})
         self.derniere["reflexion_jetons"] = self.derniere.get("reflexion_jetons", 0) + pensee
+        if self.derniere["tokens_s"] > 0:
+            self._vitesse = float(self.derniere["tokens_s"])
         log.info("moteur local %s%s : %d tokens à %.1f t/s (réflexion %d) en %.1f s", self.tag,
                  " (relecture)" if relecture else "", n, self.derniere["tokens_s"], pensee, duree)
+
+
+def _signaler(sur_etape: Callable[[str, int], None] | None, etape: str, jetons: int) -> None:
+    """05/11 : l'affichage ne casse jamais un tour du modèle."""
+    if sur_etape is None:
+        return
+    try:
+        sur_etape(etape, jetons)
+    except Exception:
+        log.exception("moteur local : étape « %s » non affichée", etape)
 
 
 def _client_http() -> Any:

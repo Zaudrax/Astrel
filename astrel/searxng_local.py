@@ -81,7 +81,8 @@ def assurer(attente_s: float = ATTENTE_S) -> str:
             chemin = config.LOGS / JOURNAL
             fd = os.open(chemin, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
             try:
-                _proc = enfants.popen(["bash", str(SCRIPT), "--lancer"], cwd=str(config.ROOT), env=_environnement(),
+                # 05/11 : chemin en « / » : sous Windows, `dirname "$0"` de Git Bash ne coupe pas aux « \ »
+                _proc = enfants.popen(["bash", SCRIPT.as_posix(), "--lancer"], cwd=str(config.ROOT), env=_environnement(),
                                       stdin=subprocess.DEVNULL, stdout=fd, stderr=subprocess.STDOUT)
             except OSError as exc:
                 return f"SearXNG non lancé ({exc})"

@@ -69,7 +69,7 @@ import { FLOW } from './sites/flow.mjs'
 import { DREAMINA } from './sites/dreamina.mjs'
 import { ROLES_ALERTE } from './sites/commun.mjs'
 import { derniereImage } from './derniere-image.mjs'
-import { PIECE_MAX_OCTETS, lirePiece, refusPiece } from './pieces.mjs'
+import { PIECE_MAX_OCTETS, dossierProjets, lirePiece, refusPiece } from './pieces.mjs'
 
 const ICI = path.dirname(fileURLToPath(import.meta.url))
 const RACINE_ASTREL = path.resolve(ICI, '..')
@@ -137,11 +137,11 @@ export function dureeMp4 (fichier) {
 // la vidéo (ASTREL_VIDEO_RACINES).
 const reelOu = (p) => { try { return fs.realpathSync(p) } catch { return path.resolve(p) } }
 
-/** Dossiers d'où une image peut venir : pièces jointes d'Astrel et ~/Projets (comme
- * videos_ia.image_depart). En test SEULEMENT (ASTREL_IMAGEGEN_RYTHME=test, retiré par le cœur),
+/** Dossiers d'où une image peut venir : pièces jointes d'Astrel et dossier des projets (pieces.dossierProjets,
+ * comme videos_ia.image_depart). En test SEULEMENT (ASTREL_IMAGEGEN_RYTHME=test, retiré par le cœur),
  * ASTREL_VIDEO_RACINES ajoute des dossiers (fausses images sous /tmp). */
 export function racinesImages () {
-  const r = [path.join(RACINE_ASTREL, 'runtime', 'attachments'), '~/Projets']
+  const r = [path.join(RACINE_ASTREL, 'runtime', 'attachments'), dossierProjets()]
   if (TEST && process.env.ASTREL_VIDEO_RACINES) r.push(...process.env.ASTREL_VIDEO_RACINES.split(':').filter((x) => path.isAbsolute(x)))
   return r.map(reelOu)
 }

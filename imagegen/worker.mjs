@@ -10,7 +10,7 @@
 //   - services : gemini, chatgpt, bing (moteurs.mjs, un module par site dans sites/) ;
 //   - plafond 1 à 100 images, délai 5 à 300 s, prompt de 4 000 caractères au plus ;
 //   - `fichiers` : pièces jointes (P40 A3), 6 au plus, filtre du cœur appliqué ICI aussi
-//     (pieces.mjs : runtime/attachments ou ~/Projets, hors secrets, 5 Mo, PNG/JPEG/WebP),
+//     (pieces.mjs : runtime/attachments ou le dossier des projets, hors secrets, 5 Mo, PNG/JPEG/WebP),
 //     vérifiées à l'entrée (refus sans ouvrir Chrome) puis RELUES juste avant le dépôt ; un site
 //     sans `joindre` (Bing) les refuse : échec `fichiers` ;
 //   - profil : un site SANS compte (`sansCompte`, Bing) n'accepte que le profil anonyme

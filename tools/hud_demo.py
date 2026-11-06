@@ -1675,6 +1675,39 @@ def main() -> int:
         bus.publish("reply", text="(démo) Réponse de Claude.", usage={}, channel=ch, reply_to=mid, mid=uuid.uuid4().hex[:12])
         return {"ok": True, "mid": cmd.get("mid"), "envoye": True}
 
+    # 05/11 (soir, essai de l'utilisateur : 4 min de « Je réfléchis » seul) : réflexion du modèle local, détails du
+    # VRAI cœur (`local_tour.detail_reflexion`). `demo_reflexion {etape, jetons?, depuis_s?}` (tests du HUD) : une
+    # étape posée telle quelle (« fin » : repos) ; /reflechir les enchaîne, ■ ou Échap l'arrêtent.
+    reflexion = {"since": 0.0, "tour": 0}
+
+    def reflexion_etat(etape: str, jetons: int = 0, depuis_s: float | None = None) -> dict:
+        from astrel.coeur import local_tour
+
+        if etape == "fin":
+            reflexion["since"] = 0.0
+            bus.publish("state", state="sleeping", text="", muted=False, detail="", since=time.time())
+            return {"ok": True}
+        if depuis_s is not None or not reflexion["since"]:
+            reflexion["since"] = time.time() - float(depuis_s or 0)
+        detail = local_tour.detail_reflexion(etape, int(jetons or 0), 4)
+        bus.publish("state", state="thinking", text="", muted=False, detail=detail, since=reflexion["since"])
+        return {"ok": True, "detail": detail}
+
+    def reflexion_simulee(ch: str, mid: str) -> None:
+        reflexion["tour"] += 1
+        tour = reflexion["tour"]
+        reflexion["since"] = 0.0
+        for etape, jetons in (("reflexion", 0), ("reflexion", 1300), ("budget", 0), ("relecture", 0)):
+            if reflexion["tour"] != tour:
+                return  # ■ : la démo s'arrête comme le tour du cœur
+            reflexion_etat(etape, jetons)
+            time.sleep(0.8)
+        if reflexion["tour"] != tour:
+            return
+        bus.publish("reply", text="(démo) Réponse du modèle local, après réflexion.", channel=ch, reply_to=mid,
+                    mid=uuid.uuid4().hex[:12], engine="local")
+        reflexion_etat("fin")
+
     chat_log: list[dict] = []  # 05/11 : commandes `chat_commande` reçues (contrôles du HUD)
     chat_libre = {"on": False}  # 05/11 : la démo a des agents de fond : /clear refusée, sauf `demo_chat {libre}`
 
@@ -1725,8 +1758,8 @@ def main() -> int:
             ch, mid = str(cmd.get("channel") or channels.default), uuid.uuid4().hex[:12]
             bus.publish("transcript", who="user", text=f"/reflechir {a.arg}", source="clavier", channel=ch, mid=mid,
                         engine="local")
-            bus.publish("reply", text="(démo) Réponse du modèle local, après réflexion.", channel=ch, reply_to=mid,
-                        mid=uuid.uuid4().hex[:12], engine="local")
+            # 05/11 (soir) : la réflexion simulée, comme le cœur la montre (détail de l'état, temps écoulé du HUD)
+            threading.Thread(target=reflexion_simulee, args=(ch, mid), name="demo-reflexion", daemon=True).start()
             return {"ok": True, "local": True}
         return {"ok": False, "error": commandes_chat.INCONNUE.format(nom=a.nom)}
 
@@ -1983,8 +2016,12 @@ def main() -> int:
             bus.publish("state", state="thinking", text="", muted=False, detail="")
             bus.publish("reply_delta", text="Je cherche les horaires du train… ", channel=live["channel"], reply_to="")
             return {"ok": True}
+        elif cmd.get("cmd") == "demo_reflexion":  # 05/11 (tests du HUD) : une étape de la réflexion locale
+            return reflexion_etat(str(cmd.get("etape") or "reflexion"), int(cmd.get("jetons") or 0),
+                                  cmd.get("depuis_s"))
         elif cmd.get("cmd") == "stop":  # ■ et Échap (04/11) : comme le cœur, la réponse en cours s'arrête
             stop_log.append({"via": cmd.get("_via"), "ts": time.time()})
+            reflexion["tour"] += 1  # 05/11 : la réflexion simulée de /reflechir s'arrête aussi
             ch = live.pop("channel", None)
             if ch is not None:
                 bus.publish("reply", text="Je cherche les horaires du train…", usage={}, channel=ch,

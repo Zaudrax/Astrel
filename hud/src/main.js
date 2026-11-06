@@ -114,6 +114,41 @@ function renderStateText() {
   const simple = simpleView();
   $("#state-label").textContent = t(simple && SIMPLE_STATE[key] ? SIMPLE_STATE[key] : `state.${key}`);
   $("#state-detail").textContent = simple && key === "working" ? "" : stripEmoji(tx(ev.detail || ""));
+  renderThinkTimer();
+}
+
+// 05/11 (essai de l'utilisateur, 19:28 : 4 min 14 s de « Je réfléchis » seul, Astrel cru planté) : pendant une
+// réflexion du modèle LOCAL, le détail du cœur commence par ce préfixe (astrel/coeur/local_tour.py
+// DETAIL_PREFIXE, même texte : tests/test_tour_local_etat.py) ; temps écoulé (mm:ss) sous « Je réfléchis »,
+// compté depuis le début de l'état (`since` du cœur), à la seconde. Point pulsé coupé par prefers-reduced-motion.
+const LOCAL_THINK_PREFIX = "modèle local · ";
+const thinkTimer = el("div", "state-timer hidden");
+const thinkTime = el("span", "state-timer-time", "00:00");
+thinkTimer.setAttribute("role", "timer");
+thinkTimer.append(el("span", "state-timer-dot"), thinkTime);
+thinkTimer.firstChild.setAttribute("aria-hidden", "true");
+$("#state-label").after(thinkTimer);
+let thinkStart = 0, thinkTick = 0;
+const mmss = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+function renderThinkTimer() {
+  const ev = lastStateEv;
+  const on = ev.state === "thinking" && String(ev.detail || "").startsWith(LOCAL_THINK_PREFIX);
+  $("#state-detail").classList.toggle("local-think", on);
+  thinkTimer.classList.toggle("hidden", !on);
+  if (!on) {
+    clearInterval(thinkTick);
+    thinkTick = 0;
+    thinkStart = 0;
+    return;
+  }
+  thinkTimer.title = t("state.timer_title");
+  const since = Number(ev.since) * 1000;
+  if (since > 0) thinkStart = Math.min(since, Date.now());
+  else if (!thinkStart) thinkStart = Date.now(); // évènement sans `since` (démo) : compté depuis son arrivée
+  const tick = () => { thinkTime.textContent = mmss(Math.max(0, Math.floor((Date.now() - thinkStart) / 1000))); };
+  tick();
+  if (!thinkTick) thinkTick = setInterval(tick, 1000);
 }
 
 // Pause de la voix, comme un lecteur vidéo : le son se coupe net, le travail

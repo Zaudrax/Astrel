@@ -50,7 +50,7 @@ insuffisants : compte épuisé, compte suivant). `rythme` (30 s entre deux gén�
 compte sur un même site, 30/10 ; attendues sur place par le worker) est reporté comme `pointe` ; `nuit` est un échec.
 
 Le fichier rendu doit être un mp4 ou un webm reconnu par ses OCTETS (`medias.sniff`), avec
-l'extension qui va avec, dans `SORTIE` (~/Projets/Videos-IA : montrable par
+l'extension qui va avec, dans `SORTIE` (Videos-IA du dossier des projets : montrable par
 `medias.py` tel quel). Journal `logs/videos.log` : demandes, crédits partis, ouverture de la
 fenêtre de 24 h et renouvellement prévu, reports, épuisements, premier succès qui suit (mesure
 du renouvellement réel), crédits annoncés par le site.
@@ -76,7 +76,7 @@ log = logging.getLogger("astrel.videos")
 TYPE = "video"
 SERVICES_PRETS = ("flow", "dreamina")  # sites pilotés (B1 Flow, B5 Dreamina), dans l'ordre du catalogue
 AFFICHAGE = "masquee"           # Q1 du plan P41, réponse de l'utilisateur (29/10) : Chrome MASQUÉ pendant une vidéo
-SORTIE = Path(os.environ.get("ASTREL_VIDEOS_SORTIE", str(config.WORKDIR / "Videos-IA")))
+SORTIE = Path(os.environ.get("ASTREL_VIDEOS_SORTIE", str(config.WORKDIR / "Videos-IA")))  # 05/11 : plus en dur
 LOG = config.LOGS / "videos.log"
 PROMPT_MAX = 2000
 FILE_MAX = 3                    # vidéos en attente au plus (reportées comprises)
@@ -242,7 +242,7 @@ def verifier_video(brut: Any) -> tuple[Path | None, str]:
 
 def image_depart(brut: Any) -> tuple[str, str]:
     """(chemin résolu, "") d'une image de départ permise (filtre de P40 A3 : pièces jointes ou
-    ~/Projets, hors secrets et dossiers privés, 5 Mo, PNG/JPEG/WebP lus dans les octets,
+    dossier des projets (`config.WORKDIR`), hors secrets et dossiers privés, 5 Mo, PNG/JPEG/WebP lus dans les octets,
     pas de lien dur) ; sinon ("", raison)."""
     texte = str(brut or "").strip()
     if not texte or not Path(texte).is_absolute():
@@ -252,7 +252,7 @@ def image_depart(brut: Any) -> tuple[str, str]:
         st = reel.stat()
     except (OSError, RuntimeError, ValueError):  # ValueError : caractère NUL dans le chemin
         return "", "fichier introuvable"
-    racines = [attachments.ATTACH_DIR.resolve(), config.WORKDIR.resolve()]
+    racines = [attachments.ATTACH_DIR.resolve(), Path(config.WORKDIR).resolve()]  # 05/11 : plus en dur
     if not any(reel != r and reel.is_relative_to(r) for r in racines):
         return "", "hors des pièces jointes et du dossier des projets"
     raison = medias.refusal(reel)

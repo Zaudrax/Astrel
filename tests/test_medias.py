@@ -98,7 +98,7 @@ def test_racines_du_plan():
     roots = set(medias.source_roots())
     home = Path.home()
     for want in (config.RUNTIME / "attachments", config.IMAGES_RUNTIME, Path(tempfile.gettempdir()),
-                 Path(f"{chemins_machine.PROJETS}"), home / "Images", home / "Téléchargements", home / "Bureau"):
+                 Path(config.WORKDIR), home / "Images", home / "Téléchargements", home / "Bureau"):
         assert want in roots
     # 03/11 : « /tmp » sous Unix seulement (sous Windows, « \\tmp » à la racine du lecteur n'est pas le temporaire)
     assert (Path("/tmp") in roots) == (os.name != "nt")
@@ -110,9 +110,12 @@ def test_refus_secrets_dossiers_prives_caches(monkeypatch):
 
     root = config.ROOT.resolve()
     assert medias.refusal(Path("/etc/passwd")) == "hors des dossiers permis"
-    assert medias.refusal(Path(f"{chemins_machine.PROJETS}")) == "hors des dossiers permis"  # la racine elle-même
+    projets_reel = Path(config.WORKDIR).resolve()  # 05/11 : le dossier des projets de la machine, plus en dur
+    autres = [r.resolve() for r in medias.source_roots() if r.resolve() != projets_reel]
+    if not any(projets_reel.is_relative_to(r) for r in autres):  # (un dossier des projets d'essai sous /tmp y est permis)
+        assert medias.refusal(projets_reel) == "hors des dossiers permis"  # la racine elle-même
     for secret in guard.SECRET_PATHS:
-        if secret.is_relative_to(f"{chemins_machine.PROJETS}"):
+        if secret.is_relative_to(projets_reel):
             assert medias.refusal(secret) != ""
     monkeypatch.setattr(config, "WORKDIR", root.parent)  # le clone, dans le dossier des projets
     assert "privé" in medias.refusal(root / "config" / "secrets.json") or "secret" in medias.refusal(root / "config" / "secrets.json")

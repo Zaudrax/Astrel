@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PIECES_MAX, lirePiece, lirePieces, refusPiece } from '../pieces.mjs'
+import { PIECES_MAX, dossierProjets, lirePiece, lirePieces, refusPiece } from '../pieces.mjs'
 import { lireCatalogue, poserSansEcraser } from '../noyau.mjs'
 import { MOTEURS, classer } from '../moteurs.mjs'
 import { hotePermis, tailleReelle } from '../sites/bing.mjs'
@@ -81,14 +81,25 @@ test('pièce refusée : lien vers l\'extérieur, lien dur, tube nommé, dossier 
 })
 
 test('dossiers privés d\'Astrel refusés AVANT toute ouverture ; pièces jointes et images IA permises', () => {
-  const racinesJ = ['/home/user/Projets'].map((x) => fs.realpathSync(x))
+  // 05/11 : le dossier qui contient Astrel tient lieu de dossier des projets (installation dans ~/Projets),
+  // aucun chemin de la machine écrit ici
+  const projets = fs.realpathSync(path.dirname(ASTREL))
+  const racinesJ = [projets]
   for (const d of ['config/ia-web.json', 'runtime/imagegen/profils/amw/Default/Cookies', 'runtime/session.json', 'hooks/x.png', 'vault/x.png', 'logs/x.png']) {
     assert.match(refusPiece(path.join(ASTREL, d), racinesJ), /dossier privé/, d)
   }
   assert.equal(refusPiece(path.join(ASTREL, 'runtime', 'attachments', 'photo.png'), racinesJ), '')
-  assert.equal(refusPiece('/home/user/Projets/Images-IA/x.png', racinesJ), '')
-  assert.match(refusPiece('/etc/passwd', racinesJ), /hors des pièces jointes/)
-  assert.match(refusPiece('/home/user/Projets', racinesJ), /hors des pièces jointes/, 'la racine elle-même n\'est pas un fichier permis')
+  assert.equal(refusPiece(path.join(projets, 'Images-IA', 'x.png'), racinesJ), '')
+  assert.match(refusPiece('/etc/passwd', racinesJ), /hors des pièces jointes et du dossier des projets/)
+  assert.match(refusPiece(projets, racinesJ), /hors des pièces jointes/, 'la racine elle-même n\'est pas un fichier permis')
+})
+
+test('dossier des projets : celui du cœur (ASTREL_WORKDIR), sinon ~/Projets ; « ~ » développé (05/11)', () => {
+  assert.equal(dossierProjets({ ASTREL_WORKDIR: path.join(os.tmpdir(), 'mes projets') }), path.join(os.tmpdir(), 'mes projets'))
+  assert.equal(dossierProjets({}), path.join(os.homedir(), 'Projets'))
+  assert.equal(dossierProjets({ ASTREL_WORKDIR: '  ' }), path.join(os.homedir(), 'Projets'))
+  assert.equal(dossierProjets({ ASTREL_WORKDIR: '~/Travail' }), path.join(os.homedir(), 'Travail'))
+  assert.ok(path.isAbsolute(dossierProjets({ ASTREL_WORKDIR: 'relatif' })), 'toujours absolu')
 })
 
 test('six pièces au plus, jamais deux fois la même, liste attendue', () => {

@@ -647,11 +647,29 @@ def _enfant(cmd: list[str], donnees: bytes, delai: float, sortie_max: int, env: 
     return proc.returncode, bytes(lu[:sortie_max])
 
 
+_POPPLER_VU: dict[str, bool] = {}  # programme du PATH → est celui de poppler (vérifié une fois)
+
+
+def _est_poppler(exe: str) -> bool:
+    """05/11 (CI Windows) : un pdftotext/pdfinfo trouvé dans le PATH peut être celui de xpdf (Git pour Windows en
+    livre un), qui ne lit pas un PDF sur l'entrée standard (« - ») : seul celui de poppler (« Poppler » dans `-v`)
+    est pris. Un dossier donné (`POPPLER_DOSSIER`) n'est pas vérifié : c'est un choix explicite."""
+    if exe not in _POPPLER_VU:
+        try:
+            r = subprocess.run([exe, "-v"], stdin=subprocess.DEVNULL, capture_output=True, timeout=5,
+                               env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"})
+            _POPPLER_VU[exe] = b"poppler" in (r.stdout + r.stderr).lower()
+        except (OSError, subprocess.SubprocessError):
+            _POPPLER_VU[exe] = False
+    return _POPPLER_VU[exe]
+
+
 def _outil_poppler(nom: str, dossier: Path | None) -> str | None:
     if dossier is not None:
         p = Path(dossier) / nom
         return str(p) if p.exists() else None
-    return shutil.which(nom)
+    exe = shutil.which(nom)
+    return exe if exe and _est_poppler(exe) else None
 
 
 def _pdf_poppler(donnees: bytes, dossier: Path | None) -> dict | None:

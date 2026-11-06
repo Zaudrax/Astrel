@@ -687,6 +687,22 @@ def test_sortie_d_un_lecteur_bornee(tmp_path):
 
 
 @pytest.mark.skipif(os.name != "posix", reason="faux programme en /bin/sh")
+def test_pdftotext_de_xpdf_non_pris(monkeypatch, tmp_path):
+    """05/11 (CI Windows) : le pdftotext de xpdf (Git pour Windows) ne lit pas un PDF sur l'entrée standard : un
+    programme du PATH n'est pris que s'il est celui de poppler ; sinon « aucun lecteur », jamais « abîmé »."""
+    _faux_programme(tmp_path, "pdftotext", "echo 'pdftotext version 4.04 [www.xpdfreader.com]' >&2\n"
+                                           "echo 'Copyright 1996-2022 Glyph & Cog, LLC' >&2; exit 99")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(web_local, "_POPPLER_VU", {})
+    assert web_local._outil_poppler("pdftotext", None) is None
+    with pytest.raises(web_local.Refus, match="aucun lecteur de PDF"):
+        web_local.extraire_pdf(SIMPLE, python=Path("/absent"))
+    _faux_programme(tmp_path, "pdftotext", "echo 'Copyright 2005-2025 The Poppler Developers' >&2")
+    monkeypatch.setattr(web_local, "_POPPLER_VU", {})
+    assert web_local._outil_poppler("pdftotext", None) == str(tmp_path / "pdftotext")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="faux programme en /bin/sh")
 def test_markitdown_absent_ou_en_echec_repli_pdftotext(monkeypatch, tmp_path):
     if not web_local._outil_poppler("pdftotext", None):
         pytest.skip("pdftotext (poppler-utils) absent")
