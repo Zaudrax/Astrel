@@ -5215,14 +5215,16 @@ async def check_medias(p: Page) -> None:
     await mouse_click(f"{card}.querySelector('.media-play')")
     made = await p.until(f"!!{card}.querySelector('video')", 3)
     played = await p.until(f"{plays}.at(-1) === true || !!{card}.querySelector('.media-video-box .media-note')", 8)
+    # 06/11 : micro lu dans le MÊME instant que la lecture (CI : relu après la capture, la courte vidéo était
+    # déjà finie, plays = [True, False])
     vstate = await p.js(f"""(() => {{ const v = {card}.querySelector('video'), n = {card}.querySelector('.media-video-box .media-note');
         return {{ playing: !!v && !v.paused, note: n?.textContent || '', autoplay: !!v?.autoplay, focus: document.activeElement === v,
-                 src: v?.getAttribute('src') || '' }}; }})()""")
+                 src: v?.getAttribute('src') || '', plays: {plays} }}; }})()""")
     await card_shot("p26-media-video.png", f"{card}.querySelector('.media-video')")
     check(f"P26 vidéo : <video> créée au clic (sans autoplay), lecture {vstate['playing']} ou raison « {vstate['note']} », "
-          f"micro retenu ({await p.js(plays)})",
+          f"micro retenu ({vstate['plays']})",
           made and played and not vstate["autoplay"]
-          and ((vstate["playing"] and (await p.js(plays))[-1] is True) or vstate["note"].startswith("Ce format")))
+          and ((vstate["playing"] and vstate["plays"][-1:] == [True]) or vstate["note"].startswith("Ce format")))
     if vstate["playing"]:
         r = await p.send("Runtime.evaluate", expression=f"{card}.querySelector('audio').play().then(() => true, e => String(e))",
                          awaitPromise=True, returnByValue=True, userGesture=True)
