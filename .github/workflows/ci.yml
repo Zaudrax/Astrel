@@ -87,7 +87,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, windows-2022]
+        # 06/11 : macos-14 retiré par GitHub (« configuration macos-14-arm64-us-default is not supported », job annulé en 1 s)
+        os: [macos-15, windows-2022]
     runs-on: ${{ matrix.os }}
     # 03/11 (demande : un mail d'échec à chaque envoi) : MESURE partout, branche portage comprise ; les échecs
     # restent dans le rapport du job, ils ne font plus échouer l'exécution. Seul « linux » doit être vert.
