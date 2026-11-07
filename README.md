@@ -111,12 +111,13 @@ texte des réponses, jamais le son du micro.
 | **Debian 13**, GNOME, Wayland | Utilisé tous les jours : c'est la machine de référence. |
 | Ubuntu 24.04, Debian 12 | Mêmes paquets ; pas encore essayé sur une machine neuve. |
 | Windows 10 ou 11 + WSL2 | **La voie conseillée sous Windows** : le code Linux, dans Ubuntu. Premier essai en cours. |
-| macOS | Porté sur le papier (couche `astrel/platform/`), **jamais lancé sur une vraie machine**. |
-| Windows natif | **Pas encore prêt** : le démarrage plante (deux appels propres à Linux à adapter). |
+| macOS | Porté (couche `astrel/platform/`) et vérifié par l'intégration continue : installation, démarrage, un tour de conversation, tests. **Jamais lancé sur une vraie machine.** |
+| Windows natif | Porté et vérifié par l'intégration continue : installation, démarrage, un tour de conversation, tests. **Jamais essayé sur un vrai PC.** |
 
-La bulle, les raccourcis globaux, le démarrage automatique et la transcription sur carte graphique
-ne marchent que sous Linux. Hors Linux, la protection contre un programme lancé par Claude est plus
-faible : il n'y a pas de cgroup pour le reconnaître.
+Hors Linux, la bulle, les raccourcis globaux et le démarrage automatique sont portés mais n'ont
+jamais tourné sur un vrai bureau. Sous Windows, le garde-fou reconnaît un programme lancé par Claude
+grâce à un Job Object, l'équivalent du cgroup de Linux ; sous macOS, il n'a ni l'un ni l'autre et le
+reconnaît moins bien.
 
 ## Installation
 
@@ -201,15 +202,22 @@ le micro et les fenêtres. Cette voie est en cours de premier essai : signale to
 Une carte NVIDIA sert aussi sous WSL2 si son pilote Windows est à jour ; sinon le processeur
 transcrit, plus lentement. La bulle et les raccourcis globaux ne sont pas garantis sous WSLg.
 
-### Windows natif : pas encore prêt
+### Windows natif (expérimental : jamais lancé sur un vrai PC)
 
-`install.ps1` existe, mais Astrel plante au démarrage tant que deux appels propres à Linux ne sont
-pas adaptés (serveur du HUD). Passe par WSL2 en attendant.
+L'intégration continue installe Astrel sous Windows, le démarre et lui fait tenir une conversation à
+chaque envoi, mais personne ne l'a encore lancé sur un vrai PC. Il faut Python 3.11 à 3.13
+(python.org), Node.js, Git et Claude Code installé et connecté (`claude`), puis, dans PowerShell :
 
-**Hors Linux, ce qui manque encore :** la bulle, les raccourcis globaux, le démarrage automatique
-(Astrel se lance à la main), la transcription sur carte graphique (elle passe par le processeur)
-et le contrôle de santé `doctor`. Le garde-fou reconnaît moins bien un programme lancé par Claude,
-faute de cgroup.
+```powershell
+git clone https://github.com/Zaudrax/Astrel.git $HOME\Astrel ; cd $HOME\Astrel
+py -3 tools\check_install.py
+powershell -ExecutionPolicy Bypass -File .\install.ps1   # installateur commun (install.py)
+.venv\Scripts\python -m astrel            # l'assistant
+.venv\Scripts\python -m astrel --hud      # le HUD, dans un autre terminal
+```
+
+La transcription sur carte graphique n'est réglée que sous Linux : ailleurs, si elle échoue, Astrel
+passe par le processeur, plus lentement.
 
 ## Limites connues
 

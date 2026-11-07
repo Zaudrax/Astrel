@@ -110,11 +110,12 @@ receives the text of the answers, never the microphone audio.
 | **Debian 13**, GNOME, Wayland | Used every day: this is the reference machine. |
 | Ubuntu 24.04, Debian 12 | Same packages; not yet tried on a fresh machine. |
 | Windows 10 or 11 + WSL2 | **The recommended route on Windows**: the Linux code, inside Ubuntu. First trial under way. |
-| macOS | Ported on paper (`astrel/platform/` layer), **never run on a real machine**. |
-| Native Windows | **Not ready yet**: startup crashes (two Linux-only calls to adapt). |
+| macOS | Ported (`astrel/platform/` layer) and checked by continuous integration: install, startup, one conversation turn, tests. **Never run on a real machine.** |
+| Native Windows | Ported and checked by continuous integration: install, startup, one conversation turn, tests. **Never tried on a real PC.** |
 
-The bubble, global shortcuts, autostart and GPU transcription work on Linux only. Outside Linux,
-protection against a program started by Claude is weaker: there is no cgroup to recognise it.
+Outside Linux, the bubble, global shortcuts and autostart are ported but have never run on a real
+desktop. On Windows, the guardrail recognises a program started by Claude through a Job Object, the
+equivalent of the Linux cgroup; macOS has neither, so recognition there is weaker.
 
 ## Installation
 
@@ -198,14 +199,22 @@ in the way.
 An NVIDIA card also works under WSL2 if its Windows driver is up to date; otherwise the CPU does
 the transcription, more slowly. The bubble and global shortcuts are not guaranteed under WSLg.
 
-### Native Windows: not ready yet
+### Native Windows (experimental: never run on a real PC)
 
-`install.ps1` exists, but Astrel crashes at startup until two Linux-only calls are adapted (HUD
-server). Use WSL2 in the meantime.
+Continuous integration installs Astrel on Windows, starts it and holds a conversation with it on
+every push, but nobody has run it on a real PC yet. You need Python 3.11 to 3.13 (python.org),
+Node.js, Git and Claude Code installed and signed in (`claude`), then, in PowerShell:
 
-**Still missing outside Linux:** the bubble, global shortcuts, autostart (Astrel is started by
-hand), GPU transcription (the CPU does it) and the `doctor` health check. The guardrail is less
-able to recognise a program started by Claude, as there is no cgroup.
+```powershell
+git clone https://github.com/Zaudrax/Astrel.git $HOME\Astrel ; cd $HOME\Astrel
+py -3 tools\check_install.py
+powershell -ExecutionPolicy Bypass -File .\install.ps1   # shared installer (install.py)
+.venv\Scripts\python -m astrel            # the assistant
+.venv\Scripts\python -m astrel --hud      # the HUD, in another terminal
+```
+
+GPU transcription is only set up on Linux: elsewhere, if it fails, Astrel falls back to the CPU,
+which is slower.
 
 ## Known limitations
 
