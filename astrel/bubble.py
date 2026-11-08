@@ -99,6 +99,7 @@ from gi.repository import Gdk, Gtk, Pango  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from astrel import bubble_premium, config, state  # noqa: E402
+from astrel.bulle_commun import agents_en_cours  # noqa: E402  (07/11 : compte des sous-agents, commun avec la bulle Qt)
 from astrel import theme as theme_mod  # noqa: E402  (21/10, plan P17 : thème relu à chaud)
 from astrel.i18n import assistant_name, tr  # noqa: E402  (20/10 : langue de l'interface, relue à chaque affichage)
 from astrel.minichat import MiniChat  # noqa: E402
@@ -137,6 +138,7 @@ class Feed:
         self.paused = False  # voix en pause (⏸)
         self.detail = ""
         self.level = 0.0
+        self.agents = 0  # 07/11 : sous-agents de fond en cours (étoiles du repos)
         self.connected = False
         self.chat = MiniChat()
         self.closed_confirms: dict[str, None] = {}  # questions closes (réponse, délai), les plus récentes
@@ -149,6 +151,8 @@ class Feed:
                 asyncio.run(self._listen())
             except Exception:
                 pass
+            if self.connected:
+                self.agents = 0  # 07/11 : flux perdu, agents inconnus (relus au `hello`)
             self.connected = False
             self._from_file()
             time.sleep(1.0)
@@ -198,6 +202,8 @@ class Feed:
             # La voix d'Astrel compte plus que le micro, pour l'animation.
             if ev.get("source") == "voice" or self.state in (state.LISTENING, state.ASKING):
                 self.level = float(ev.get("value", 0.0))
+        elif kind == "tasks":
+            self.agents = agents_en_cours(ev) or 0  # 07/11 : sticky, rejoué au `hello`
 
 
 # CSS d'origine des cartes : posé au démarrage, puis remplacé par `theme.css_gtk` (Premium). Ne sert
@@ -708,6 +714,7 @@ class Bubble(Gtk.Window):
         # Opacité du motif de chaque état : celui de l'état courant monte vers 1, les autres
         # s'effacent au même rythme (FADE_STEP). Sans ça, le motif changeait d'un coup.
         self._layers: dict[str, float] = {state.OFF: 1.0}
+        self._agents = 0.0  # 07/11 : étoiles d'agents dessinées, lissées (`bubble_premium.agents_vers`)
         self._drag: tuple[int, int] | None = None
         self._scale0: int | None = None  # échelle au démarrage (_check_scale)
         self._pressed_at = 0.0
@@ -973,10 +980,13 @@ class Bubble(Gtk.Window):
                 self._layers[s] -= FADE_STEP
                 if self._layers[s] <= 0.0:
                     del self._layers[s]
+        agents = bubble_premium.agents_vers(self._agents, self.feed.agents)
+        fondu_agents, self._agents = agents != self._agents, agents
         # 29/10 (fluidité) : au repos stable (veille : respiration de 4 s à ±2 % ; micro coupé :
         # image fixe), 15 images/s suffisent ; tout changement (voix, état, fondu, thème) : 60.
+        # 07/11 : étoiles d'agents en orbite lente (30 s le tour) : 15 images/s aussi ; leur fondu : 60.
         calme = (st in (state.SLEEPING, state.OFF) and self._theme_mix >= 1.0 and self._level < 0.005
-                 and len(self._layers) == 1 and self._layers.get(st, 0.0) >= 1.0)
+                 and len(self._layers) == 1 and self._layers.get(st, 0.0) >= 1.0 and not fondu_agents)
         if not calme or self._ticks % CALME_PAS == 0:
             self._area.queue_draw()
         return True
@@ -1062,7 +1072,8 @@ class Bubble(Gtk.Window):
         # mission, ni levée ; ces états restent dans le HUD. Seul l'état d'Astrel est dessiné.
         bubble_premium.draw(
             cr, w, h, layers=[(s, min(1.0, a)) for s, a in self._layers.items() if a > 0.0],
-            t=(time.monotonic() - self._t0) if moving else 0.0, level=self._level if moving else 0.0, lk=look)
+            t=(time.monotonic() - self._t0) if moving else 0.0, level=self._level if moving else 0.0, lk=look,
+            agents=self._agents)
         return False
 
 

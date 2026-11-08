@@ -213,8 +213,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1   # shared installer (ins
 .venv\Scripts\python -m astrel --hud      # the HUD, in another terminal
 ```
 
-GPU transcription is only set up on Linux: elsewhere, if it fails, Astrel falls back to the CPU,
-which is slower.
+GPU transcription is only set up on Linux: elsewhere, Astrel transcribes on the CPU, which is slower
+(`ASTREL_STT_DEVICE=cuda` if CUDA and cuDNN are installed by hand).
 
 ## Known limitations
 

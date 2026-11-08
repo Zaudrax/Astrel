@@ -216,8 +216,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1   # installateur commun (
 .venv\Scripts\python -m astrel --hud      # le HUD, dans un autre terminal
 ```
 
-La transcription sur carte graphique n'est réglée que sous Linux : ailleurs, si elle échoue, Astrel
-passe par le processeur, plus lentement.
+La transcription sur carte graphique n'est réglée que sous Linux : ailleurs, Astrel transcrit sur le
+processeur, plus lentement (`ASTREL_STT_DEVICE=cuda` si CUDA et cuDNN sont installés à la main).
 
 ## Limites connues
 

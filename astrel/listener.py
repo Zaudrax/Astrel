@@ -5,6 +5,7 @@ rien ne quitte la machine avant que la phrase soit devenue du texte.
 from __future__ import annotations
 
 import logging
+import os
 import pathlib
 import threading
 import time
@@ -37,6 +38,21 @@ def _preload_cuda_libs() -> None:
                 ctypes.CDLL(str(lib), mode=ctypes.RTLD_GLOBAL)
             except OSError as exc:
                 log.debug("préchargement de %s impossible: %s", lib.name, exc)
+
+
+def whisper_device(system: str | None = None, env: dict | None = None) -> tuple[str, str]:
+    """(appareil, calcul) de Whisper. 07/11 (avant le premier essai sur un vrai Windows) : hors Linux, les
+    bibliothèques CUDA ne sont ni installées (requirements.txt) ni préchargées. Avec une carte NVIDIA,
+    `WhisperModel(device="cuda")` se charge pourtant (le pilote suffit) et c'est la TRANSCRIPTION qui casse
+    (« cublas64_12.dll is not found », ou arrêt net du process sur cudnn_ops64_9.dll), là où le repli de
+    `load` ne rattrape plus rien. Donc processeur d'office hors Linux, sauf `ASTREL_STT_DEVICE` posé exprès
+    (CUDA installé à la main)."""
+    from .platform import SYSTEM
+
+    env = os.environ if env is None else env
+    if (system or SYSTEM) != "linux" and not env.get("ASTREL_STT_DEVICE"):
+        return "cpu", "int8"
+    return config.STT_DEVICE, config.STT_COMPUTE
 
 
 def _setting(key: str, default):
@@ -94,9 +110,9 @@ class _WakeWhisper:
         _preload_cuda_libs()
         from faster_whisper import WhisperModel
 
+        device, compute = whisper_device()
         try:
-            self._model = WhisperModel(config.WAKE_TEXT_MODEL, device=config.STT_DEVICE,
-                                       compute_type=config.STT_COMPUTE)
+            self._model = WhisperModel(config.WAKE_TEXT_MODEL, device=device, compute_type=compute)
         except Exception as exc:
             log.warning("mot d'éveil : Whisper CUDA indisponible (%s), processeur int8", exc)
             self._model = WhisperModel(config.WAKE_TEXT_MODEL, device="cpu", compute_type="int8")
@@ -605,9 +621,10 @@ class Transcriber:
         _preload_cuda_libs()
         from faster_whisper import WhisperModel
 
+        device, compute = whisper_device()
         try:
-            self._model = WhisperModel(config.STT_MODEL, device=config.STT_DEVICE, compute_type=config.STT_COMPUTE)
-            self.device = config.STT_DEVICE
+            self._model = WhisperModel(config.STT_MODEL, device=device, compute_type=compute)
+            self.device = device
         except Exception as exc:  # pas de CUDA disponible → CPU
             log.warning("reconnaissance vocale CUDA indisponible (%s), bascule sur CPU int8", exc)
             self._model = WhisperModel(config.STT_MODEL, device="cpu", compute_type="int8")

@@ -23,7 +23,14 @@ n'est rechargé (Ollama 0.30.6 garde un seul exécutant pour qwen3.5:9b et astre
 « coupée » ; `--simuler` rejoue alors n'importe quel budget de réflexion ≤ plafond à partir d'un passage AVEC et
 d'un passage SANS réflexion (au-delà du budget, la production relance la même demande sans réflexion : on prend
 le passage SANS de la même question, et le temps de réflexion jusqu'au budget).
-Résultat : runtime/banc/qualite-<date>-<config>.json (écrit après chaque question)."""
+Résultat : runtime/banc/qualite-<date>-<config>.json (écrit après chaque question).
+
+06/11 (lot 9, tout tour local par le CLI avec outils quand le banc de tools/banc_local.py a réussi) :
+    .venv/bin/python tools/banc_qualite_local.py --config lot9-cli --chemin cli --passages 1 [--verification]
+`--chemin cli` : CHAQUE question (conversation comme agent) passe par le chemin de production du lot 9
+(`outils_local.OutilsLocaux.repondre` : message avec faits, outils de lecture ET web, SearXNG de la machine, relecture
+`MoteurLocal.relire` si `--verification`, filtre, racine d'Astrel ouverte) ; seul le hook est celui du banc.
+`--cli-reflexion off` : réflexion du CLI coupée (MAX_THINKING_TOKENS=0), pour mesure."""
 from __future__ import annotations
 
 import argparse
@@ -233,6 +240,23 @@ def tag_precis(base: str) -> str:
     return tag
 
 
+CLI = {"chemin": "direct", "verification": False, "reflexion": "on"}  # 06/11 (lot 9) : --chemin, --cli-reflexion
+
+
+def tag_contexte(base: str, num_ctx: int) -> str:
+    """06/11 (lot 9) : dérivé du CLI à un AUTRE contexte (R5, 64 k) sous son propre nom : le dérivé d'Astrel
+    (astrel-qwen3.5-9b, 32 k) n'est jamais recréé par le banc pendant qu'Astrel tourne."""
+    import httpx
+
+    tag = f"{outils_local.tag_derive(base)}-ctx{int(num_ctx)}"
+    r = httpx.post(config.OLLAMA_URL.rstrip("/") + "/api/create", timeout=60.0, json={
+        "model": tag, "from": base, "stream": False,
+        "parameters": {"num_ctx": int(num_ctx), "num_gpu": moteur_local.NUM_GPU_TOUT, **outils_local.ECHANTILLONNAGE}})
+    if r.status_code >= 400:
+        raise SystemExit(f"modèle {tag} non créé : {r.text}")
+    return tag
+
+
 def tour_agent(q: str, projet: Path, tag: str) -> dict:
     journal = projet.parent / f"hook-{time.monotonic_ns()}.jsonl"
 
@@ -241,17 +265,41 @@ def tour_agent(q: str, projet: Path, tag: str) -> dict:
         reglages = Path(cmd[cmd.index("--settings") + 1])
         reglages.write_text(json.dumps(outils_local.reglages_hook(config.hook_command(HOOK))), encoding="utf-8")
         kw["env"] = {**kw["env"], "BANC_LOCAL_JOURNAL": str(journal)}
+        if CLI["reflexion"] == "off":
+            kw["env"]["MAX_THINKING_TOKENS"] = "0"
         return subprocess.Popen(cmd, **kw)
 
     o = outils_local.OutilsLocaux(preparer=lambda b: tag, lancer=lancer)
     t0, premier, morceaux, erreur = time.monotonic(), None, [], ""
+    kw: dict = {}
+    if CLI["chemin"] == "cli":  # 06/11 (lot 9) : le chemin de production (`coeur/local_tour._local_flux`)
+        q = message_local(q)
+        kw["web"] = True
+        if CLI["verification"]:
+            m = moteur_local.MoteurLocal()
+
+            def relire(d, brouillon, sources, web_tour, nav_tour, recherche=None):
+                return m.relire(d, brouillon, "fr", sources=sources, web=web_tour, navigateur=nav_tour,
+                                recherche=recherche)
+            kw["relire"] = relire
     try:
-        for x in o.repondre(q, "fr", projet=projet):
+        for x in o.repondre(q, "fr", projet=projet, **kw):
             if premier is None:
                 premier = time.monotonic() - t0
             morceaux.append(x)
     except moteur_local.ErreurLocale as exc:
         erreur = str(exc)
+    if erreur and not morceaux and CLI["chemin"] == "cli":
+        # 06/11 (lot 9) : comme la production (`coeur/local_tour._local_repli`) : CLI en échec avant tout texte →
+        # le moteur direct répond (sans outil, la raison dans ses consignes)
+        try:
+            for x in moteur_local.MoteurLocal().repondre(q, "fr", sans_web="panne"):
+                if premier is None:
+                    premier = time.monotonic() - t0
+                morceaux.append(x)
+            erreur = f"repli direct ({erreur[:120]})"
+        except moteur_local.ErreurLocale as exc:
+            erreur += f" ; repli impossible : {exc}"
     appels = []
     if journal.exists():
         appels = [json.loads(l).get("outil") for l in journal.read_text(encoding="utf-8").splitlines() if l.strip()]
@@ -261,6 +309,14 @@ def tour_agent(q: str, projet: Path, tag: str) -> dict:
         texte = marquer(texte, [q, *o.derniere.get("urls_vues", [])], "fr")
     return {"texte": texte, "premier_s": round(premier or 0.0, 2), "total_s": round(time.monotonic() - t0, 2),
             "outils": appels, "derniere": o.derniere, "erreur": erreur}
+
+
+def tour(item: dict, projet: Path | None, tag: str, reflexion: bool, plafond: int, options: dict | None) -> tuple:
+    """(résultat, outils de lecture appelés) d'une question, sur le chemin choisi."""
+    if item["cat"] == "agent" or CLI["chemin"] == "cli":
+        r = tour_agent(item["q"].replace("{projet}", str(projet)), projet, tag)
+        return r, sum(1 for a in r["outils"] if a in ("Read", "Grep", "Glob"))
+    return tour_conversation(item["q"], reflexion, plafond, options), 0
 
 
 # ------------------------------------------------------------------ résumé
@@ -377,10 +433,15 @@ def lancer_banc(args: argparse.Namespace) -> dict:
         moteur_local.NUM_CTX = args.num_ctx
     if hasattr(moteur_local, "VERIFICATION"):
         moteur_local.VERIFICATION = args.verification
-    projet = preparer_projet() if any(i["cat"] == "agent" for i in items) else None
+    CLI.update(chemin=args.chemin, verification=args.verification, reflexion=args.cli_reflexion)
+    projet = preparer_projet() if args.chemin == "cli" or any(i["cat"] == "agent" for i in items) else None
+    if args.chemin == "cli":
+        from astrel import searxng_local
+        print(f"SearXNG : {searxng_local.assurer() or 'prêt'}", flush=True)
     tag_agent = ""
     if projet:
         tag_agent = tag_precis(moteur_local.modele()) if args.echantillonnage == "precis" else \
+            tag_contexte(moteur_local.modele(), args.num_ctx) if args.num_ctx else \
             outils_local.preparer_modele(moteur_local.modele())
     SORTIE.mkdir(parents=True, exist_ok=True)
     fichier = Path(args.sortie) if args.sortie else SORTIE / f"qualite-{time.strftime('%Y%m%d-%H%M')}-{args.config}.json"
@@ -388,13 +449,7 @@ def lancer_banc(args: argparse.Namespace) -> dict:
     print(f"banc de qualité {args.config} : {len(items)} questions × {args.passages} → {fichier}", flush=True)
     for passage in range(args.passages):
         for item in items:
-            if item["cat"] == "agent":
-                q = item["q"].replace("{projet}", str(projet))
-                r = tour_agent(q, projet, tag_agent)
-                lus = sum(1 for a in r["outils"] if a in ("Read", "Grep", "Glob"))
-            else:
-                r = tour_conversation(item["q"], args.reflexion == "on", args.plafond, options)
-                lus = 0
+            r, lus = tour(item, projet, tag_agent, args.reflexion == "on", args.plafond, options)
             r.update(id=item["id"], cat=item["cat"], passage=passage, note=noter(item, r["texte"], motifs, lus))
             res["runs"].append(r)
             print(f"  {'ok ' if r['note']['ok'] else 'NON'} {item['id']} p{passage} {r['premier_s']}/{r['total_s']} s "
@@ -477,6 +532,9 @@ def main() -> int:
     ap.add_argument("--consignes", default="", help="fichier .py d'une autre version de moteur_local (A/B du prompt)")
     ap.add_argument("--exemples", action="store_true", help="exemples vérifiés en fin de consignes")
     ap.add_argument("--num-ctx", type=int, default=0, help="contexte (R5 : 65536 après OLLAMA_KV_CACHE_TYPE=q8_0)")
+    ap.add_argument("--chemin", choices=("direct", "cli"), default="direct",
+                    help="06/11 (lot 9) : cli = toutes les questions par le CLI local avec outils (production du lot 9)")
+    ap.add_argument("--cli-reflexion", choices=("on", "off"), default="on", help="réflexion du CLI (MAX_THINKING_TOKENS)")
     ap.add_argument("--categories", default="")
     ap.add_argument("--sans-agent", action="store_true")
     ap.add_argument("--sortie", default="")

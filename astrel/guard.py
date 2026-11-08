@@ -7228,11 +7228,48 @@ def _refus_web_local(tool_name: str, tool_input: object, env: dict | None = None
     return ""
 
 
+# 06/11 (lot 9 du moteur local, autorisation de l'utilisateur pour ce chantier) : la racine d'Astrel est ouverte en LECTURE au
+# CLI local (ses consignes, son code). Ses dossiers de DONNÉES (état, conversations, journaux, coffre, mémoire) et
+# tout secret (d'Astrel ou du compte) lui sont refusés SANS carte : le modèle local n'en a pas besoin, et son tour a
+# Internet. Durcissement seulement (avant : runtime/ et vault/ se lisaient, WORKDIR contient Astrel).
+LECTURE_LOCALE_REFUSEE = [p.resolve() for p in (config.RUNTIME, config.LOGS, config.ROOT / "vault",
+                                                config.ROOT / "memory")]
+_OUTILS_LECTURE_LOCALE = ("Read", "Grep", "Glob", "LS", "NotebookRead")
+
+
+def _refus_lecture_locale(tool_name: str, tool_input: object, env: dict | None = None) -> str:
+    """06/11 (lot 9) : raison de refuser SANS CARTE une lecture du CLI local ("" : jugement habituel). Seulement quand
+    le hook tourne pour le CLI local (son dossier de configuration, `_du_cli_local`) : plus strict, jamais plus large."""
+    if tool_name not in _OUTILS_LECTURE_LOCALE or not isinstance(tool_input, dict) or not _du_cli_local(env):
+        return ""
+    cibles = [str(tool_input.get(k) or "") for k in ("file_path", "notebook_path", "path")]
+    motif = str(tool_input.get("pattern") or "") if tool_name == "Glob" else ""
+    if motif.startswith(("/", "~")) or os.path.isabs(motif) or re.match(r"^[A-Za-z]:[\\/]", motif):
+        cibles.append(motif.split("*", 1)[0] or "/")
+    for brut in cibles:
+        if not brut.strip():
+            continue
+        try:
+            p = _resolve(brut)
+        except (OSError, ValueError, RuntimeError):
+            return "chemin illisible : lecture refusée au modèle local par le garde-fou d'Astrel."
+        if _under(p, LECTURE_LOCALE_REFUSEE) or _under(p, SECRET_PATHS) or secret_du_compte(p) \
+                or _under(p, list(_US.racines)):
+            return (f"{p} : données privées ou secret d'Astrel, lecture refusée au modèle local par le garde-fou "
+                    "(état, conversations, journaux, coffre, mémoire, clés). N'insiste pas : son code et sa "
+                    "documentation se lisent (astrel/, docs/).")
+    return ""
+
+
 def refused(tool_name: str, tool_input: object = None) -> str:
     """Raison du refus d'office si `tool_name` est dans « refuser » ; sinon vide. 05/11 (lot 5) : outils du
     serveur `astrel_local` jugés sur leur ENTRÉE (`_refus_outil_local`) ; sans entrée : refusés.
     05/11 (lot 7B) : outils `web_local` et `playwright_local` refusés hors du VRAI CLI local (`_cli_local_reel`)
-    quand le HOOK juge (entrée donnée ; le cœur, qui rejuge une carte sans l'entrée, ne voit pas ses ancêtres)."""
+    quand le HOOK juge (entrée donnée ; le cœur, qui rejuge une carte sans l'entrée, ne voit pas ses ancêtres).
+    06/11 (lot 9) : lectures du CLI local dans les données d'Astrel et les secrets (`_refus_lecture_locale`)."""
+    why = _refus_lecture_locale(tool_name, tool_input)
+    if why:
+        return why
     if tool_name.startswith("mcp__astrel_local__"):
         why = _refus_outil_local(tool_name.rsplit("__", 1)[-1], tool_input)
         if why:

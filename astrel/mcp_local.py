@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import functools
+import os
 import sys
 from pathlib import Path
 
@@ -85,6 +86,23 @@ def commande_autorisee(id: str) -> dict:  # noqa: A002
     return commandes_locales.lancer(id, _ARGS["commandes"], _racines())
 
 
+def _projet_de(fichier: str) -> Path:
+    """06/11 (lot 9) : un fichier d'Astrel lui-même (ses consignes, son code) hors du projet du tour est proposé dans
+    la racine d'Astrel ; le reste, dans le projet. Le garde-fou refuse toujours les fichiers protégés (`_juge`)."""
+    projet = Path(_ARGS["projet"])
+    if _ARGS["commandes"]:  # banc : le projet jetable seul
+        return projet
+    try:
+        raw = os.path.expanduser(str(fichier or "").strip())
+        p = Path(os.path.normpath(raw if os.path.isabs(raw) else os.path.join(str(projet), raw)))
+        racine = config.ROOT.resolve()
+        if not propositions_local._dans(p, projet.resolve()) and propositions_local._dans(p, racine):
+            return racine
+    except (OSError, ValueError):
+        pass
+    return projet
+
+
 @server.tool()
 def proposer_modification(fichier: str, contenu: str = "", ancien: str = "", nouveau: str = "",
                           raison: str = "") -> dict:
@@ -92,7 +110,7 @@ def proposer_modification(fichier: str, contenu: str = "", ancien: str = "", nou
     le HUD. `fichier` : chemin (absolu ou relatif au projet). Soit `contenu` = le texte COMPLET du fichier
     après modification (ou d'un nouveau fichier), soit `ancien` (un passage exact, présent une seule fois)
     et `nouveau` (son remplacement). `raison` : pourquoi, en une phrase."""
-    return propositions_local.deposer(fichier, Path(_ARGS["projet"]), contenu=contenu, ancien=ancien,
+    return propositions_local.deposer(fichier, _projet_de(fichier), contenu=contenu, ancien=ancien,
                                       nouveau=nouveau, raison=raison, canal=_ARGS["canal"],
                                       dossier=_ARGS["propositions"])
 

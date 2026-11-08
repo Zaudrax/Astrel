@@ -3,7 +3,10 @@
 La bulle GTK de Linux (`bubble.py`, réglée finement, relancée par l'utilisateur seulement) garde son code
 tel quel ; la bulle Qt de Windows et macOS (`bulle_qt.py`) prend ici les mêmes morceaux, recopiés
 sans GTK : flux du cœur (état, niveau sonore, mini-chat, questions), réponse du cœur à une carte,
-place visible de la bulle, verrou d'une seule bulle, apparence de repli."""
+place visible de la bulle, verrou d'une seule bulle, apparence de repli.
+
+07/11 : `agents_en_cours` (nombre de sous-agents en cours, lu dans l'évènement `tasks`) sert AUSSI à la
+bulle GTK, pour que le compte soit écrit une seule fois (les étoiles d'agents du repos, `bubble_premium`)."""
 from __future__ import annotations
 
 import asyncio
@@ -23,6 +26,21 @@ CALME_PAS = 4  # au repos stable : une image sur 4 (15 images/s)
 FADE_STEP = 0.06  # par image : fondu d'un état à l'autre en ≈ 0,3 s
 POS_FILE = config.RUNTIME / "bubble.json"
 LOCK_FILE = config.RUNTIME / "bubble.lock"
+
+
+def agents_en_cours(ev: dict) -> int | None:
+    """Sous-agents en cours d'après un évènement du flux, None si ce n'est pas un évènement `tasks`.
+
+    `tasks` (sticky : rejoué dans `hello`) porte dans `items` les tâches VIVANTES du CLI (`coeur/taches.py`,
+    `_on_task`) : sous-agents (`kind` « agent », `brain.task_info`) et commandes longues ou de fond (Bash…),
+    qui ne comptent pas ; les tâches finies sont dans `done`, à part. Au repos de la bulle, tout sous-agent
+    encore vivant travaille forcément en fond (le tour principal est fini)."""
+    if not isinstance(ev, dict) or ev.get("type") != "tasks":
+        return None
+    items = ev.get("items")
+    if not isinstance(items, list):
+        return 0
+    return sum(1 for k in items if isinstance(k, dict) and k.get("kind") == "agent" and not k.get("done"))
 
 
 def fallback_look():
@@ -47,6 +65,7 @@ class Feed:
         self.paused = False
         self.detail = ""
         self.level = 0.0
+        self.agents = 0  # 07/11 : sous-agents en cours (`agents_en_cours`)
         self.connected = False
         self.chat = MiniChat()
         self.closed_confirms: dict[str, None] = {}
@@ -59,6 +78,8 @@ class Feed:
                 asyncio.run(self._listen())
             except Exception:
                 pass
+            if self.connected:
+                self.agents = 0  # flux perdu : plus rien ne dit que des agents tournent (relu au `hello`)
             self.connected = False
             self._from_file()
             time.sleep(1.0)
@@ -81,14 +102,17 @@ class Feed:
                 async for msg in ws:
                     if msg.type != aiohttp.WSMsgType.TEXT:
                         continue
-                    ev = json.loads(msg.data)
-                    if ev.get("type") == "hello":
-                        for sticky in ev.get("sticky", []):
-                            self.apply(sticky)
-                        for old in ev.get("history", []):
-                            self.apply({**old, "replay": True})
-                    else:
-                        self.apply(ev)
+                    self.recevoir(json.loads(msg.data))
+
+    def recevoir(self, ev: dict) -> None:
+        """Un message du HUD : `hello` (sujets sticky puis historique rejoués) ou un évènement."""
+        if ev.get("type") == "hello":
+            for sticky in ev.get("sticky", []):
+                self.apply(sticky)
+            for old in ev.get("history", []):
+                self.apply({**old, "replay": True})
+        else:
+            self.apply(ev)
 
     def apply(self, ev: dict) -> None:
         kind = ev.get("type")
@@ -106,6 +130,8 @@ class Feed:
         elif kind == "level":
             if ev.get("source") == "voice" or self.state in (state.LISTENING, state.ASKING):
                 self.level = float(ev.get("value", 0.0))
+        elif kind == "tasks":
+            self.agents = agents_en_cours(ev) or 0
 
 
 def answer_refusal(reply: str | None) -> str:

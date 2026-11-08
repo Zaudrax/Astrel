@@ -528,7 +528,8 @@ def test_tour_local_ouvre_les_actions_seulement_si_le_banc_le_permet(monkeypatch
     class Outils:
         base = "qwen3.5:9b"
 
-        def repondre(self, demande, langue="fr", projet=None, stop=None, actions=False, canal="", lecture=()):  # 05/11 : lecture
+        def repondre(self, demande, langue="fr", projet=None, stop=None, actions=False, canal="", lecture=(),
+                     **kw):  # 05/11 : lecture ; 06/11 (lot 9) : historique, relire
             vus.append((actions, canal))
             yield "ok"
 

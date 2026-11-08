@@ -76,6 +76,29 @@ _MENTION_LOCAL = re.compile(r"sans (?:accès à |connexion )?internet|pas (?:d['
                             r"no (?:web|internet) access|locally|offline", re.I)
 _PARENTHESE_LOCAL = re.compile(r"\s*\((?:[^()]*?(?:internet|en local|hors ligne|offline|locally)[^()]*)\)", re.I)
 _FIN_PHRASE = re.compile(r"(?<=[.!?…])\s+|\n")
+# 06/11 (lot 9, essai de l'utilisateur à 09:02 : « sans connexion Internet active… ta machine isolée ») : phrase qui NIE
+# l'accès à Internet. Fausse quand les outils web étaient ouverts dans le tour (`FiltreSortie(web=True)`) : la
+# première devient `CORRECTION_WEB`, les suivantes partent ; sans les outils web (chemin direct, « rien ne sort »),
+# elle est vraie et reste.
+# Toujours À LA PREMIÈRE PERSONNE (ou en réponse directe « Non, pas d'accès… ») : « Organic Maps marche sans
+# Internet » ou « sur une machine isolée du réseau, … » parlent d'autre chose et restent.
+_RESEAU = r"(?:internet|(?:au |le )?web|(?:aux |les )?réseaux? (?:externes?|extérieurs?)|en ligne)"
+_NIE_INTERNET = re.compile(
+    r"\bje (?:n['’]ai|ne dispose|ne possède)\s+(?:pas|aucun|aucune|plus)\b[^.!?\n]{0,30}(?:accès|connexion)"
+    r"[^.!?\n]{0,30}" + _RESEAU +
+    r"|\bje (?:fonctionne|tourne|travaille|suis|réponds|opère|reste)\b[^.!?\n]{0,50}(?:sans (?:aucun )?(?:accès (?:à |au )?|"
+    r"connexion (?:à )?)?(?:internet|web|réseau)|sans connexion (?:externe|extérieure)|hors ligne|déconnecté|isolé)"
+    r"|\bje ne (?:peux|sais) pas (?:accéder à|aller sur|naviguer sur|consulter|me connecter à|chercher sur) " + _RESEAU +
+    r"|^\W*(?:(?:non|oui|exactement|en effet|c['’]est ça)\W+)*(?:pas|aucun) (?:d['’])?(?:accès|connexion) (?:à |au |aux )?"
+    + _RESEAU +
+    r"|\b(?:ta|cette) machine isolée\b|\bmon accès (?:à |au )?internet est (?:coupé|désactivé|inexistant)"
+    r"|\bi (?:do not|don't|cannot|can't) (?:have )?(?:any )?(?:access to |connect to |browse |search )?(?:the )?"
+    r"(?:internet|web)(?: access)?\b"
+    r"|\bi (?:have|got) no (?:internet|web|network) (?:access|connection)\b"
+    r"|\bi(?:'m| am| run| work| operate)\b[^.!?\n]{0,30}\b(?:offline|without (?:internet|web|network) access)\b"
+    r"|^\W*(?:(?:no|yes|exactly|right|indeed)\W+)*no (?:internet|web|network) (?:access|connection)\b", re.I)
+CORRECTION_WEB = {"fr": "J'ai accès à Internet par mes outils : recherche web et lecture de pages.",
+                  "en": "I have Internet access through my tools: web search and page reading."}
 
 
 def _internes() -> list[str]:
@@ -112,12 +135,14 @@ def _majuscule(texte: str) -> str:
 class FiltreSortie:
     """Filtre en flux : `feed(morceau)` rend ce qui peut partir (phrases finies), `flush()` le reste."""
 
-    def __init__(self, demande: str = "", langue: str = "fr", prenom_: str | None = None) -> None:
+    def __init__(self, demande: str = "", langue: str = "fr", prenom_: str | None = None, web: bool = False) -> None:
         self.langue = langue if langue in ("fr", "en") else "fr"
         # 05/11 : `prenom_` (tests, banc) ; None = celui du profil
         self._salut, self._apostrophe = _motifs_prenom(prenom() if prenom_ is None else str(prenom_ or "").strip())
         self.garder_soi = bool(_SUR_SOI.search(demande or ""))
         self.garder_local = bool(_SUR_INTERNET.search(demande or ""))
+        # 06/11 (lot 9) : outils web ouverts dans ce tour : une phrase qui nie Internet est fausse (`_NIE_INTERNET`)
+        self.web, self._corrige = bool(web), False
         self._buf, self._debut, self._mentions, self._code = "", True, 0, False
         self._retenu, self._rendu = "", False  # tête retirée ; rendue si rien d'autre ne vient (« Bonjour ! » seul)
 
@@ -169,6 +194,13 @@ class FiltreSortie:
     def _phrase(self, p: str) -> str:
         p = _chemins_internes(p, self.langue)
         p = self._apostrophe.sub("", p)
+        if self.web and _NIE_INTERNET.search(p):
+            # 06/11 (lot 9) : la première phrase fausse devient la vraie, une fois ; les redites partent
+            fin = p[len(p.rstrip()):]
+            if self._corrige:
+                return "\n" if "\n" in fin else ""
+            self._corrige, self._debut = True, False
+            return CORRECTION_WEB[self.langue] + (fin or " ")
         if not self.garder_local:
             p = _PARENTHESE_LOCAL.sub("", p)
         if self._debut:
@@ -195,9 +227,9 @@ class FiltreSortie:
         return p
 
 
-def filtrer(texte: str, demande: str = "", langue: str = "fr", prenom_: str | None = None) -> str:
-    """Le texte entier filtré (même résultat qu'en flux)."""
-    f = FiltreSortie(demande, langue, prenom_)
+def filtrer(texte: str, demande: str = "", langue: str = "fr", prenom_: str | None = None, web: bool = False) -> str:
+    """Le texte entier filtré (même résultat qu'en flux). 06/11 (lot 9) : `web` = outils web ouverts dans le tour."""
+    f = FiltreSortie(demande, langue, prenom_, web)
     return (f.feed(texte) + f.flush()).strip()
 
 

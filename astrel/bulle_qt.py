@@ -396,7 +396,8 @@ def _jpeg(image: QtGui.QImage, max_octets: int = 256 * 1024, max_cote: int = 156
 
 
 def peindre(w: int, h: int, ratio: float, couches: list[tuple[str, float]], t: float, niveau: float,
-            maintenant: bubble_premium.Look, avant: bubble_premium.Look | None = None, mix: float = 1.0) -> QtGui.QImage:
+            maintenant: bubble_premium.Look, avant: bubble_premium.Look | None = None, mix: float = 1.0,
+            agents: float = 0.0) -> QtGui.QImage:
     """L'orbe dessinée par `bubble_premium` (cairo) dans une image, posée telle quelle par Qt.
     Pendant un changement de thème, fondu enchaîné de l'ancien au nouveau (comme `bubble._on_draw`)."""
     lw, lh = max(1, round(w * ratio)), max(1, round(h * ratio))
@@ -404,11 +405,11 @@ def peindre(w: int, h: int, ratio: float, couches: list[tuple[str, float]], t: f
     cr = cairo.Context(surface)
     cr.scale(ratio, ratio)
     if avant is None or mix >= 1.0:
-        bubble_premium.draw(cr, w, h, layers=couches, t=t, level=niveau, lk=maintenant)
+        bubble_premium.draw(cr, w, h, layers=couches, t=t, level=niveau, lk=maintenant, agents=agents)
     else:
         for lk, alpha in ((avant, 1.0 - mix), (maintenant, mix)):
             cr.push_group()
-            bubble_premium.draw(cr, w, h, layers=couches, t=t, level=niveau, lk=lk)
+            bubble_premium.draw(cr, w, h, layers=couches, t=t, level=niveau, lk=lk, agents=agents)
             cr.pop_group_to_source()
             cr.paint_with_alpha(max(0.0, min(1.0, alpha)))
     surface.flush()
@@ -450,6 +451,7 @@ class Bulle(QtWidgets.QWidget):
         self._niveau = 0.0
         self._etat_montre = state.OFF
         self._couches: dict[str, float] = {state.OFF: 1.0}
+        self._agents = 0.0  # 07/11 : étoiles d'agents du repos, lissées (comme `bubble.py`)
         self._restaurer_position()
         self._minuteur = QtCore.QTimer(self, timeout=self._tick)
         self._minuteur.start(int(1000 / FPS))
@@ -624,8 +626,10 @@ class Bulle(QtWidgets.QWidget):
                 self._couches[s] -= FADE_STEP
                 if self._couches[s] <= 0.0:
                     del self._couches[s]
+        agents = bubble_premium.agents_vers(self._agents, self.flux.agents)
+        fondu_agents, self._agents = agents != self._agents, agents
         calme = (st in (state.SLEEPING, state.OFF) and self._theme_mix >= 1.0 and self._niveau < 0.005
-                 and len(self._couches) == 1 and self._couches.get(st, 0.0) >= 1.0)
+                 and len(self._couches) == 1 and self._couches.get(st, 0.0) >= 1.0 and not fondu_agents)
         if not calme or self._images % CALME_PAS == 0:
             self.update()
 
@@ -659,7 +663,8 @@ class Bulle(QtWidgets.QWidget):
     def paintEvent(self, _ev: QtGui.QPaintEvent) -> None:  # noqa: N802
         image = peindre(self.width(), self.height(), self.devicePixelRatioF(),
                         [(s, min(1.0, a)) for s, a in self._couches.items() if a > 0.0],
-                        time.monotonic() - self._t0, self._niveau, self._theme, self._theme_avant, self._theme_mix)
+                        time.monotonic() - self._t0, self._niveau, self._theme, self._theme_avant, self._theme_mix,
+                        agents=self._agents)
         p = QtGui.QPainter(self)
         p.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_Source)
         p.fillRect(self.rect(), Qt.GlobalColor.transparent)

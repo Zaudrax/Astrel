@@ -203,6 +203,7 @@ def test_installation_prepare_le_pont_whatsapp(monkeypatch, capsys):
     monkeypatch.setattr(inst, "initial_autonomy", lambda **k: False)
     monkeypatch.setattr(inst, "initial_affichage", lambda **k: False)  # jamais le vrai runtime/settings.json
     monkeypatch.setattr(inst, "copy_examples", lambda: [])
+    monkeypatch.setattr(inst, "preparer_projets", lambda workdir: False)  # jamais le vrai dossier personnel
     assert inst.main(["--sans-modeles", "--sans-demarrage"]) == 0
     assert (["npm", "ci", "--no-audit", "--no-fund", "--silent"], "whatsapp") in calls
     assert "Préparer WhatsApp" in capsys.readouterr().out
@@ -229,6 +230,7 @@ def _installation_sans_rien(monkeypatch, code_de):
     monkeypatch.setattr(inst, "initial_autonomy", lambda **k: False)
     monkeypatch.setattr(inst, "initial_affichage", lambda **k: False)
     monkeypatch.setattr(inst, "copy_examples", lambda: [])
+    monkeypatch.setattr(inst, "preparer_projets", lambda workdir: False)  # jamais le vrai dossier personnel
     assert inst.main(["--sans-modeles", "--sans-demarrage"]) == 0
     return calls
 
@@ -257,6 +259,7 @@ def test_installation_sans_npm_dit_ce_qui_manque(monkeypatch, capsys):
     monkeypatch.setattr(inst, "initial_autonomy", lambda **k: False)
     monkeypatch.setattr(inst, "initial_affichage", lambda **k: False)
     monkeypatch.setattr(inst, "copy_examples", lambda: [])
+    monkeypatch.setattr(inst, "preparer_projets", lambda workdir: False)  # jamais le vrai dossier personnel
     assert inst.main(["--sans-modeles", "--sans-demarrage"]) == 0
     assert not {"imagegen", "whatsapp", "mcp-servers"} & set(calls)
     assert "ni images et vidéos IA" in capsys.readouterr().out
@@ -416,3 +419,21 @@ def test_ci_lance_tous_les_tests_node():
     assert "(cd whatsapp && npm ci" in linux and "(cd imagegen && npm ci" in linux
     assert "run: node --test tests/*.test.mjs" in portage and "npm ci --no-audit --no-fund && node --test\n" in portage
     assert "actions/setup-node@v4" in portage and portage.count('node-version: "22"') == 1
+
+
+def test_dossier_des_projets_cree_s_il_manque(tmp_path, monkeypatch, capsys):
+    """07/11 (avant le premier essai sur un vrai Windows) : Claude Code est lancé DANS ce dossier ; un PC neuf
+    n'a pas de « Projets », et le cerveau ne démarrait jamais. Créé à l'installation, même sans démarrage auto."""
+    projets = tmp_path / "Mes projets" / "Projets"
+    assert inst.preparer_projets(str(projets)) is True and projets.is_dir()
+    assert inst.preparer_projets(str(projets)) is False  # déjà là : rien
+    monkeypatch.setattr(inst, "run", lambda cmd, cwd=inst.ROOT, check=True: 0)
+    monkeypatch.setattr(inst, "load_check_install", lambda root=inst.ROOT: type(
+        "C", (), {"MANQUE": "MANQUE", "ALERTE": "ALERTE", "run_checks": staticmethod(lambda: [])}))
+    monkeypatch.setattr(inst.shutil, "which", lambda name: None)
+    monkeypatch.setattr(inst, "initial_autonomy", lambda **k: False)
+    monkeypatch.setattr(inst, "initial_affichage", lambda **k: False)
+    monkeypatch.setattr(inst, "copy_examples", lambda: [])
+    autre = tmp_path / "ailleurs"
+    assert inst.main(["--sans-modeles", "--sans-demarrage", "--projets", str(autre)]) == 0
+    assert autre.is_dir() and "(créé, vide" in capsys.readouterr().out

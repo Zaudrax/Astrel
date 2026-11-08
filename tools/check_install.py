@@ -137,6 +137,34 @@ def check_git(sys_name: str) -> Check:
     return Check("git", OK, out.replace("git version ", ""))
 
 
+def git_bash_windows(env: dict | None = None, which=shutil.which) -> Path | None:
+    """bash.exe de Git pour Windows, cherché comme Claude Code : CLAUDE_CODE_GIT_BASH_PATH, sinon à côté de
+    git.exe (Git\\cmd\\git.exe → Git\\bin\\bash.exe), sinon les dossiers d'installation habituels."""
+    env = os.environ if env is None else env
+    explicite = env.get("CLAUDE_CODE_GIT_BASH_PATH")
+    if explicite and Path(explicite).is_file():
+        return Path(explicite)
+    candidats = []
+    git = which("git")
+    if git:
+        racine = Path(git).resolve().parent.parent
+        candidats += [racine / "bin" / "bash.exe", racine / "usr" / "bin" / "bash.exe"]
+    for var, sous in (("ProgramFiles", "Git"), ("ProgramFiles(x86)", "Git"), ("LOCALAPPDATA", "Programs/Git")):
+        if env.get(var):
+            candidats.append(Path(env[var]) / sous / "bin" / "bash.exe")
+    return next((c for c in candidats if c.is_file()), None)
+
+
+def check_git_bash() -> Check:
+    """07/11 (avant le premier essai sur un vrai Windows) : sans Git Bash, Claude Code lance les hooks par
+    PowerShell, qui ne lit pas leur ligne (`'C:/…' || exit 2`) : le garde-fou échoue et TOUT est refusé."""
+    bash = git_bash_windows()
+    if bash is None:
+        return Check("Git Bash", MANQUE, "bash.exe de Git introuvable (Claude Code y lance les hooks du garde-fou)",
+                     "winget install Git.Git, ou CLAUDE_CODE_GIT_BASH_PATH vers bash.exe")
+    return Check("Git Bash", OK, str(bash))
+
+
 def check_claude(sys_name: str, ci: bool) -> list[Check]:
     code, out = _out(["claude", "--version"])
     if code != 0:
@@ -363,6 +391,8 @@ def check_cairo_macos() -> Check:
 def run_checks(ci: bool = False) -> list[Check]:
     s = system()
     res = [check_system(s), check_python(s), check_venv(s), check_git(s)]
+    if s == "windows":
+        res.append(check_git_bash())
     res += check_claude(s, ci)
     res.append(check_node(s))
     res += check_audio(s, ci)

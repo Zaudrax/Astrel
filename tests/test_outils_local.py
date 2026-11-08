@@ -286,6 +286,9 @@ class _Flux:
         self.appels.append((demande, projet, kw.get("actions")))
         yield f"réponse {self.nom}"
 
+    def historique(self):  # 06/11 (lot 9) : la conversation locale donnée au CLI
+        return []
+
     base = "qwen3.5:9b"
 
 

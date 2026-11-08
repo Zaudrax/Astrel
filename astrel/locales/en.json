@@ -1975,9 +1975,13 @@
  "Nouvelle conversation : contexte remis à zéro.": "New conversation: context reset.",
  "Le modèle local a ouvert : {url}": "The local model opened: {url}",
  "Recherche web du modèle local indisponible : {raison}": "Local model web search unavailable: {raison}",
+ "Outils du modèle local indisponibles ({raison}) : réponse sans outils.": "Local model tools unavailable ({raison}): answering without tools.",
  "modèle local · réflexion (jusqu'à ~{min} min) · Échap pour arrêter": "local model · thinking (up to ~{min} min) · Esc to stop",
  "modèle local · réflexion (jusqu'à ~{min} min) · ~{jetons} jetons · Échap pour arrêter": "local model · thinking (up to ~{min} min) · ~{jetons} tokens · Esc to stop",
  "modèle local · réflexion trop longue : réponse directe… · Échap pour arrêter": "local model · thinking took too long: direct answer… · Esc to stop",
  "modèle local · réflexion sans réponse : réponse directe… · Échap pour arrêter": "local model · thinking gave no answer: direct answer… · Esc to stop",
- "modèle local · relecture de la réponse · Échap pour arrêter": "local model · checking the answer · Esc to stop"
+ "modèle local · relecture de la réponse · Échap pour arrêter": "local model · checking the answer · Esc to stop",
+ "Git Bash": "Git Bash",
+ "bash.exe de Git introuvable (Claude Code y lance les hooks du garde-fou)": "Git's bash.exe not found (Claude Code runs the guardrail hooks in it)",
+ "winget install Git.Git, ou CLAUDE_CODE_GIT_BASH_PATH vers bash.exe": "winget install Git.Git, or point CLAUDE_CODE_GIT_BASH_PATH to bash.exe"
 }

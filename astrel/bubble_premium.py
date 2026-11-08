@@ -18,8 +18,12 @@ Repos = étoile à quatre branches, couleur de l'encre
 de huit étoiles qui tourne, la tête brille, la traîne s'éteint (3 s le tour, 4 s au travail) ;
 parole = sept barres d'onde arrondies qui suivent le niveau ; confirmation = étoile et anneau
 ambre qui pulsent (2 s) ; micro coupé = étoile grise barrée. En sombre seulement, une lueur
-douce (dégradé, pas de flou) sous les étoiles allumées. Pas de pastille « nombre d'agents » :
-la bulle ne reçoit pas ce nombre.
+douce (dégradé, pas de flou) sous les étoiles allumées. Pas de pastille « nombre d'agents ».
+
+07/11 (demande de l'utilisateur) : au REPOS seulement, une petite étoile par sous-agent de fond en cours
+(`agents`, compté par `bulle_commun.agents_en_cours`, lissé par `agents_vers`) tourne lentement
+autour de l'étoile centrale (30 s le tour), réparties régulièrement, 6 au plus ; teinte discrète
+(`_agents_color` : encre secondaire teintée d'un peu d'accent), apparition et départ en fondu.
 
 23/10 (demande : « la bulle doit rester SIMPLE ») : AUCUN texte ni marque de mode dans la bulle.
 Ni anneau Autonome TOTAL, ni « TOTAL », ni mode d'usage (« silencieux », « dictée »), ni pastille
@@ -78,6 +82,12 @@ def look(mode: str = "dark", accent: str = "bleu") -> Look:
 
 def _clamp(x: float) -> float:
     return 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
+
+
+def _doux(x: float) -> float:
+    """Courbe en S (0 → 0, 1 → 1, pente nulle aux deux bouts)."""
+    x = _clamp(x)
+    return x * x * (3.0 - 2.0 * x)
 
 
 def _mix(a: Color, b: Color, k: float) -> Color:
@@ -154,9 +164,57 @@ _SPOTS = ((-0.48, -0.40, 0.16), (0.47, -0.30, 0.12), (0.40, 0.44, 0.17), (-0.42,
 # parole : enveloppe des sept barres (la plus haute au centre)
 _ENVELOPE = (0.42, 0.66, 0.86, 1.0, 0.86, 0.66, 0.42)
 
+# 07/11 : agents de fond au repos. Au-delà de AGENTS_MAX, on en dessine AGENTS_MAX.
+AGENTS_MAX = 6
+AGENTS_PAS = 0.03        # par image (60/s) : une étoile apparaît ou part en ≈ 0,55 s
+AGENTS_TOUR_S = 30.0     # un tour complet en 30 s : mouvement lent, à peine 0,5 px par image à 15 im/s
+AGENTS_ORBITE = 0.64     # rayon de l'orbite (fraction du rayon du disque) : hors des branches de l'étoile (0,40)
+AGENTS_TAILLE = 0.085    # demi-envergure d'une petite étoile (l'écoute : 0,11 à 0,17)
+
+
+def agents_vers(actuel: float, nombre: int) -> float:
+    """Nombre d'étoiles d'agents dessiné, lissé : avance de `AGENTS_PAS` par image vers `nombre`
+    (borné à 0..AGENTS_MAX). Valeur fractionnaire = la dernière étoile en fondu (`_agents`)."""
+    cible = float(max(0, min(int(nombre), AGENTS_MAX)))
+    if abs(cible - actuel) <= AGENTS_PAS + 1e-9:   # marge : 0,03 x 100 n'est pas tout à fait 3 en flottant
+        return cible
+    return actuel + (AGENTS_PAS if cible > actuel else -AGENTS_PAS)
+
+
+def _agents_color(lk: Look, accent: Color) -> Color:
+    """Teinte des étoiles d'agents : encre secondaire (`ink_2`, gris des textes discrets) teintée de 30 %
+    d'accent. Discrète, proche de l'encre, jamais le bleu vif de l'écoute ; suit l'accent et le mode."""
+    return _mix(lk.ink_2, accent, 0.30)
+
+
+def _agents(cr, cx: float, cy: float, r: float, t: float, n: float, color: Color, halo: bool) -> None:
+    """`n` petites étoiles (fractionnaire pendant un fondu) en orbite lente autour du centre.
+
+    Écart TAU/n : quand `n` passe de k à k+1, la nouvelle étoile sort de la première en s'allumant
+    pendant que les autres s'écartent ; à n entier elles sont régulièrement réparties. Rien ne saute."""
+    n = max(0.0, min(float(n), float(AGENTS_MAX)))
+    if n <= 0.0:
+        return
+    k = math.floor(n)
+    n = k + _doux(n - k)                            # départ et arrivée en douceur (place et opacité)
+    pas = TAU / max(n, 1.0)
+    a0 = -TAU / 4 + t * TAU / AGENTS_TOUR_S       # la première part du haut
+    for i in range(math.ceil(n)):
+        alpha = _clamp(n - i)                       # 1 pour les étoiles pleines, la fraction pour la dernière
+        if alpha <= 0.0:
+            continue
+        ang = a0 + i * pas
+        orbite = r * (AGENTS_ORBITE + 0.025 * math.sin(t * TAU / 7.0 + i * 1.7))   # léger va-et-vient
+        x, y = cx + orbite * math.cos(ang), cy + orbite * math.sin(ang)
+        tw = 0.90 + 0.10 * math.sin(t * TAU / 3.0 + i * 2.3)                       # scintille doucement
+        s = r * AGENTS_TAILLE * tw * (0.6 + 0.4 * alpha)
+        if halo:
+            _glow(cr, x, y, s * 2.0, color, 0.22 * alpha)
+        _star(cr, x, y, s, color, 0.85 * alpha * (0.85 + 0.15 * tw))
+
 
 def draw_state(cr, st: str, cx: float, cy: float, R: float, t: float, lvl: float, color: Color,
-               lk: Look | None = None) -> None:
+               lk: Look | None = None, agents: float = 0.0) -> None:
     """Motif d'un état (rayon `R` = demi-côté), dans SA couleur ; maquette B « Constellation »."""
     lk = lk or Look(fill=(0.17, 0.17, 0.18), fill_alpha=0.92, line=WHITE, line_alpha=0.12, shade_alpha=0.35)
     r = R * DISC
@@ -224,6 +282,8 @@ def draw_state(cr, st: str, cx: float, cy: float, R: float, t: float, lvl: float
         if halo:
             _glow(cr, cx, cy, r * 0.62, ink, 0.07 + 0.03 * breath)
         _star(cr, cx, cy, r * 0.40 * (1 + 0.02 * breath), ink)
+        # 07/11 : sous-agents de fond en cours (`color` = accent de la veille)
+        _agents(cr, cx, cy, r, t, agents, _agents_color(lk, color), halo)
 
 
 def _label(cr, text: str, cx: float, y: float, size: float, color: Color) -> None:
@@ -262,10 +322,11 @@ def _contour(cr, motif, lk: Look, R: float) -> None:
 
 
 def draw(cr, w: float, h: float, *, layers: list[tuple[str, float]], t: float, level: float,
-         lk: Look) -> None:
+         lk: Look, agents: float = 0.0) -> None:
     """Dessine la bulle Premium, SANS fond ni texte ni marque de mode (23/10). `layers` :
     [(état, opacité)] (fondu entre états, 300 ms) ; `t` : secondes (figé si les animations du
-    bureau sont coupées) ; `level` : 0..1."""
+    bureau sont coupées) ; `level` : 0..1 ; `agents` : sous-agents de fond en cours, lissé par
+    `agents_vers` (07/11), dessinés dans la couche du repos seulement."""
     cx, cy = w / 2, h / 2
     R = min(w, h) / 2
 
@@ -276,10 +337,10 @@ def draw(cr, w: float, h: float, *, layers: list[tuple[str, float]], t: float, l
                 continue
             color = lk_.states.get(st) or lk_.states.get("sleeping") or (0.04, 0.52, 1.0)
             if a >= 1.0:
-                draw_state(cr, st, cx, cy, R, t, level, color, lk_)
+                draw_state(cr, st, cx, cy, R, t, level, color, lk_, agents)
             else:
                 cr.push_group()
-                draw_state(cr, st, cx, cy, R, t, level, color, lk_)
+                draw_state(cr, st, cx, cy, R, t, level, color, lk_, agents)
                 cr.pop_group_to_source()
                 cr.paint_with_alpha(max(0.0, min(1.0, a)))
         return cr.pop_group()

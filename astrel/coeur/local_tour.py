@@ -26,6 +26,10 @@ veut traiter sur sa machine (« en local : … », canal Local) part chez Qwen (
   sous la réponse) ; Stop tout et « rien ne sort » coupent le réseau du navigateur (`_local_web_couper`).
 - 05/11 (essais de l'utilisateur) : retour au repos dans `_tour_local_fil` (`_local_repos`), même après une panne avant le
   flux ou dans la fin du tour (`tests/test_tour_local_etat.py`).
+- 06/11 (lot 9, décision de l'utilisateur : Internet et outils EN PERMANENCE sauf « rien ne sort ») : quand le banc (lecture
+  + web) a réussi, TOUT tour local passe par le CLI avec outils (`_local_flux`), avec l'historique de la conversation
+  locale et la relecture du lot 8 ; le moteur direct est le repli (banc, hors ligne, Total, levée, panne du CLI avant
+  tout texte : `_local_repli`) et sert « /reflechir » ; il sait alors pourquoi il n'a pas d'outil (`_local_sans_web`).
 - 05/11 (essai de l'utilisateur, 19:28 : « /reflechir » = 4 min 14 s de « Je réfléchis » seul, Astrel cru planté) : un
   tour AVEC réflexion publie un détail d'état (`detail_reflexion` : durée maximale, jetons pensés, relance sans
   réflexion, relecture) ; le HUD y ajoute le temps écoulé (préfixe `DETAIL_PREFIXE`, même texte dans
@@ -61,6 +65,8 @@ PAGE_OUVERTE = "Le modèle local a ouvert : {url}"
 WEB_INDISPONIBLE = "Recherche web du modèle local indisponible : {raison}"
 PAGES_TITRE = {"fr": "Pages ouvertes par le modèle local :", "en": "Pages opened by the local model:"}
 PAGES_MAX = 12  # adresses listées sous la réponse
+# 06/11 (lot 9) : tour par défaut du CLI avec outils tombé en panne avant tout texte : le moteur direct répond.
+REPLI_DIRECT = "Outils du modèle local indisponibles ({raison}) : réponse sans outils."
 # 05/11 (essai de l'utilisateur, 19:28) : détail de « Je réfléchis » pendant une réflexion du local (catalogue en.json).
 DETAIL_PREFIXE = "modèle local · "  # le HUD affiche le temps écoulé derrière ce préfixe (hud/src/main.js)
 DETAIL_REFLEXION = DETAIL_PREFIXE + "réflexion (jusqu'à ~{min} min) · Échap pour arrêter"
@@ -290,6 +296,16 @@ class TourLocalCoeur:
         # 05/11 (lot 8, R2) : `moteur_local.message_local` = demande + faits exacts du cœur (`faits_local` : ceux de
         # `sensible`, plus dates, calculs, carte fausse) ; même message que le banc de qualité.
         message = moteur_local.message_local(demande, lang)
+        # 06/11 (lot 9, décision de l'utilisateur : Internet et outils EN PERMANENCE sauf « rien ne sort ») : quand le banc
+        # (lecture + web) a réussi, ni Total ni levée ni « rien ne sort » (`_outils_locaux_web_raison` vide), TOUT
+        # tour local passe par le CLI avec outils, même une demande qui ne dit pas « cherche » ou « lis ». Le chemin
+        # direct reste le repli (banc, hors ligne, Total, levée, panne du CLI) et sert « /reflechir » (`reflexion`) :
+        # sa réflexion a un budget, une relance et un détail visible ; celle du CLI (`thinking: adaptive`) n'a aucune
+        # borne côté Ollama (de 30 s à plusieurs minutes mesurées le 05/11).
+        defaut = not outils and reflexion is not True and outils_local.PAR_DEFAUT \
+            and not self._outils_locaux_web_raison()
+        if defaut:
+            outils, navigateur = True, bool(navigateur or routeur.vise_un_site(demande))
         if outils and not self._outils_locaux_raison():
             try:
                 projet = channels.workdir_of(ch) or config.WORKDIR
@@ -313,18 +329,61 @@ class TourLocalCoeur:
                     log.warning("SearXNG indisponible pour le tour local : %s", raison)
                     bus.publish("notice", level="warning", channel=ch, text=WEB_INDISPONIBLE.format(raison=raison))
             kw = {"web": True, "navigateur": navigateur, "sur_page": sur_page} if web else {}
-            return self._outils_locaux.repondre(message, lang, projet=projet, stop=stop, actions=actions,
-                                                canal=ch, lecture=lecture, **kw), True
+            # 06/11 (lot 9) : la conversation locale continue (le CLI n'a pas de session) ; relecture du lot 8 sur
+            # la réponse finale (moteur direct sans réflexion, résultats des outils donnés au relecteur).
+            ml = self._moteur_local
+            relire = None
+            if moteur_local.VERIFICATION:
+                def relire(d, brouillon, sources, web_tour, nav_tour, recherche=None):
+                    return ml.relire(d, brouillon, lang, stop=stop, sources=sources, web=web_tour,
+                                     navigateur=nav_tour, recherche=recherche)
+            flux = self._outils_locaux.repondre(message, lang, projet=projet, stop=stop, actions=actions,
+                                                canal=ch, lecture=lecture, historique=ml.historique(),
+                                                relire=relire, **kw)
+            if defaut:  # 06/11 : CLI en panne avant tout texte → le moteur direct répond (rien ne sort non plus)
+                return self._local_repli(flux, message, lang, stop, ch), True
+            return flux, True
         # 05/11 (lot 8) : réflexion à la demande pour CETTE question (`reflexion=True`), sinon le défaut du moteur
         # (coupée) ; relecture : le défaut du moteur (active).
+        # 06/11 (lot 9) : la raison de l'absence d'outils est dans ses consignes (il la dit si on lui demande).
+        sans_web = self._local_sans_web(reflexion)
         if not (moteur_local.REFLEXION if reflexion is None else reflexion):
-            return self._moteur_local.repondre(message, lang, stop=stop, reflexion=reflexion), False
+            return self._moteur_local.repondre(message, lang, stop=stop, reflexion=reflexion, sans_web=sans_web), False
         # 05/11 (essai de l'utilisateur, 19:28) : réflexion visible (détail de l'état, temps écoulé dans le HUD)
         e = self._local_etat()
         e["minutes"] = self._local_reflexion_minutes()
         self._local_detail(detail_reflexion("reflexion", 0, e["minutes"]))
         return self._moteur_local.repondre(message, lang, stop=stop, reflexion=reflexion,
-                                           sur_etape=self._local_sur_etape), False
+                                           sur_etape=self._local_sur_etape, sans_web=sans_web), False
+
+    def _local_sans_web(self, reflexion: bool | None = None) -> str:
+        """06/11 (lot 9) : pourquoi un tour local n'a pas d'outil (clé de `moteur_local._SANS_WEB`)."""
+        if hors_ligne.actif():
+            return "hors_ligne"
+        if reflexion is True:
+            return "reflexion"
+        if getattr(self, "_total", False):
+            return "total"
+        if getattr(self, "_lift", False):
+            return "levee"
+        return "banc"
+
+    def _local_repli(self, flux, message: str, lang: str, stop: threading.Event, ch: str):
+        """06/11 (lot 9) : tour par défaut du CLI avec outils ; s'il échoue AVANT tout texte (CLI absent, process non
+        reconnu, panne), la même demande passe par le moteur direct, avec une notice. Après un texte : l'erreur."""
+        rendu = False
+        try:
+            for morceau in flux:
+                rendu = True
+                yield morceau
+            return
+        except (moteur_local.ErreurLocale, OSError) as exc:
+            if rendu or stop.is_set():
+                raise
+            log.warning("CLI local avec outils indisponible (%s) : réponse sans outils", exc)
+            bus.publish("notice", level="warning", channel=ch, text=REPLI_DIRECT.format(raison=str(exc)[:200]))
+        self.__dict__["_local_repli_fait"] = True
+        yield from self._moteur_local.repondre(message, lang, stop=stop, sans_web="panne")
 
     def _tour_local_reponse(self, demande: str, source: str, ch: str, mid: str, outils: bool = False,
                             reflexion: bool | None = None, navigateur: bool = False) -> None:
@@ -341,6 +400,7 @@ class TourLocalCoeur:
             bus.publish("notice", level="info", channel=ch, engine="local", text=PAGE_OUVERTE.format(url=url))
 
         avec_outils, t0 = False, time.monotonic()
+        self.__dict__.pop("_local_repli_fait", None)
         try:
             # 05/11 : dans le `try` : une panne en préparant le flux est dite (notice) comme les autres
             flux, avec_outils = self._local_flux(demande, ch, outils, e["stop"], reflexion, navigateur, sur_page)
@@ -365,6 +425,8 @@ class TourLocalCoeur:
             bus.publish("notice", level="warning", channel=ch, text="Moteur local : panne inattendue (voir le journal)")
         finally:
             texte = "".join(morceaux).strip()
+            if self.__dict__.pop("_local_repli_fait", None):
+                avec_outils = False  # 06/11 (lot 9) : le moteur direct a répondu (et gardé l'échange)
             if texte and avec_outils and not e["stop"].is_set():
                 self._moteur_local._garder(demande, texte)  # la suite de la conversation locale s'en souvient
             if texte:

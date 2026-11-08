@@ -264,6 +264,17 @@ def install_autostart_bureau(py: str, workdir: str) -> None:
         print("   démarrage automatique non posé : Réglages › Système dans le HUD")
 
 
+def preparer_projets(workdir: str) -> bool:
+    """07/11 (avant le premier essai sur un vrai Windows) : Claude Code est lancé DANS ce dossier
+    (`brain.start`, cwd) ; absent, le cerveau ne démarre jamais (« introuvable » au lancement), et un PC neuf
+    n'a pas de dossier « Projets ». Créé vide s'il manque (rien d'autre n'y est écrit). Vrai s'il a été créé."""
+    dossier = Path(workdir).expanduser()
+    if dossier.is_dir():
+        return False
+    dossier.mkdir(parents=True, exist_ok=True)
+    return True
+
+
 def has_systemd() -> bool:
     return bool(shutil.which("systemctl")) and Path("/run/systemd/system").exists()
 
@@ -357,17 +368,17 @@ def main(argv: list[str] | None = None) -> int:
     step(6, total, "Démarrage automatique")
     workdir = args.projets or current_workdir(Path.home() / ".config/systemd/user/astrel.service") \
         or os.environ.get("ASTREL_WORKDIR") or str(Path.home() / "Projets")
+    print(f"   dossier des projets : {workdir}")
+    try:
+        if preparer_projets(workdir):
+            print("   (créé, vide : Claude y travaille ; un autre dossier : relance avec --projets DOSSIER)")
+    except OSError as exc:
+        print(f"   ⚠ ce dossier n'existe pas et ne peut pas être créé ({exc}) : relance avec --projets DOSSIER")
     if args.sans_demarrage:
         print("   passé (--sans-demarrage)")
     elif sys_name == "linux" and has_systemd():
-        print(f"   dossier des projets : {workdir}")
-        if not Path(workdir).is_dir():
-            print("   ⚠ ce dossier n'existe pas : crée-le ou relance avec --projets DOSSIER")
         install_linux_autostart(ROOT, workdir)
     elif sys_name in ("windows", "macos"):
-        print(f"   dossier des projets : {workdir}")
-        if not Path(workdir).is_dir():
-            print("   ⚠ ce dossier n'existe pas : crée-le ou relance avec --projets DOSSIER")
         install_autostart_bureau(str(py), workdir)
     else:
         print("   pas de démarrage automatique sur ce système : lance Astrel à la main.")

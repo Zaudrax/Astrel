@@ -471,10 +471,15 @@ def non_claude_choisi() -> bool:
     return CATALOGUE[fid].passerelle or CATALOGUE[fid].cli
 
 
-def env_cerveau(base: dict, genre: str, url: str = "", modele: str = "") -> dict:
+def env_cerveau(base: dict, genre: str, url: str = "", modele: str = "", windows: bool | None = None) -> dict:
     """Environnement du process `claude` : AUCUNE variable Anthropic ni clé de la machine (une
     ANTHROPIC_API_KEY du shell passait en silence et primait sur l'abonnement), aucune clé
-    `CLE_API_*` ; la clé passe par `apiKeyHelper`. Passerelle : adresse locale et modèle."""
+    `CLE_API_*` ; la clé passe par `apiKeyHelper`. Passerelle : adresse locale et modèle.
+
+    07/11 (avant le premier essai sur un vrai Windows) : PYTHONUTF8=1 sous Windows. Les hooks lancés sans
+    `-I` (rappel de la mémoire, routage des sous-agents, Stop) lisaient le JSON du CLI, en UTF-8, comme du
+    cp1252 (« Ã© » pour « é » : mots cherchés jamais trouvés) et plantaient en écrivant « → » ou « ≈ ».
+    Le garde-fou (-I, qui ignore la variable) a déjà `-X utf8` (`config.hook_python_args`)."""
     # Plan P27 : un CLI non-Claude non plus ne voit aucune clé d'API (elle primerait sur l'abonnement).
     purge = _ENV_PURGE_EXACT + (_ENV_PURGE_PASSERELLE if genre in ("passerelle", "cli") else ())
     env = {k: v for k, v in base.items() if not (k.startswith(_ENV_PURGE) or k in purge)}
@@ -484,6 +489,8 @@ def env_cerveau(base: dict, genre: str, url: str = "", modele: str = "") -> dict
                    ANTHROPIC_DEFAULT_OPUS_MODEL=modele, ANTHROPIC_DEFAULT_SONNET_MODEL=modele,
                    ANTHROPIC_DEFAULT_HAIKU_MODEL=modele, ANTHROPIC_SMALL_FAST_MODEL=modele,
                    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1")
+    if (os.name == "nt") if windows is None else windows:
+        env["PYTHONUTF8"] = "1"
     return env
 
 

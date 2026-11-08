@@ -70,7 +70,7 @@ class _CLI:
     def __init__(self):
         self.appels = []
 
-    def repondre(self, demande, langue="fr", projet=None, stop=None, actions=False, canal="", lecture=()):
+    def repondre(self, demande, langue="fr", projet=None, stop=None, actions=False, canal="", lecture=(), **kw):
         self.appels.append({"demande": demande, "projet": projet, "lecture": list(lecture)})
         yield "Le dossier contient notes.txt."
 
@@ -297,7 +297,9 @@ def test_dossiers_cites_dans_workdir_ou_une_zone_seulement(arbre):
     assert d == [work / "Essai", zone]  # un fichier ouvre son dossier ; hors WORKDIR et zones, secrets : non
     assert outils_local.dossiers_cites(f"lis {work / 'Essai'}", projet=work / "Essai", zones=[], workdir=work) == []
     cmd = outils_local.commande("t", work / "P", "fr", Path("/tmp/r.json"), lecture=d)
-    assert [cmd[i + 1] for i, x in enumerate(cmd) if x == "--add-dir"] == [str(work / "P"), str(work / "Essai"), str(zone)]
+    # 06/11 (lot 9) : la racine d'Astrel est ouverte en lecture en dernier (ses consignes, son code)
+    assert [cmd[i + 1] for i, x in enumerate(cmd) if x == "--add-dir"] == [str(work / "P"), str(work / "Essai"), str(zone),
+                                                                         str(config.ROOT)]
 
 
 def test_dossiers_cites_jamais_un_secret_du_compte(arbre, monkeypatch):

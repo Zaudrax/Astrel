@@ -43,8 +43,10 @@ class PropositionsLocalCoeur:
     _qprop_connues: set | None = None
 
     def _perimetres_canal(self, canal: str) -> list[Path]:
-        """Où une proposition de ce canal peut écrire : le dossier de projet du canal, et `config.WORKDIR`."""
-        out = [Path(config.WORKDIR)]
+        """Où une proposition de ce canal peut écrire : le dossier de projet du canal, et `config.WORKDIR`. 06/11 (lot
+        9) : et la racine d'Astrel (une proposition du modèle local sur ses consignes ou son code, `mcp_local`) ; le
+        garde-fou refuse toujours ses fichiers protégés (`propositions_local._juge`)."""
+        out = [Path(config.WORKDIR), Path(config.ROOT)]
         try:
             wd = channels.workdir_of(canal) if canal else ""
         except Exception:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import sys
 from pathlib import Path
@@ -31,8 +32,9 @@ UTF8_ARGS = ["-X", "utf8"] if sys.platform == "win32" else []
 def python_command(script: Path) -> str:
     """Ligne « python script » d'un hook du CLI, lancée par un shell (bash, Git
     Bash sous Windows) : chemins en « / » et cités s'il le faut. Sous Linux, sans
-    espace dans les chemins, identique à f"{VENV_PYTHON} {script}" (plan P6)."""
-    return " ".join(shlex.quote(Path(p).as_posix()) for p in (VENV_PYTHON, script))
+    espace dans les chemins, identique à f"{VENV_PYTHON} {script}" (plan P6). 07/11 : `UTF8_ARGS` sous
+    Windows, comme le garde-fou (le JSON du CLI lu en cp1252 sinon)."""
+    return " ".join(shlex.quote(w) for w in [Path(VENV_PYTHON).as_posix(), *UTF8_ARGS, Path(script).as_posix()])
 
 
 # 23/10 (plan P29, audit sécurité fiche 6, constat 1) : le hook du GARDE-FOU tourne en mode
@@ -656,9 +658,16 @@ LOOP_REPEAT = int(_env_float("ASTREL_LOOP_REPEAT", 3))
 LOOP_ERRORS = int(_env_float("ASTREL_LOOP_ERRORS", 3))
 LOOP_WINDOW = int(_env_float("ASTREL_LOOP_WINDOW", 12))
 # Historique des conversations (recherche plein texte, outil MCP history_search).
+def claude_project_name(workdir: str | Path) -> str:
+    """Nom du dossier de ~/.claude/projects que Claude Code donne à `workdir`. 07/11 : tout caractère hors
+    [A-Za-z0-9] devient « - » (avant : seul « / » ; faux sous Windows, « C:\\… », et avec un espace ou un
+    accent : history_search ne trouvait rien)."""
+    return re.sub(r"[^A-Za-z0-9]", "-", str(workdir).rstrip("/\\"))
+
+
 TRANSCRIPTS_DIR = Path(os.environ.get(
     "ASTREL_TRANSCRIPTS_DIR",
-    str(Path.home() / ".claude" / "projects" / ("-" + str(WORKDIR).strip("/").replace("/", "-"))),
+    str(Path.home() / ".claude" / "projects" / claude_project_name(WORKDIR)),
 ))
 HISTORY_DB = RUNTIME / "history.db"
 

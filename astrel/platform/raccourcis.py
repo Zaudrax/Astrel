@@ -58,6 +58,31 @@ def _agir(commande: str) -> None:
     threading.Thread(target=run, name="raccourci", daemon=True).start()
 
 
+def canonique(key, key_code, defaut, systeme: str | None = None):
+    """07/11 (essai Windows, lu dans pynput 1.8.1) : sous Windows, une lettre tapée avec Ctrl+Alt arrive avec le
+    caractère que donne le clavier DANS cet état (`ToUnicodeEx` : aucun pour J, M, X, P, H en QWERTY comme en
+    AZERTY, où Ctrl+Alt vaut AltGr) et son code de balayage ; `GlobalHotKeys` la comparait alors à la touche
+    « j » de `HotKey.parse` par son code virtuel, absent de celle-ci : aucun raccourci ne partait jamais. Le
+    code virtuel d'une lettre ou d'un chiffre (VK_A… = « A »…, le même quelle que soit la disposition) suffit
+    à la reconnaître. Ailleurs, et pour le reste, la normalisation de pynput (`defaut`)."""
+    from . import SYSTEM
+
+    vk = getattr(key, "vk", None)
+    if (systeme or SYSTEM) == "windows" and isinstance(key, key_code) and isinstance(vk, int) \
+            and (0x41 <= vk <= 0x5A or 0x30 <= vk <= 0x39):
+        return key_code.from_char(chr(vk).lower())
+    return defaut(key)
+
+
+def _ecouteur_pynput(keyboard):
+    """`GlobalHotKeys` de pynput, avec la normalisation de `canonique`."""
+    class Raccourcis(keyboard.GlobalHotKeys):
+        def canonical(self, key):
+            return canonique(key, keyboard.KeyCode, super().canonical)
+
+    return Raccourcis({t: (lambda c=c: _agir(c)) for t, c in TOUCHES.items()})
+
+
 def demarrer() -> bool:
     """Écoute les raccourcis (rien si déjà fait). Faux si pynput manque ou refuse."""
     global _ecouteur
@@ -66,7 +91,7 @@ def demarrer() -> bool:
             return True
         try:
             from pynput import keyboard
-            _ecouteur = keyboard.GlobalHotKeys({t: (lambda c=c: _agir(c)) for t, c in TOUCHES.items()})
+            _ecouteur = _ecouteur_pynput(keyboard)
             _ecouteur.daemon = True
             _ecouteur.start()
         except Exception as exc:
