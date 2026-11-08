@@ -69,6 +69,7 @@ def test_git_bash_trouve_comme_claude_code(tmp_path):
     import importlib.util
     spec = importlib.util.spec_from_file_location("check_install", config.ROOT / "tools" / "check_install.py")
     ci = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = ci  # sinon @dataclass à annotations-chaînes ne résout pas son module (échec hors suite complète)
     spec.loader.exec_module(ci)
     git = tmp_path / "Git" / "cmd" / "git.exe"
     bash = tmp_path / "Git" / "bin" / "bash.exe"

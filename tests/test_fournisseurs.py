@@ -198,7 +198,7 @@ def test_environnement_du_cerveau_sans_cle():
     base = {"PATH": "/usr/bin", "ANTHROPIC_API_KEY": "sk-shell", "ANTHROPIC_AUTH_TOKEN": "t",
             "ANTHROPIC_BASE_URL": "https://ailleurs", "CLE_API_OPENAI": CLE_OPENAI, "OPENAI_API_KEY": CLE_OPENAI,
             "CLAUDE_CODE_USE_BEDROCK": "1", "ASTREL_BRAIN": "x"}
-    env = fournisseurs.env_cerveau(base, "abonnement")
+    env = fournisseurs.env_cerveau(base, "abonnement", windows=False)  # windows=False : test du filtrage, pas du PYTHONUTF8 Windows
     assert env == {"PATH": "/usr/bin", "ASTREL_BRAIN": "x", "OPENAI_API_KEY": CLE_OPENAI}  # clé d'un autre service : gardée
     env = fournisseurs.env_cerveau(base, "passerelle", url="http://127.0.0.1:5", modele="gpt-5")
     assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:5" and env["ANTHROPIC_DEFAULT_SONNET_MODEL"] == "gpt-5"

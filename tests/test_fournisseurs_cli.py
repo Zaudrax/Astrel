@@ -544,7 +544,7 @@ def test_hook_non_prouve_conversation_seule(cli, prudent, monkeypatch):
 
 def test_env_cerveau_cli_sans_cle():
     env = fournisseurs.env_cerveau({"OPENAI_API_KEY": "x", "XAI_API_KEY": "y", "ANTHROPIC_API_KEY": "z",
-                                    "CLE_API_OPENAI": "w", "PATH": "/bin"}, "cli")
+                                    "CLE_API_OPENAI": "w", "PATH": "/bin"}, "cli", windows=False)
     assert env == {"PATH": "/bin"}
 
 
