@@ -111,6 +111,81 @@ def test_fiche_d_avant_la_tache_ignoree(journal):
     assert equipe.after_codeur({"type": "codeur", "files": []}, later, "completed") is None
 
 
+# --------------------------------------------------------- gabarit de passation (T87, 09/11)
+
+def test_gabarit_passation_contient_les_champs(journal):
+    """Carte T87 : le gabarit porte la demande, les fichiers, les critères d'acceptation MESURABLES,
+    la preuve requise et la destination (`a`) ; `deposer` les écrit dans la fiche et le journal."""
+    champs = set(equipe.gabarit_champs())
+    assert champs == {"demande", "fichiers", "criteres", "preuve_requise", "a"}
+    assert "criteres" in champs and "preuve_requise" in champs  # le cœur du gabarit, MESURABLE
+    r = equipe.deposer("codeur", "testeur", "fait", fichiers=["/p/a.py"], mission="T87",
+                       demande="ajoute l'option X", criteres="pytest -k x vert ; i18n à 0",
+                       preuve_requise="la sortie de pytest -k x", preuves="pytest -q : 3 passed")
+    assert r["ok"] and r["fiche"] == 1
+    text = (journal / "t87" / "journal.md").read_text(encoding="utf-8")
+    assert "## Fiche 1 · codeur → testeur" in text  # « Sortie vers » = l'en-tête de la fiche
+    assert "- Demande : ajoute l'option X" in text
+    assert "- Critères d'acceptation : pytest -k x vert ; i18n à 0" in text
+    assert "- Preuve requise : la sortie de pytest -k x" in text
+    # fiches.jsonl garde les nouveaux champs sans casser la numérotation.
+    fiche = json.loads((journal / "t87" / "fiches.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert fiche["n"] == 1 and fiche["demande"] and fiche["criteres"].startswith("pytest")
+    assert fiche["preuve_requise"] == "la sortie de pytest -k x"
+
+
+def test_gabarit_champs_absents_non_ecrits(journal):
+    """Les champs du gabarit restent FACULTATIFS : une passation sans eux ne les invente pas."""
+    equipe.deposer("testeur", "relecteur", "tests passés", mission="T87")
+    fiche = json.loads((journal / "t87" / "fiches.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert "demande" not in fiche and "criteres" not in fiche and "preuve_requise" not in fiche
+
+
+# --------------------------------------------------- correction bornée (T87, 09/11)
+
+def test_correction_hors_liste_signalee(journal):
+    """Carte T87 : une correction qui touche un fichier hors du périmètre établi (fonctionnalité en
+    plus) est SIGNALÉE au relais, qui rappelle « aucune nouvelle fonctionnalité »."""
+    task = {"desc": "corr", "started": time.time() - 60}
+    equipe.deposer("codeur", "testeur", "lot", fichiers=["/p/a.py"], mission="T87")
+    equipe.deposer("relecteur", "codeur", "point ouvert", fichiers=["/p/a.py"], mission="T87")
+    equipe.deposer("codeur", "relecteur", "corr + ajout", fichiers=["/p/a.py", "/p/nouveau.py"], mission="T87")
+    assert equipe.hors_liste("T87", {"n": 3, "fichiers": ["/p/a.py", "/p/nouveau.py"]}, []) == ["/p/nouveau.py"]
+    text, _shown = equipe.after_codeur({"type": "codeur", "files": ["/p/a.py", "/p/nouveau.py"]}, task, "completed")
+    assert "hors du périmètre établi" in text and "/p/nouveau.py" in text
+    assert "AUCUNE nouvelle fonctionnalité" in text and "correction 1 sur 3 au plus" in text
+
+
+def test_compteur_de_corrections_borne_et_escalade(journal):
+    """Carte T87 : le compteur s'incrémente à chaque correction du même lot ; à la 4e, le cœur
+    arrête les relances et renvoie une escalade à l'utilisateur (plus de « lance le … »)."""
+    lot = ["/p/a.py"]
+    task = {"desc": "corr", "started": time.time() - 60}
+    equipe.deposer("codeur", "testeur", "lot initial", fichiers=lot, mission="T87")  # fiche 1 (1er passage)
+    rangs = []
+    for i in range(1, 5):  # 4 corrections, chacune précédée d'une fiche du relecteur
+        equipe.deposer("relecteur", "codeur", f"point {i}", fichiers=lot, mission="T87")
+        equipe.deposer("codeur", "relecteur", f"correction {i}", fichiers=lot, mission="T87")
+        fiche = equipe.latest_from("codeur")[1]
+        rangs.append(equipe.corrections_du_lot("T87", fiche, lot))
+        text, shown = equipe.after_codeur({"type": "codeur", "files": lot}, task, "completed")
+        if i < 4:
+            assert f"correction {i} sur 3 au plus" in text and "Lance seulement le relecteur" in text
+            assert "NE RELANCE AUCUN" not in text
+        else:
+            assert "NE RELANCE AUCUN agent" in text and "post_report « decision »" in text
+            assert "Lance seulement" not in text
+            assert shown == "Équipe : 3 corrections sur le lot (fiche 9, t87), à l'utilisateur de trancher."
+    assert rangs == [1, 2, 3, 4]  # le compteur s'incrémente, escalade à la 4e
+
+
+def test_escalade_shown_traduit_en_anglais():
+    """La ligne d'escalade affichée a sa traduction anglaise (i18n)."""
+    from astrel import i18n
+    fr = "Équipe : 3 corrections sur le lot (fiche 9, t87), à l'utilisateur de trancher."
+    assert i18n.tr(fr, "en") == "Team: 3 fixes on the batch (handoff 9, t87), the user to decide."
+
+
 def test_coeur_envoie_le_relais_equipe(astrel, published):
     j, said, _ = astrel
     calls = []

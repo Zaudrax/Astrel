@@ -47,6 +47,38 @@ DEFAULT_MISSION = "general"
 # Décision de l'utilisateur (plan P13) : testeur puis relecteur après CHAQUE codeur. « 0 » coupe le relais.
 APRES_CODEUR = os.environ.get("ASTREL_EQUIPE_APRES_CODEUR", "1").strip().lower() not in ("0", "non", "off", "false")
 
+# Gabarit de passation (09/11, carte T87 : « passation plus carrée », idée reprise d'un dépôt tiers —
+# chacun écrit SA fiche, ne recopie pas la précédente). Un contrat clair pour l'agent suivant :
+# (clé, libellé affiché). `a` (sortie vers) est déjà l'en-tête de la fiche. `criteres` MESURABLES
+# (comment on sait que c'est fini) et `preuve_requise` (ce qu'il faut montrer) sont le cœur du gabarit.
+GABARIT: tuple[tuple[str, str], ...] = (
+    ("demande", "Demande"),                   # ce qui est demandé à l'agent suivant
+    ("fichiers", "Fichiers concernés"),        # les fichiers du lot (déjà porté par la fiche)
+    ("criteres", "Critères d'acceptation"),    # MESURABLES : à quoi on voit que c'est fini
+    ("preuve_requise", "Preuve requise"),      # ce qu'il faut montrer pour prouver « fini »
+    ("a", "Sortie vers"),                      # à qui va la sortie (en-tête de la fiche)
+)
+
+
+def gabarit_champs() -> tuple[str, ...]:
+    """Les champs du gabarit de passation, dans l'ordre (contrôle `tests/test_equipe.py`)."""
+    return tuple(cle for cle, _ in GABARIT)
+
+
+# Correction bornée (09/11, carte T87) : une correction corrige UNIQUEMENT les points listés, sans
+# nouvelle fonctionnalité ; au-delà de CORRECTIONS_MAX allers-retours sur un même lot, le cœur arrête
+# les relances automatiques et demande à l'utilisateur de trancher. Compteur dérivé du journal (l'état du
+# lot fait foi : pas de compteur en mémoire à resynchroniser au redémarrage).
+def _env_int(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, "").strip() or default)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+CORRECTIONS_MAX = _env_int("ASTREL_CORRECTIONS_MAX", 3)
+
 _lock = threading.Lock()
 
 
@@ -93,6 +125,11 @@ def render(fiche: dict[str, Any]) -> str:
             lines.append(f"- {label} : {fiche[key]}")
     if fiche.get("fichiers"):
         lines.append(f"- Fichiers : {', '.join(fiche['fichiers'])}")
+    # Gabarit T87 : le contrat pour l'agent suivant (seulement les champs renseignés).
+    for key, label in (("demande", "Demande"), ("criteres", "Critères d'acceptation"),
+                       ("preuve_requise", "Preuve requise")):
+        if fiche.get(key):
+            lines.append(f"- {label} : {fiche[key]}")
     if fiche.get("ameliorations"):
         lines.append(f"- Améliorations (cartes de la todo) : {' ; '.join(fiche['ameliorations'])}")
     lines.append(f"- Preuves : {fiche['preuves']}")
@@ -123,10 +160,13 @@ def read(mission: Any) -> list[dict[str, Any]]:
 
 
 def deposer(de: Any, a: Any, fait: Any, a_tester: Any = "", risques: Any = "", fichiers: Any = None,
-            preuves: Any = "", mission: Any = "", ameliorations: Any = None) -> dict[str, Any]:
+            preuves: Any = "", mission: Any = "", ameliorations: Any = None, demande: Any = "",
+            criteres: Any = "", preuve_requise: Any = "") -> dict[str, Any]:
     """Ajoute une fiche de passation. Rend {ok, mission, fiche, journal} ou {ok: False, error}.
     `ameliorations` (28/10, carte T31) : titres courts (remarques basses, idées, défauts non
-    bloquants) dont le cœur fait des cartes de la todo (`todo.suivre_fiches`)."""
+    bloquants) dont le cœur fait des cartes de la todo (`todo.suivre_fiches`). Gabarit T87
+    (09/11) : `demande` (ce qui est demandé au suivant), `criteres` (d'acceptation, MESURABLES),
+    `preuve_requise` (ce qu'il faut montrer pour prouver « fini ») — tous facultatifs."""
     de, a, fait = _field(de)[:60], _field(a)[:60], _field(fait)
     if not de or not a or not fait:
         return _refus("de, a et fait sont obligatoires (qui passe, à qui, ce qui est fait)")
@@ -135,6 +175,10 @@ def deposer(de: Any, a: Any, fait: Any, a_tester: Any = "", risques: Any = "", f
     fiche: dict[str, Any] = {"de": de, "a": a, "fait": fait, "a_tester": _field(a_tester),
                              "risques": _field(risques), "fichiers": _files(fichiers),
                              "preuves": _field(preuves) or NON_VERIFIE, "at": time.time()}
+    for key, value in (("demande", demande), ("criteres", criteres), ("preuve_requise", preuve_requise)):
+        champ = _field(value)
+        if champ:
+            fiche[key] = champ
     idees = _titres(ameliorations)
     if idees:
         fiche["ameliorations"] = idees
@@ -187,8 +231,8 @@ def after_codeur(entry: dict[str, Any], task: dict[str, Any], status: str) -> tu
         return None
     desc = str(task.get("desc") or "codeur")[:120]
     suite = ("Ne relance le codeur que pour un problème bloquant ou un défaut prouvé ; les remarques mineures vont "
-             "en cartes (`ameliorations`), sans nouveau tour. Au troisième aller-retour sur la même mission, "
-             "demande à l'utilisateur (post_report « decision »).")
+             f"en cartes (`ameliorations`), sans nouveau tour. Au-delà de {CORRECTIONS_MAX} corrections sur le même "
+             "lot, le cœur arrête les relances et demande à l'utilisateur de trancher.")
     if found is not None:
         mission, fiche = found
         journal, _, _ = _paths(mission)
@@ -197,11 +241,24 @@ def after_codeur(entry: dict[str, Any], task: dict[str, Any], status: str) -> tu
         if verif:
             # 29/10 (économie de jetons, accord de l'utilisateur) : une CORRECTION est revérifiée par le métier
             # qui l'a demandée, sur ses propres points ; plus de seconde passe complète testeur + relecteur.
+            # 09/11 (carte T87) : boucle bornée. Le rang de la correction est compté sur le journal ;
+            # au-delà de CORRECTIONS_MAX, plus de relance, l'utilisateur tranche.
+            rang = corrections_du_lot(mission, fiche, files)
+            if rang > CORRECTIONS_MAX:
+                return escalade_correction(mission, fiche, verif, rang)
+            extra = hors_liste(mission, fiche, files)
+            signal = ""
+            if extra:
+                listes = ", ".join(extra[:8]) + (" …" if len(extra) > 8 else "")
+                signal = (f" ATTENTION : cette correction touche des fichiers hors du périmètre établi ({listes}) : "
+                          "une correction corrige UNIQUEMENT les points listés, AUCUNE nouvelle fonctionnalité ; "
+                          "fais-les vérifier et, si c'est un ajout non demandé, recadre le codeur.")
             shown = f"Équipe : {verif} seul sur la correction (fiche {fiche['n']}, {mission})."
-            consigne = (f"[Équipe, message automatique du cœur] Le codeur a fini une CORRECTION (« {desc} »). Lance "
-                        f"seulement le {verif} {where} : il vérifie que chaque point de sa fiche précédente est "
-                        "corrigé et relance les preuves du codeur, sans nouvelle passe complète, puis dépose sa "
-                        f"passation (outil passation). {suite}")
+            consigne = (f"[Équipe, message automatique du cœur] Le codeur a fini une CORRECTION (« {desc} », "
+                        f"correction {rang} sur {CORRECTIONS_MAX} au plus). Lance seulement le {verif} {where} : il "
+                        "vérifie que CHAQUE point listé de sa fiche précédente est corrigé et rien d'autre, relance "
+                        f"les preuves du codeur, sans nouvelle passe complète, puis dépose sa passation (outil "
+                        f"passation).{signal} {suite}")
             return consigne, shown
         shown = f"Équipe : testeur puis relecteur sur la fiche {fiche['n']} ({mission})."
     else:
@@ -241,6 +298,47 @@ def _protege(path: str) -> bool:
         return guard._protected(path) or guard._protected_code(path)
     except Exception:  # noqa: BLE001 — dans le doute, cycle complet
         return True
+
+
+def _lot_fichiers(fiche: dict[str, Any], files: list[str]) -> set[str]:
+    """Fichiers du lot courant : ceux de la fiche du codeur et ceux que l'agent a touchés."""
+    return {str(f) for f in [*(fiche.get("fichiers") or []), *files]}
+
+
+def corrections_du_lot(mission: str, fiche: dict[str, Any], files: list[str]) -> int:
+    """Rang de la correction courante sur ce lot (09/11, carte T87). Compte les fiches du CODEUR dont
+    les fichiers recoupent le lot, jusqu'à la fiche courante incluse, moins le premier passage. Le
+    journal (`fiches.jsonl`) fait foi : 0 = premier passage (pas une correction), 1 = 1re correction…"""
+    mine = _lot_fichiers(fiche, files)
+    n = int(fiche.get("n") or 0)
+    passes = sum(1 for f in read(mission)
+                 if int(f.get("n") or 0) <= n and str(f.get("de") or "").strip().lower() == "codeur"
+                 and mine & {str(x) for x in f.get("fichiers") or []})
+    return max(passes - 1, 0)
+
+
+def hors_liste(mission: str, fiche: dict[str, Any], files: list[str]) -> list[str]:
+    """Fichiers de la correction jamais vus dans une fiche ANTÉRIEURE de la mission (09/11, carte T87) :
+    une correction ne doit toucher que le périmètre déjà établi, pas ajouter une fonctionnalité. Liste
+    triée des fichiers hors périmètre (vide si la correction reste dans le lot connu)."""
+    n = int(fiche.get("n") or 0)
+    connus: set[str] = set()
+    for f in read(mission):
+        if int(f.get("n") or 0) < n:
+            connus |= {str(x) for x in f.get("fichiers") or []}
+    return sorted(f for f in _lot_fichiers(fiche, files) if f not in connus)
+
+
+def escalade_correction(mission: str, fiche: dict[str, Any], verif: str, rang: int) -> tuple[str, str]:
+    """Au-delà de CORRECTIONS_MAX corrections sur un lot (09/11, carte T87) : plus de relance
+    automatique, l'utilisateur tranche. (message pour Astrel, ligne affichée)."""
+    shown = (f"Équipe : {CORRECTIONS_MAX} corrections sur le lot (fiche {fiche['n']}, {mission}), "
+             "à l'utilisateur de trancher.")
+    consigne = (f"[Équipe, message automatique du cœur] Le lot de la fiche {fiche['n']} ({mission}) en est à "
+                f"{rang} corrections, au-delà du maximum de {CORRECTIONS_MAX} : la boucle de correction est bornée. "
+                f"NE RELANCE AUCUN agent. Demande à l'utilisateur de trancher (post_report « decision ») en citant les "
+                f"points de la dernière fiche du {verif} encore ouverts, et attends sa décision.")
+    return consigne, shown
 
 
 class Owners:
