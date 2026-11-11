@@ -21,6 +21,8 @@ import { initTodo } from "./todo.js";
 import { initAudit } from "./audit.js";
 import { initPropositions } from "./propositions.js";
 import { initPropositionsLocal } from "./propositions-local.js"; // 05/11 (lot 5 du moteur local)
+import { initMaj } from "./maj.js"; // 10/11 : mise à jour disponible
+import { initOutbox } from "./outbox.js"; // 09/11 (T88) : file d'envoi (messages sortants à valider)
 import { initRecherche, openSearch } from "./recherche.js";
 import { initMoteur, localReplyActions } from "./moteur.js"; // 05/11 (lot 6 du moteur local)
 import { initCommandes, runSlash } from "./commandes-ui.js"; // 05/11 : commandes « / » de la barre
@@ -2285,6 +2287,8 @@ initTodo(toast); // Tâches par projet (26/10, plan P38 lot 2) : hud/src/todo.js
 initAudit(); // Journal d'audit (plan P3, lot F) : hud/src/audit.js
 initPropositions(toast); // Propositions de mémoire (04/11, T49) : hud/src/propositions.js
 initPropositionsLocal(toast); // Propositions de Qwen (05/11, lot 5 du moteur local) : hud/src/propositions-local.js
+initMaj(toast); // Mise à jour disponible (10/11) : hud/src/maj.js, évènement maj_dispo
+initOutbox(toast); // File d'envoi (09/11, T88) : messages sortants à valider : hud/src/outbox.js
 // 04/11 : recherche dans tous les canaux (hud/src/recherche.js) : bouton loupe et Ctrl+K, Avancé seulement.
 initRecherche({
   command,

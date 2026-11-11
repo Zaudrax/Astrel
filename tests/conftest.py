@@ -294,6 +294,7 @@ def _reglages_isoles(tmp_path, monkeypatch):
     frozen = maj.MiseAJour()
     frozen._local = {"git": True, "commit": "abc1234", "origin": "https://exemple.fr/astrel.git", "changed": 0}
     frozen._local_at = float("inf")
+    frozen.auto = False  # 10/11 : pas de vérification automatique (git fetch) pendant les tests
     monkeypatch.setattr(maj, "maj", frozen)
     # Système (démarrage, raccourcis) : ni systemctl ni gsettings ; grisé « indisponible ».
     from astrel import settings as settings_mod

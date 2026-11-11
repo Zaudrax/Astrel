@@ -58,8 +58,12 @@
         <button class="chip" id="audit-chip" title="Journal : qui a autorisé quoi (confirmations, refus, envois WhatsApp, plans, Sans confirmation, agents)" data-i18n-title="audit.chip_title"><i data-icon="activity"></i><span data-i18n="audit.chip">Journal</span></button>
         <!-- 04/11 (T49) : propositions de mémoire à valider ; visible seulement s'il y en a (hud/src/propositions.js) -->
         <button class="chip hidden" id="propositions-chip" title="Mémoire : propositions à valider" data-i18n-title="prop.chip_title"><i data-icon="book"></i><span data-i18n="prop.chip">Mémoire</span><b id="propositions-badge" class="chip-count hidden" aria-label="propositions de mémoire à valider" data-i18n-aria="prop.badge">0</b></button>
+        <!-- 09/11 (T88) : file d'envoi (messages sortants à valider avant départ) ; visible seulement s'il y en a (hud/src/outbox.js) -->
+        <button class="chip hidden" id="outbox-chip" title="File d'envoi : messages à valider avant départ" data-i18n-title="outbox.chip_title"><i data-icon="message"></i><span data-i18n="outbox.chip">Envois</span><b id="outbox-badge" class="chip-count hidden" aria-label="messages à valider avant envoi" data-i18n-aria="outbox.badge">0</b></button>
         <!-- 05/11 (lot 5 du moteur local) : modifications proposées par Qwen ; visible seulement s'il y en a (hud/src/propositions-local.js) -->
         <button class="chip hidden" id="qprop-chip" title="Propositions de Qwen : modifications à relire" data-i18n-title="qprop.chip_title"><i data-icon="shield"></i><span data-i18n="qprop.chip">Qwen</span><b id="qprop-badge" class="chip-count hidden" aria-label="modifications proposées par le modèle local" data-i18n-aria="qprop.badge">0</b></button>
+        <!-- 10/11 : mise à jour disponible ; visible seulement s'il y en a une, plus voyante si majeure (hud/src/maj.js) -->
+        <button class="chip hidden" id="maj-chip" title="Mises à jour d'Astrel" data-i18n-title="maj.chip_title"><i data-icon="download"></i><span data-i18n="maj.chip">Mise à jour</span></button>
         <button class="chip icon-only" id="settings-chip" title="Réglages d'Astrel" aria-label="Réglages" data-i18n-title="settings.title" data-i18n-aria="settings.chip"><i data-icon="settings"></i></button>
       </div>
       <div class="tgroup" role="group" aria-label="Actions" data-i18n-aria="top.actions">

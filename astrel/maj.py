@@ -1,14 +1,21 @@
 """Mises à jour (17/10, plan P4, lot 7 : page « Réglages »).
 
-- Version : `astrel.__version__` et le commit en cours.
-- « Vérifier » : `git fetch` (fil à part), puis le nombre de commits d'avance du dépôt.
+- Version : fichier `VERSION` (10/11, `nouveautes.py` ; repli `astrel.__version__`) et le commit en cours.
+- « Vérifier » : `git fetch` (fil à part), puis le nombre de commits d'avance du dépôt, la version
+  (`VERSION`) et les notes (`NOUVEAUTES.md`) lues dans la branche suivie par `git show`, sans rien modifier.
+- 10/11 : vérification AUTOMATIQUE (`tick_auto`, tick du cœur) une minute après le démarrage puis toutes
+  les 24 h ; `ASTREL_MAJ_AUTO=0` la coupe, « rien ne sort » aussi (`blocked`). Évènement STICKY `maj_dispo`
+  pour le HUD (`hud/src/maj.js`) : pastille, et fenêtre des nouveautés ouverte d'elle-même pour une
+  version MAJEURE (une fois par version et par navigateur).
 - « Mettre à jour » : lance `update.py` (JAMAIS `update.sh`), détaché (il relance Astrel),
   SEULEMENT s'il y a un dépôt d'origine et si aucun fichier suivi n'est modifié ; sinon le bouton est grisé avec sa raison.
+  Rien ne s'installe sans ce clic.
 Rien n'est jamais poussé.
 """
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -16,12 +23,33 @@ import threading
 import time
 from typing import Any, Callable
 
-from . import __version__, config, hors_ligne
+from . import __version__, config, hors_ligne, nouveautes
+from . import events as events_mod
+from .events import bus
 
 log = logging.getLogger("astrel.maj")
 
+events_mod.STICKY.add("maj_dispo")  # rejoué à chaque HUD qui se connecte
+
 FETCH_TIMEOUT_S = 60.0
 LOCAL_CACHE_S = 30.0
+AUTO_PREMIER_S = 60.0          # première vérification automatique, après le démarrage
+AUTO_PERIODE_S = 24 * 3600.0   # puis une par jour
+VERSION_FILE = "VERSION"
+NOTES_FILE = "NOUVEAUTES.md"
+
+
+def version_locale() -> str:
+    """Version installée : fichier `VERSION`, sinon `astrel.__version__`."""
+    try:
+        v = nouveautes.lire_version((config.ROOT / VERSION_FILE).read_text(encoding="utf-8"))
+    except OSError:
+        v = ""
+    return v or __version__
+
+
+def auto_actif() -> bool:
+    return os.environ.get("ASTREL_MAJ_AUTO", "1").strip().lower() not in ("0", "false", "non", "off")
 
 
 def _git(*args: str, timeout: float = 10.0) -> subprocess.CompletedProcess | None:
@@ -49,8 +77,10 @@ class MiseAJour:
         self._local: dict | None = None
         self._local_at = 0.0
         self._checking = False
-        self._remote: dict = {}         # {"behind": n, "at": t} ou {"error": "…", "at": t}
+        self._remote: dict = {}         # {"behind": n, "version": "…", "notes": […], "at": t} ou {"error": "…", "at": t}
         self._launched = False
+        self.auto = True                # 10/11 : vérification automatique (les tests la coupent)
+        self._auto_next: float | None = None
 
     # ------------------------------------------------------------------ état local
 
@@ -88,7 +118,7 @@ class MiseAJour:
         s = self.local()
         with self._lock:
             remote, checking, launched = dict(self._remote), self._checking, self._launched
-        version = __version__ + (f" (commit {s['commit']})" if s.get("commit") else "")
+        version = version_locale() + (f" (commit {s['commit']})" if s.get("commit") else "")
         lines = [{"label": "Version", "text": version, "level": "info"}]
         if s.get("origin"):
             lines.append({"label": "Dépôt", "text": s["origin"], "level": "info"})
@@ -101,6 +131,12 @@ class MiseAJour:
             n = int(remote["behind"])
             lines.append({"label": "État", "level": "warn" if n else "ok",
                           "text": f"{n} nouveauté(s) disponible(s)" if n else "à jour"})
+            nouvelle = str(remote.get("version") or "")
+            if n and nouveautes.plus_recente(nouvelle, version_locale()):
+                lines.append({"label": "Disponible", "level": "warn",
+                              "text": (f"version {nouvelle} (majeure)"
+                                       if nouveautes.est_majeure(nouvelle, version_locale())
+                                       else f"version {nouvelle}")})
         elif not blocked:
             lines.append({"label": "État", "text": "pas encore vérifié", "level": "info"})
         if launched:
@@ -151,15 +187,62 @@ class MiseAJour:
             raw = _out("rev-list", "--count", "HEAD..@{upstream}")
             remote = ({"behind": int(raw), "at": time.time()} if raw.isdigit()
                       else {"error": "aucune branche suivie sur le dépôt", "at": time.time()})
+            if remote.get("behind"):
+                # Version et notes de la branche suivie, lues sans rien toucher à la copie de travail.
+                nouvelle = nouveautes.lire_version(_out("show", f"@{{upstream}}:{VERSION_FILE}"))
+                remote["version"] = nouvelle
+                if nouveautes.plus_recente(nouvelle, version_locale()):
+                    remote["notes"] = nouveautes.depuis(_out("show", f"@{{upstream}}:{NOTES_FILE}"),
+                                                        version_locale(), nouvelle)
         with self._lock:
             self._remote, self._checking = remote, False
             self._local = None  # relu au prochain affichage
-        log.info("mises à jour vérifiées : %s", remote.get("error") or f"{remote['behind']} en retard")
+        log.info("mises à jour vérifiées : %s", remote.get("error")
+                 or f"{remote['behind']} en retard, version {remote.get('version') or '?'}")
+        self.publish_dispo()
         if self.on_change:
             try:
                 self.on_change()
             except Exception:
                 log.exception("page Réglages non republiée")
+
+    # ------------------------------------------------------------------ annonce (HUD)
+
+    def dispo(self) -> dict:
+        """Charge de l'évènement `maj_dispo` : ce qu'il y a de neuf sur le dépôt, et si on peut l'installer."""
+        with self._lock:
+            remote, launched = dict(self._remote), self._launched
+        locale = version_locale()
+        behind = int(remote.get("behind") or 0)
+        nouvelle = str(remote.get("version") or "")
+        if not nouveautes.plus_recente(nouvelle, locale):
+            nouvelle = ""
+        spec = next((a for a in self.view()["actions"] if a["id"] == "update"), {})
+        return {"disponible": behind > 0 and not launched, "behind": behind, "version_locale": locale,
+                "version": nouvelle, "majeure": bool(nouvelle) and nouveautes.est_majeure(nouvelle, locale),
+                "notes": list(remote.get("notes") or []) if nouvelle else [],
+                "bloque": str(spec.get("reason") or "") if spec.get("disabled") else "", "lancee": launched}
+
+    def publish_dispo(self) -> None:
+        try:
+            bus.publish("maj_dispo", **self.dispo())
+        except Exception:
+            log.exception("évènement maj_dispo non publié")
+
+    def tick_auto(self, now: float | None = None) -> bool:
+        """Tick du cœur : lance la vérification si son heure est venue (vrai si lancée). Bon marché sinon."""
+        if not (self.auto and auto_actif()):
+            return False
+        now = time.monotonic() if now is None else now
+        if self._auto_next is None:
+            self._auto_next = now + AUTO_PREMIER_S
+            return False
+        if now < self._auto_next:
+            return False
+        self._auto_next = now + AUTO_PERIODE_S
+        if self.blocked(self.local()):
+            return False  # pas de dépôt d'origine, hors ligne… : on réessaiera demain
+        return bool(self.check().get("ok"))
 
     def update(self) -> dict:
         with self._lock:
@@ -180,6 +263,7 @@ class MiseAJour:
         with self._lock:
             self._launched = True
         log.info("mise à jour lancée (update.py)")
+        self.publish_dispo()
         return {"ok": True, "level": "info", "text": "Mise à jour lancée : Astrel redémarre tout seul à la fin."}
 
 

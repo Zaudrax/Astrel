@@ -43,6 +43,12 @@ def refus_reglage(exc: SettingError, cause: dict | None = None) -> dict:
 class ReglagesCoeur:
     """Page « Réglages » du HUD : liaison des réglages, capteurs, WhatsApp, micro et voix,"""
 
+    def _maj_tick(self) -> None:
+        """10/11 : vérification automatique des mises à jour (`maj.tick_auto` : 1 min après le démarrage,
+        puis toutes les 24 h ; `git fetch` dans un fil à part). N'installe jamais rien."""
+        from .. import maj  # relu à chaque appel : les tests remplacent `maj.maj`
+        maj.maj.tick_auto()
+
     def _bind_settings(self) -> None:
         """Branche sur la page « Réglages » ce qui vit dans le cœur : micro, voix, seuil de
         « Hey Jarvis » du micro en cours, boutons d'essai (plan P4, lot 5)."""

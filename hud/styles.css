@@ -2203,3 +2203,18 @@ body.dropping #composer { border-color: var(--green); box-shadow: 0 0 18px rgba(
 .choice-gallery .media-thumb img { height: 96px; max-height: none; object-fit: cover; }
 :root[data-affichage="simple"] :is(.media-size, .media-path) { display: none; }
 /* === P26 médias : fin === */
+
+/* --- 10/11 : mise à jour disponible (hud/src/maj.js) : pastille, plus voyante pour une version majeure --- */
+#maj-chip { border-color: rgba(var(--rgb-warn), 0.45); color: var(--amber); }
+#maj-chip.majeure { border-color: rgba(var(--rgb-warn), 0.8); background: rgba(var(--rgb-warn), 0.14); font-weight: 700; }
+.modal.wide.maj { width: min(720px, calc(100vw - 40px)); height: auto; max-height: min(780px, calc(100vh - 60px)); }
+.modal.maj .modal-body { display: grid; gap: 12px; overflow: auto; }
+.maj-tete { display: grid; gap: 2px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(var(--rgb-warn), 0.35);
+  background: rgba(var(--rgb-warn), 0.06); }
+.maj-tete.majeure { border-color: rgba(var(--rgb-warn), 0.75); background: rgba(var(--rgb-warn), 0.12); }
+.maj-titre { margin: 0; font-weight: 700; }
+.maj-installee, .maj-vide, .maj-info { margin: 0; font-size: 12px; opacity: 0.8; }
+.maj-bloque { margin: 0; font-size: 12px; color: var(--amber); }
+.maj-notes { display: grid; gap: 14px; }
+.maj-note-titre { margin: 0 0 4px; font-size: 13px; }
+

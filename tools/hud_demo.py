@@ -1118,6 +1118,8 @@ class DemoSettings:
             item["actions"] = [{"id": "login", "label": "Se connecter"}]
 
     def action(self, key: str, action: str, cmd: dict) -> dict:
+        if key == "maj" and action == "update":  # 10/11 : bouton de la fenêtre « Mise à jour » (hud/src/maj.js)
+            return {"ok": True, "level": "info", "text": "(démo) Mise à jour lancée : rien n'est installé."}
         item = self._item(key)
         if item is None or action not in [a.get("id") for a in item.get("actions") or []]:
             return {"ok": False, "error": "action indisponible pour l'instant (la page s'est peut-être mise à jour)."}
@@ -1814,6 +1816,10 @@ def main() -> int:
         elif cmd.get("cmd") in ("propositions_local_get", "proposition_local_appliquer",
                                 "proposition_local_refuser"):  # 05/11 (lot 5 du moteur local)
             return demo_propositions_local.command(str(cmd["cmd"]), cmd)
+        elif cmd.get("cmd") == "demo_maj":  # 10/11, tests du HUD : évènement collant `maj_dispo` (astrel/maj.py)
+            ev = {k: v for k, v in cmd.items() if k not in ("cmd", "id")}
+            bus.publish("maj_dispo", **ev)
+            return {"ok": True}
         elif cmd.get("cmd") == "demo_plan":  # tests du HUD : un nouveau plan déposé en direct
             return demo_plans.new_plan()
         elif cmd.get("cmd") == "demo_plans_offline":  # tests du HUD : cœur injoignable pour les plans

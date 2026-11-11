@@ -282,7 +282,8 @@ class MissionCoeur:
               ("todo", "_todo_tick"),                    # plan P38 lot 3 : « prêt à clore »
               ("propositions de mémoire", "_propositions_tick"),  # 04/11 (T49) : badge, toutes les 5 s
               ("propositions de Qwen", "_propositions_local_tick"),  # 05/11 (lot 5) : badge et notice, 5 s
-              ("relevé du quota", "_quota_tick"))        # 22/10 : quota relevé hors des tours
+              ("relevé du quota", "_quota_tick"),        # 22/10 : quota relevé hors des tours
+              ("mises à jour", "_maj_tick"))             # 10/11 : vérification auto, 1 min puis 24 h
     TICK_PANNE_S = 60.0  # un tick qui retombe en panne : une ligne de journal par minute au plus
 
     def _tick_en_panne(self, libelle: str) -> None:

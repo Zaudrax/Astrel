@@ -6,6 +6,8 @@
 
 1. `git pull --ff-only` : n'avance que si ta copie n'a pas divergé (aucune
    fusion faite dans ton dos) ;
+   10/11 : affiche la version (fichier `VERSION`) avant et après, et les notes de
+   `NOUVEAUTES.md` des versions reçues ;
 2. réinstalle les dépendances Python ou Node SEULEMENT si leur liste a changé ;
 3. ajoute les nouveaux réglages d'exemple, sans toucher aux tiens ;
 4. retient la nouvelle empreinte du garde-fou si (et seulement si) tes fichiers
@@ -48,6 +50,41 @@ def _load_install():
     sys.modules["astrel_install"] = mod
     spec.loader.exec_module(mod)
     return mod
+
+
+def _load_nouveautes():
+    """`astrel/nouveautes.py` chargé par son chemin : module pur, sans les dépendances d'Astrel."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("astrel_nouveautes", ROOT / "astrel" / "nouveautes.py")
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _read(rel: str, root: Path = ROOT) -> str:
+    try:
+        return (root / rel).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def nouveautes_recues(avant: str, root: Path = ROOT) -> list[str]:
+    """Lignes à afficher après le pull : « Version : 2.0.0 → 2.1.0 » puis les notes des versions reçues."""
+    try:
+        nv = _load_nouveautes()
+    except Exception:
+        return []
+    apres = nv.lire_version(_read("VERSION", root))
+    if not nv.plus_recente(apres, avant):
+        return []
+    lignes = [f"   Version : {avant or '?'} → {apres}"
+              + ("  (MISE À JOUR MAJEURE)" if nv.est_majeure(apres, avant) else "")]
+    for sec in nv.depuis(_read("NOUVEAUTES.md", root), avant, apres):
+        lignes.append(f"   — {sec['version']}" + (f" ({sec['date']})" if sec["date"] else ""))
+        lignes.extend(f"     {ligne}" if ligne else "" for ligne in sec["texte"].splitlines())
+    return lignes
 
 
 def digest(root: Path, files: list[str]) -> str:
@@ -96,6 +133,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     before_rev = git("rev-parse", "HEAD").stdout.strip()
+    try:
+        version_avant = _load_nouveautes().lire_version(_read("VERSION"))
+    except Exception:
+        version_avant = ""
     before = {k: digest(ROOT, v) for k, v in WATCHED.items()}
     print("1/4 Récupération (git pull --ff-only)")
     pull = git("pull", "--ff-only")
@@ -108,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
     if not changed:
         print("Déjà à jour.")
         return 0
+    for ligne in nouveautes_recues(version_avant):
+        print(ligne)
 
     print("2/4 Dépendances")
     after = {k: digest(ROOT, v) for k, v in WATCHED.items()}

@@ -506,6 +506,7 @@ async def run(url):
         await check_audit(p)
         await check_propositions(p)  # 04/11 (T49)
         await check_propositions_local(p)  # 05/11 (lot 5 du moteur local)
+        await check_maj(p)  # 10/11 : mise à jour disponible (hud/src/maj.js)
         await check_hors_ligne(p)  # 04/11 (lot 2 du moteur local)
         await check_barre_du_haut(p)  # 19/10
         await check_mise_en_page(p)
@@ -3190,6 +3191,67 @@ async def check_propositions_local(p: Page) -> None:
           modal and gone and hidden and r.get("raison") == "plus tard")
     await p.js("document.querySelector('.modal.propositions .modal-x').click()")
     check("Qwen : fermeture", await p.until("!document.querySelector('.modal.propositions')", 2))
+
+
+async def check_maj(p: Page) -> None:
+    """10/11 : évènement `maj_dispo` (astrel/maj.py) → pastille « Mise à jour » ; version mineure : pastille
+    seule ; version MAJEURE : fenêtre des nouveautés ouverte d'elle-même (une fois par version), notes en
+    markdown sûr ; « Mettre à jour » = `settings_action maj update` après la boîte du HUD ; plus rien → cachée."""
+    sent = lambda cmd: p.js(f"window.__sent.filter(m => m.cmd === {json.dumps(cmd)})")
+    demo = lambda **ev: p.js(f"window.__ws.send({json.dumps(json.dumps({'cmd': 'demo_maj', **ev}))})")
+    await p.js("(() => { try { localStorage.removeItem('astrel-maj-vue'); } catch {} return true; })()")
+    notes = [{"version": "3.0.0", "date": "2026-12-01",
+              "texte": "- **Nouvelle voix** par défaut\n- Réglages revus <img src=x onerror=alert(1)>"},
+             {"version": "2.1.0", "date": "2026-11-20", "texte": "- Petit ajout"}]
+    await demo(disponible=True, behind=3, version_locale="2.0.0", version="2.1.0", majeure=False,
+               notes=notes[1:], bloque="", lancee=False)
+    shown = await p.until("(() => { const c = document.querySelector('#maj-chip');"
+                          " return !c.classList.contains('hidden') && c.getClientRects().length > 0; })()", 3)
+    c = await p.js("""(() => { const c = document.querySelector('#maj-chip');
+        return { text: c.textContent.trim(), major: c.classList.contains('majeure'),
+                 panel: !!document.querySelector('.modal.maj') }; })()""")
+    check(f"Mise à jour mineure : pastille « {c['text']} », pas de fenêtre d'office",
+          shown and c["text"] == "Mise à jour 2.1.0" and not c["major"] and not c["panel"])
+    await demo(disponible=True, behind=5, version_locale="2.0.0", version="3.0.0", majeure=True,
+               notes=notes, bloque="", lancee=False)
+    opened = await p.until("!!document.querySelector('.modal.maj .maj-note')", 3)
+    o = await p.js("""(() => { const m = document.querySelector('.modal.maj');
+        return { head: m.querySelector('.maj-titre').textContent, installed: m.querySelector('.maj-installee').textContent,
+                 notes: [...m.querySelectorAll('.maj-note-titre')].map(h => h.textContent),
+                 strong: m.querySelectorAll('.maj-note strong').length, bad: m.querySelectorAll('img, script, iframe').length,
+                 chip: document.querySelector('#maj-chip').classList.contains('majeure'),
+                 go: !!m.querySelector('.maj-actions .btn.ok:not([disabled])') }; })()""")
+    check(f"Mise à jour MAJEURE : fenêtre ouverte d'office « {o['head']} », notes {o['notes']} en markdown sûr",
+          opened and o["head"] == "Nouvelle version majeure : Astrel 3.0.0." and o["installed"].endswith("2.0.0")
+          and o["notes"] == ["3.0.0 — 2026-12-01", "2.1.0 — 2026-11-20"] and o["strong"] == 1 and o["bad"] == 0
+          and o["chip"] and o["go"])
+    await p.shot("18d-maj.png")
+    await p.js("document.querySelector('.modal.maj .maj-actions .btn.ok').click()")
+    confirm = await p.until("!!document.querySelector('.modal:not(.wide) .modal-ok')", 3)
+    await p.js("document.querySelector('.modal:not(.wide) .modal-ok').click()")
+    await p.until("window.__sent.some(m => m.cmd === 'settings_action' && m.key === 'maj')", 3)
+    a = [m for m in await sent("settings_action") if m.get("key") == "maj"]
+    check("Mise à jour : « Mettre à jour » demande confirmation puis envoie settings_action maj update",
+          confirm and bool(a) and a[-1].get("action") == "update")
+    await p.js("document.querySelector('.modal.maj .modal-x').click()")
+    await p.until("!document.querySelector('.modal.maj')", 2)
+    # Même version republiée : la fenêtre ne se rouvre pas (vue une fois par version).
+    await demo(disponible=True, behind=5, version_locale="2.0.0", version="3.0.0", majeure=True,
+               notes=notes, bloque="2 fichier(s) suivi(s) modifié(s) ici : mise à jour à la main", lancee=False)
+    await asyncio.sleep(0.4)
+    again = await p.js("!!document.querySelector('.modal.maj')")
+    await p.js("document.querySelector('#maj-chip').click()")
+    await p.until("!!document.querySelector('.modal.maj')", 2)
+    blk = await p.js("""(() => { const m = document.querySelector('.modal.maj');
+        return { txt: (m.querySelector('.maj-bloque') || {}).textContent || '',
+                 dis: !!m.querySelector('.maj-actions .btn.ok[disabled]') }; })()""")
+    check("Mise à jour : pas rouverte pour la même version ; bloquée (fichiers modifiés) = raison affichée, bouton grisé",
+          not again and "modifié" in blk["txt"] and blk["dis"])
+    await p.js("document.querySelector('.modal.maj .modal-x').click()")
+    await demo(disponible=False, behind=0, version_locale="2.0.0", version="", majeure=False, notes=[], bloque="",
+               lancee=False)
+    hidden = await p.until("document.querySelector('#maj-chip').classList.contains('hidden')", 3)
+    check("Mise à jour : rien de neuf → pastille cachée", hidden)
 
 
 async def check_plans(p: Page) -> None:
