@@ -98,6 +98,8 @@ GROUPES: dict[str, tuple[str, str]] = {
     "bureau": ("Bureau : voir et agir", ""),
     "memoire": ("Mémoire et historique", "memoire"),
     "rappels": ("Rappels", "rappels"),
+    "clients": ("Clients et prospects (CRM)", ""),  # 09/11 (T90) : CRM freelance local
+    "suivi": ("Suivi clients (contrats, maintenance)", ""),  # 10/11 (T90) : contrats de maintenance
     "hud": ("HUD, canaux et comptes rendus", "hud"),
     "partage": ("Images et WhatsApp", "whatsapp"),
     "connecteurs": ("Connecteurs", "connecteurs"),
@@ -118,12 +120,19 @@ OUTILS_GROUPES: tuple[tuple[str, str], ...] = (
     ("connecteurs:*", "connecteurs"),
     ("memory_*", "memoire"), ("history_search", "memoire"), ("annuler_ecritures", "memoire"),  # 01/11
     ("reminder_*", "rappels"),
+    ("crm_lead_*", "clients"),  # 09/11 (T90) : prospects du CRM freelance
+    ("outreach_*", "clients"),  # 09/11 (T91) : séquences de relance des prospects
+    ("devis_*", "clients"),     # 09/11 (T90 Devis) : devis freelance liés aux prospects
+    ("facture_*", "clients"),   # 09/11 (T90 Facture) : factures freelance liées aux prospects
+    ("projet_*", "clients"),    # 10/11 (T90 Projet) : projets freelance liés aux prospects
+    ("maintenance_*", "suivi"),  # 10/11 (T90 Maintenance) : contrats de maintenance (nouveau groupe, clients plein)
     ("reflex_*", "reflexes"),
     ("sensor_status", "capteurs"), ("set_sensor", "capteurs"),
     ("plan_*", "agents"), ("mission_start", "agents"), ("passation", "agents"), ("courrier_*", "agents"),  # plan P33
     ("channel_*", "hud"), ("post_report", "hud"), ("ask_choice", "hud"), ("set_voice_pause", "hud"),
     ("show_media", "hud"), ("todo_*", "hud"),  # plan P38 : todo par projet
     ("generate_image", "partage"), ("generate_video", "partage"), ("whatsapp_*", "partage"),
+    ("draft_message", "partage"),  # 09/11 (T88) : proposer un message sortant dans la file d'envoi
     ("screen_capture", "bureau"), ("list_screens", "bureau"), ("camera_capture", "bureau"), ("system_status", "bureau"),
     ("open_*", "bureau"), ("notify", "bureau"), ("set_volume", "bureau"), ("set_brightness", "bureau"),
     ("set_dark_mode", "bureau"), ("media_control", "bureau"), ("clipboard_*", "bureau"),

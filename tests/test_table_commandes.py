@@ -1,7 +1,7 @@
 """T58 pas 1 (04/11) : `_on_command` en table nom → méthode. Ce test FIGE, avant et après le déplacement du
 code, les noms traités (147 avec history_query, 04/11 ; 149 avec local_vers_claude et local_demandes, 05/11 ;
-152 avec les propositions du modèle local, lot 5, 05/11 ; 153 avec chat_commande, commandes « / » du chat, 05/11) et
-les refus faits à Claude (message exact)."""
+152 avec les propositions du modèle local, lot 5, 05/11 ; 153 avec chat_commande, commandes « / » du chat, 05/11 ;
+155 avec pentest et teste_cible, capacité de pentest, 09/11) et les refus faits à Claude (message exact)."""
 from __future__ import annotations
 
 import ast
@@ -30,6 +30,8 @@ NOMS = {
     "reports", "reprendre", "reprends", "reset", "restart", "resume", "say", "sensor", "sensors",
     "settings_action", "settings_apply", "settings_get", "settings_set", "show_media", "silence", "status", "stop",
     "stop-listening", "stop-tout", "stop_task", "stop_tout", "stoptout", "suite", "tais-toi", "task_detail",
+    "pentest", "teste_cible",  # 09/11 : capacité de pentest (cyber-local), l'utilisateur seul
+    "outbox_stage", "outbox_get", "outbox_accept", "outbox_refuse", "outbox_edit", "outbox_revise",  # 09/11 (T88)
     "task_stop", "todo_add", "todo_done", "todo_drop", "todo_edit", "todo_get", "todo_list", "todo_move",
     "todo_ordre", "todos_get", "toggle", "total", "unmute", "usage", "video_cancel", "video_generate",
     "video_status", "voice", "voice_mute", "voices", "wake", "whatsapp", "whatsapp_file", "whatsapp_file_status",
@@ -65,6 +67,15 @@ REFUS = {
     "local_vers_claude": "local_vers_claude est réservé au HUD de l'utilisateur",  # 05/11 (lot 6 du moteur local)
     "local_demandes": "local_demandes est réservé au HUD de l'utilisateur",
     "chat_commande": "chat_commande est réservé au HUD de l'utilisateur",  # 05/11 : commandes « / » du chat
+    # 09/11 (cyber-local) : le cerveau ne lance JAMAIS de pentest
+    "pentest": "pentest réservé à l'utilisateur (voix ou HUD), refusé à Claude",
+    "teste_cible": "pentest réservé à l'utilisateur (voix ou HUD), refusé à Claude",
+    # 09/11 (T88) : file des envois en attente (outbox_stage, lui, est permis à Claude : il PROPOSE)
+    "outbox_get": "file d'envoi réservée à l'utilisateur (HUD), refusée à Claude",
+    "outbox_accept": "file d'envoi réservée à l'utilisateur (HUD), refusée à Claude",
+    "outbox_refuse": "file d'envoi réservée à l'utilisateur (HUD), refusée à Claude",
+    "outbox_edit": "file d'envoi réservée à l'utilisateur (HUD), refusée à Claude",
+    "outbox_revise": "file d'envoi réservée à l'utilisateur (HUD), refusée à Claude",
 }
 
 

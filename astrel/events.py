@@ -30,6 +30,7 @@ STICKY = {"state", "graph", "sensors", "quota", "session", "voice", "model", "mi
           "usage", "followup", "mission", "grants", "dictation",
           "propositions",  # 04/11 (T49) : nombre de propositions de mémoire en attente
           "propositions_local",  # 05/11 (lot 5 du moteur local) : propositions de Qwen en attente (badge)
+          "outbox",  # 09/11 (T88) : nombre de messages sortants en attente (badge de la file d'envoi)
           # 15/10 : mode « Autonome TOTAL » (en mémoire seulement), page « Réglages »
           "total", "settings",
           # 15/10 : mode plan, liste des plans (`plans.py`) ; le détail (`plan`) n'est pas rejoué

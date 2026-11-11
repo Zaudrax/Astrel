@@ -34,6 +34,7 @@ from . import sources
 from . import gel
 from . import routeur  # 04/11 : moteur demandé expressément (local ou Claude)
 from . import hors_ligne  # 04/11 : mode « rien ne sort »
+from . import cyber  # 09/11 : capacité de pentest (cyber-local)
 from . import sensible  # 04/11 : données sensibles (lot 3 du moteur local)
 from . import commandes_chat  # 05/11 : commandes « / » du chat
 from . import langue  # 02/11 : langue de la conversation (fr, en)
@@ -59,6 +60,7 @@ from .graph import graph
 from .listener import Transcriber, VoiceRecorder, WakeWord
 from .reports import clean_files, reports
 from .reports import parse_kind as report_kind
+from .outbox import outbox  # 09/11 (T88) : file des envois en attente
 from .plans import plans
 from .sensors import sensors
 from .settings import EFFORTS, SettingError, reglages
@@ -510,6 +512,8 @@ from .coeur.local_tour import TourLocalCoeur  # 04/11 : moteur local (Qwen), dem
 from .coeur.hors_ligne import HorsLigneCoeur  # 04/11 : mode « rien ne sort » (lot 2 du moteur local)
 from .coeur.routage import RoutageCoeur  # 04/11 : routage des demandes, barrière des données sensibles (lot 3)
 from .coeur.commandes_chat import CHAT_COMMANDS, CommandesChatCoeur  # 05/11 : commandes « / » du chat
+from .coeur.cyber import CyberCoeur  # 09/11 : capacité de pentest (cyber-local)
+from .coeur.outbox import OUTBOX_COMMANDS, OutboxCoeur  # 09/11 (T88) : file des envois en attente (outbox)
 
 
 def _erreur_auth(ev: "BrainEvent") -> bool:
@@ -541,7 +545,8 @@ def _table_commandes(*paires: tuple[Any, str]) -> dict[str, str]:
 
 class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, ConfirmationsCoeur, TachesCoeur, QuotaCoeur,
              FiabiliteCoeur, CalibrageCoeur, LangueCoeur, CycleCoeur, PropositionsCoeur, TourLocalCoeur,
-             HorsLigneCoeur, RoutageCoeur, PropositionsLocalCoeur, CommandesChatCoeur):
+             HorsLigneCoeur, RoutageCoeur, PropositionsLocalCoeur, CommandesChatCoeur, CyberCoeur,
+             OutboxCoeur):
     # 04/11 (T58, pas 2a) : l'état du tour en cours vit dans `self.tour` (`astrel/tour.py`, champs commentés
     # là-bas) ; les anciens noms (`_turn_active`, `_hushed`, `_splitter`…) en sont des descripteurs.
     _turn_active = DuTour("active")
@@ -899,6 +904,9 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         self._dictation_text = ""
         # Plan P1 (17/10) : WhatsApp, chat « message à soi-même ». Pont lancé par `boot`.
         self.whatsapp = WhatsApp(self)
+        # T88 (09/11) : file des envois en attente. WhatsApp est le premier canal branché ;
+        # l'envoi passe par `send_text` seulement sur « Accepter » de l'utilisateur (jamais d'office).
+        outbox.register_channel("whatsapp", "WhatsApp", self._outbox_send_whatsapp)
         mission.load()  # une mission active avant la relance repart EN PAUSE
         self._publish_mission()  # le HUD l'affiche (en pause) dès sa connexion
         self.status.set(usage=self._usage)
@@ -1389,6 +1397,29 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
 
     def _cmd_whatsapp_file_status(self, name: str, cmd: dict) -> Any:
         return self.whatsapp.file_status(str(cmd.get("ref") or ""))
+
+    def _cmd_outbox_stage(self, name: str, cmd: dict) -> Any:
+        # T88 (09/11) : outil MCP `draft_message` (Claude PROPOSE un message sortant, ou en
+        # fournit la révision) ; rien n'est envoyé ici, l'envoi exige l'« Accepter » de l'utilisateur.
+        return self._outbox_stage_command(name, cmd)
+
+    def _cmd_outbox(self, name: str, cmd: dict) -> Any:
+        # T88 (09/11) : file des envois en attente (voir, accepter, refuser, éditer, réviser) ;
+        # l'utilisateur seul (HUD, terminal), refusée à Claude par le mixin.
+        return self._outbox_command(name, cmd)
+
+    def _outbox_send_whatsapp(self, to: str, text: str) -> dict:
+        """Fonction d'envoi du canal WhatsApp pour la file (`outbox`) : appelée SEULEMENT quand
+        l'utilisateur accepte un brouillon. Vers son chat « message à soi-même » (aucun autre
+        destinataire : Astrel ne choisit jamais de destinataire). Refus clair si WhatsApp est
+        coupé ; « rien ne sort » est déjà vérifié avant l'appel."""
+        wa = self.whatsapp
+        if not wa.linked:
+            return {"ok": False, "error": "WhatsApp n'est pas relié : Réglages › WhatsApp › « Relier avec un QR »"}
+        if not wa.describe().get("enabled"):
+            return {"ok": False, "error": "WhatsApp est coupé dans les réglages : message non envoyé"}
+        wa.send_text(text)
+        return {"ok": True}
 
     def _cmd_report(self, name: str, cmd: dict) -> Any:
         return self._post_report(str(cmd.get("text") or ""), str(cmd.get("channel") or ""),
@@ -2468,6 +2499,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             self.brain.interrupt()
         self._mission_estop()
         videos_ia.videos.estop()  # P41 B3 : vidéos annulées, Chrome du worker arrêté (fil à part)
+        self._pentest_estop()  # 09/11 (cyber-local) : pentests en cours tués (worker et son conteneur)
         with self._tasks_lock:
             ids = list(self._tasks)
         if isinstance(getattr(self, "relief", None), relief.Relief):
@@ -2615,6 +2647,12 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
         bascule = hors_ligne.commande(text) if source in ("voix", "clavier") and not held_mid else ""
         if bascule:
             self._hors_ligne_dit(bascule, text, source, channel)
+            return
+        # 09/11 (cyber-local) : « pentest/teste/scan <cible> », dit ou tapé par l'utilisateur (jamais Claude) :
+        # lancé contre la cible SI elle est dans le périmètre ; la demande ne part jamais à Claude.
+        pentest = cyber.commande(text) if source in ("voix", "clavier") and not held_mid else None
+        if pentest is not None:
+            self._pentest_dit(pentest[0], pentest[1], text, source, channel)
             return
         if hors_ligne.actif():
             # Mode « rien ne sort » : Claude est arrêté ; l'utilisateur parle au moteur local, le reste attend.
@@ -3409,6 +3447,7 @@ class Astrel(MediasCoeur, MissionCoeur, ReglagesCoeur, CerveauCoeur, Confirmatio
             log.exception("migration des canaux non faite")
         channels.publish()
         reports.publish()
+        outbox.publish()  # T88 (09/11) : nombre d'envois en attente (badge du HUD), rejoué à chaque connexion
         try:
             plans.publish()  # page « Plans » : liste et mode, rejoués à chaque HUD qui se connecte
         except Exception:
@@ -3737,6 +3776,9 @@ Astrel._COMMANDES = _table_commandes(
     (("stop_task", "task_stop"), "_cmd_stop_task"),
     (("task_detail",), "_cmd_task_detail"),
     (("history_query",), "_cmd_history_query"),  # 04/11 : recherche du HUD, l'utilisateur seul
+    (("pentest", "teste_cible"), "_cmd_pentest"),  # 09/11 : pentest d'une cible du périmètre, l'utilisateur seul (cyber-local)
+    (("outbox_stage",), "_cmd_outbox_stage"),  # 09/11 (T88) : dépôt/révision d'un message sortant (draft_message, Claude)
+    (OUTBOX_COMMANDS, "_cmd_outbox"),  # 09/11 (T88) : file des envois en attente, l'utilisateur seul (refusée à Claude)
     # 05/11 (lot 6 du moteur local) : « Envoyer à Claude » sous une réponse locale, HUD de l'utilisateur seul
     (("local_vers_claude",), "_cmd_local_vers_claude"),
     (("local_demandes",), "_cmd_local_demandes"),

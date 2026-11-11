@@ -479,6 +479,56 @@ MCP_POLICY: dict[str, dict[str, str]] = {
         "channel_list": "", "channel_create": "", "channel_edit": "", "channel_delete": SENSITIVE,
         # réflexes (une vérification « command » est rejugée par `senses/checks.py`)
         "reflex_list": "", "reflex_create": SENSITIVE, "reflex_enable": SENSITIVE, "reflex_delete": SENSITIVE,
+        # 09/11 (T88, accord explicite de l'utilisateur) : Claude PROPOSE un message sortant dans la file
+        # d'envoi (outbox, commande `outbox_stage`) ; l'ENVOI reste le clic de l'utilisateur au HUD. Le dépôt
+        # d'un brouillon est SENSIBLE (contrôlé, journalisé), jamais libre.
+        "draft_message": SENSITIVE,
+        # 09/11 (T90, accord explicite de l'utilisateur) : CRM freelance local (prospects, `astrel/crm.py`,
+        # runtime/crm.db). Données clients de l'utilisateur : pas des secrets, mais les ÉCRITURES (ajout, mise à
+        # jour) sont SENSIBLES (contrôlées, libres en autonome, demandées en prudent) ; les LECTURES (liste,
+        # fiche) sont libres (ses propres données, consultées sans friction). Aucun envoi/contact ici (T91).
+        "crm_lead_add": SENSITIVE, "crm_lead_update": SENSITIVE, "crm_lead_list": "", "crm_lead_get": "",
+        # 09/11 (T91, accord explicite de l'utilisateur) : séquences de RELANCE (outreach) des prospects
+        # (`astrel/outreach.py`, mêmes tables que le CRM dans runtime/crm.db). Même règle que le CRM : les
+        # ÉCRITURES (démarrer une séquence, préparer un brouillon de relance, changer un statut) sont
+        # SENSIBLES (contrôlées, libres en autonome, demandées en prudent) ; les LECTURES (relances dues,
+        # liste des séquences) libres. AUCUN envoi ici : préparer ne fait que DÉPOSER un brouillon dans la
+        # file d'envoi, que l'utilisateur valide et envoie lui-même (l'envoi reste son clic, action critique).
+        "outreach_start": SENSITIVE, "outreach_prepare": SENSITIVE, "outreach_mark": SENSITIVE,
+        "outreach_due": "", "outreach_list": "",
+        # 09/11 (T90 Devis, accord explicite de l'utilisateur) : DEVIS freelance liés aux prospects
+        # (`astrel/devis.py`, mêmes tables que le CRM dans runtime/crm.db). Même règle que le CRM : les
+        # ÉCRITURES (créer, ajouter une ligne, mettre à jour, préparer un brouillon de devis) sont
+        # SENSIBLES (contrôlées, libres en autonome, demandées en prudent) ; les LECTURES (liste, fiche)
+        # libres. AUCUN envoi ici : préparer ne fait que DÉPOSER un brouillon dans la file d'envoi, que
+        # l'utilisateur valide et envoie lui-même (l'envoi reste son clic, action critique).
+        "devis_create": SENSITIVE, "devis_add_line": SENSITIVE, "devis_update": SENSITIVE,
+        "devis_prepare": SENSITIVE, "devis_list": "", "devis_get": "",
+        # 09/11 (T90 Facture, accord explicite de l'utilisateur) : FACTURES freelance liées aux prospects
+        # (`astrel/facture.py`, mêmes tables que le CRM dans runtime/crm.db), nées d'un devis accepté ou
+        # autonomes. Même règle que le CRM et les devis : les ÉCRITURES (créer, ajouter une ligne, mettre
+        # à jour — dont marquer payée/impayée —, préparer un brouillon de facture) sont SENSIBLES
+        # (contrôlées, libres en autonome, demandées en prudent) ; les LECTURES (liste, fiche) libres.
+        # AUCUN envoi ici : préparer ne fait que DÉPOSER un brouillon dans la file d'envoi, que l'utilisateur
+        # valide et envoie lui-même (l'envoi reste son clic, action critique).
+        "facture_create": SENSITIVE, "facture_add_line": SENSITIVE, "facture_update": SENSITIVE,
+        "facture_prepare": SENSITIVE, "facture_list": "", "facture_get": "",
+        # 10/11 (T90 Projet, accord explicite de l'utilisateur) : PROJETS freelance liés aux prospects
+        # (`astrel/projet.py`, même table que le CRM dans runtime/crm.db), nés d'un devis accepté ou
+        # autonomes (le TRAVAIL livré à un client : avancement, livrables, dates). Même règle que le CRM,
+        # les devis et les factures : les ÉCRITURES (créer, mettre à jour) sont SENSIBLES (contrôlées,
+        # libres en autonome, demandées en prudent) ; les LECTURES (liste, fiche) libres. AUCUN envoi ni
+        # facturation ici : un projet ne s'envoie pas (c'est la facture qui va dans la file d'envoi).
+        "projet_create": SENSITIVE, "projet_update": SENSITIVE, "projet_list": "", "projet_get": "",
+        # 10/11 (T90 Maintenance, dernier module cœur, accord explicite de l'utilisateur) : CONTRATS DE
+        # MAINTENANCE freelance liés aux prospects (`astrel/maintenance.py`, même table que le CRM dans
+        # runtime/crm.db), nés d'un projet livré ou autonomes (maintenance récurrente d'un site/app livré).
+        # Même règle que le CRM, les devis, les factures et les projets : les ÉCRITURES (créer, mettre à
+        # jour) sont SENSIBLES (contrôlées, libres en autonome, demandées en prudent) ; les LECTURES (liste,
+        # fiche) libres. AUCUN envoi, AUCUNE facturation, AUCUNE surveillance réseau ici : un contrat ne
+        # s'envoie pas (c'est la facture qui va dans la file d'envoi).
+        "maintenance_create": SENSITIVE, "maintenance_update": SENSITIVE, "maintenance_list": "",
+        "maintenance_get": "",
     },
     # Serveur « connecteurs » (`mcp_connectors.py`) : avant le 04/11, inconnu donc sensible par son nom ;
     # la même gravité, écrite.

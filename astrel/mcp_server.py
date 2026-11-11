@@ -411,6 +411,23 @@ def post_report(text: str, channel: str = "", kind: str = "info", files: list[st
     return _core({"cmd": "report", "text": text, "channel": channel, "kind": kind, "files": paths})
 
 
+# 09/11 (T88, accord explicite de l'utilisateur) : Claude PROPOSE un message sortant ; l'envoi reste son clic.
+@server.tool()
+def draft_message(text: str, channel: str = "whatsapp", to: str = "", replace: str = "") -> dict:
+    """Dépose un BROUILLON de message sortant dans la file d'envoi de l'utilisateur (outbox), pour qu'il le
+    relise, l'édite ou le révise, puis l'ENVOIE lui-même : tu ne l'envoies JAMAIS toi-même, l'envoi est
+    son clic au HUD. Sers-t'en pour proposer un message (ex. une réponse WhatsApp). `channel` = le canal
+    d'envoi (« whatsapp »). `to` = destinataire éventuel (facultatif ; l'utilisateur choisit à qui). `replace`
+    = l'identifiant d'un brouillon EN COURS DE RÉVISION à réécrire (quand l'utilisateur a demandé « rends-le
+    plus formel ») ; vide pour un nouveau brouillon."""
+    reply = state.send_command(json.dumps(
+        {"cmd": "outbox_stage", "text": text, "channel": channel, "to": to, "replace": replace}), timeout=5.0)
+    try:
+        return json.loads(reply or "{}")
+    except ValueError:
+        raise ToolError(reply or "la file d'envoi n'a pas répondu")
+
+
 @server.tool()
 def show_media(items: list[str] | str, title: str = "", channel: str = "") -> dict:
     """MONTRE des fichiers dans le fil du HUD, SANS RIEN DIRE : image (galerie, agrandie au clic),
@@ -427,6 +444,582 @@ def show_media(items: list[str] | str, title: str = "", channel: str = "") -> di
     paths = [str(f)[:300] for f in (items or [])[:10]]
     return _core({"cmd": "show_media", "items": paths, "title": str(title)[:200], "channel": channel},
                  ensure_ascii=False)
+
+
+# --- CRM freelance : prospects (leads) ---
+# 09/11 (T90, 1er incrément validé par l'utilisateur) : stockage LOCAL des prospects dans runtime/crm.db
+# (`astrel/crm.py`, appelé directement comme memory_*). Pas d'envoi ni de relance ici : on ne contacte
+# JAMAIS un prospect depuis ces outils (c'est T91, via la file d'envoi).
+
+@server.tool()
+def crm_lead_add(nom: str, telephone: str = "", email: str = "", site_web: str = "", source: str = "",
+                 ville: str = "", secteur: str = "", note: float | None = None, avis: int | None = None,
+                 statut: str = "nouveau", notes: str = "") -> dict:
+    """Ajoute un PROSPECT (lead) au CRM local de l'utilisateur et rend sa fiche avec son score de qualification.
+    Pour « ajoute un prospect… », « note ce client potentiel… ». `nom` est obligatoire ; le reste est
+    facultatif : `telephone`, `email`, `site_web` (une adresse, pas une recherche), `source` (d'où il
+    vient : bouche-à-oreille, Google Maps…), `ville`, `secteur` (restaurant, plombier…), `note` (note
+    publique sur 5, ex. 4.5), `avis` (nombre d'avis), `statut` (nouveau, contacté, qualifié, perdu,
+    gagné), `notes` (texte libre). Le SCORE (0-100) est calculé tout seul : un prospect SANS site web
+    compte le plus. On n'envoie RIEN et on ne contacte personne : c'est juste rangé pour plus tard."""
+    from . import crm
+
+    return crm.ajouter(nom, telephone=telephone, email=email, site_web=site_web, source=source,
+                       ville=ville, secteur=secteur, note=note, avis=avis, statut=statut, notes=notes)
+
+
+@server.tool()
+def crm_lead_list(statut: str = "", min_score: int | None = None, limite: int = 50) -> list[dict]:
+    """Liste les PROSPECTS du CRM de l'utilisateur, du meilleur score au moins bon. Pour « montre mes
+    prospects », « quels leads à relancer ? ». `statut` : n'en garder qu'un (nouveau, contacté,
+    qualifié, perdu, gagné) ; `min_score` : score minimum ; `limite` : au plus N fiches (50 par défaut)."""
+    from . import crm
+
+    return crm.lister(statut=statut or None, min_score=min_score, limite=limite)
+
+
+@server.tool()
+def crm_lead_update(lead_id: int, nom: str = "", telephone: str = "", email: str = "", site_web: str = "",
+                    source: str = "", ville: str = "", secteur: str = "", note: float | None = None,
+                    avis: int | None = None, statut: str = "", notes: str = "") -> dict:
+    """Met à jour un PROSPECT du CRM (par son `lead_id`, donné par crm_lead_list) et recalcule son score.
+    Pour « passe ce prospect en contacté », « ajoute son e-mail ». Ne donne QUE les champs à changer ;
+    laisse vide ceux qu'on ne touche pas. Champs : nom, telephone, email, site_web, source, ville,
+    secteur, note, avis, statut (nouveau, contacté, qualifié, perdu, gagné), notes. On ne contacte
+    personne : cet outil ne fait que modifier la fiche."""
+    from . import crm
+
+    champs: dict = {}
+    for cle, val in (("nom", nom), ("telephone", telephone), ("email", email), ("site_web", site_web),
+                     ("source", source), ("ville", ville), ("secteur", secteur), ("statut", statut),
+                     ("notes", notes)):
+        if val != "":
+            champs[cle] = val
+    if note is not None:
+        champs["note"] = note
+    if avis is not None:
+        champs["avis"] = avis
+    if not champs:
+        raise ToolError("rien à mettre à jour : donne au moins un champ à changer")
+    return crm.maj(int(lead_id), **champs)
+
+
+@server.tool()
+def crm_lead_get(lead_id: int) -> dict:
+    """Rend la fiche complète d'un PROSPECT du CRM par son identifiant (`lead_id`, donné par crm_lead_list).
+    Pour « montre-moi la fiche de ce prospect »."""
+    from . import crm
+
+    fiche = crm.get(int(lead_id))
+    if fiche is None:
+        raise ToolError(f"prospect {lead_id} introuvable")
+    return fiche
+
+
+# --- Relances (outreach) des prospects ---
+# 09/11 (T91, 1er incrément validé par l'utilisateur) : séquences de relance (`astrel/outreach.py`, mêmes
+# tables dans runtime/crm.db) et BROUILLONS de relance déposés dans la file d'envoi (outbox). INVARIANT :
+# aucun envoi automatique, aucun contact d'un prospect sans le clic de l'utilisateur au HUD. Pas de
+# déclencheur autonome : `outreach_due` LISTE, `outreach_prepare` est lancé à la demande de l'utilisateur.
+
+@server.tool()
+def outreach_start(lead_id: int, modele: str = "site_web") -> dict:
+    """Démarre une SÉQUENCE DE RELANCE pour un prospect du CRM (par son `lead_id`) et planifie ses
+    étapes (dates d'échéance calculées). Pour « lance une séquence de relance pour ce prospect ».
+    `modele` : « site_web » (3 relances de prospection, défaut) ou « relance_simple » (2 messages).
+    Ne contacte personne et ne prépare aucun brouillon : seulement la planification."""
+    from . import outreach
+
+    try:
+        return outreach.demarrer(int(lead_id), modele=modele)
+    except KeyError:
+        raise ToolError(f"prospect {lead_id} introuvable")
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def outreach_due(maintenant: str = "") -> list[dict]:
+    """Liste les RELANCES DUES : les étapes « à faire » dont l'échéance est atteinte, avec le prospect
+    concerné. Pour « quelles relances sont dues ? », « qui dois-je relancer ? ». `maintenant` : date
+    'AAAA-MM-JJ' pour se projeter (vide = aujourd'hui). LISTE seulement : rien n'est préparé ni envoyé."""
+    from . import outreach
+
+    try:
+        return outreach.dues(maintenant or None)
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def outreach_prepare(step_id: int) -> dict:
+    """Prépare la relance d'une étape (par son `step_id`, donné par outreach_due) : construit le texte
+    depuis le modèle et la fiche du prospect, le DÉPOSE comme BROUILLON dans la file d'envoi de l'utilisateur
+    (outbox), et passe l'étape en « brouillon ». Pour « prépare la relance du prospect X ». Tu n'envoies
+    JAMAIS la relance : l'utilisateur la relit, l'édite et l'ENVOIE lui-même au HUD. Rend l'id du brouillon."""
+    from . import outreach
+
+    def _stage(channel: str, text: str, to: str = "", source: str = "claude") -> dict:
+        reply = state.send_command(json.dumps(
+            {"cmd": "outbox_stage", "text": text, "channel": channel, "to": to}), timeout=5.0)
+        try:
+            return json.loads(reply or "{}")
+        except ValueError:
+            return {"ok": False, "error": reply or "la file d'envoi n'a pas répondu"}
+
+    res = outreach.preparer(int(step_id), stage=_stage)
+    if not res.get("ok"):
+        raise ToolError(res.get("error") or "préparation de la relance impossible")
+    return res
+
+
+@server.tool()
+def outreach_mark(step_id: int, statut: str) -> dict:
+    """Change le statut d'une étape de relance (par son `step_id`). `statut` : a_faire, brouillon,
+    envoye (une relance est partie) ou repondu (le prospect a répondu). Ne contacte personne : l'envoi
+    réel reste le clic de l'utilisateur au HUD. Pour « marque cette relance comme répondue »."""
+    from . import outreach
+
+    try:
+        return outreach.marquer(int(step_id), statut)
+    except KeyError:
+        raise ToolError(f"étape de relance {step_id} introuvable")
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def outreach_list(lead_id: int) -> list[dict]:
+    """Liste les SÉQUENCES DE RELANCE d'un prospect (par son `lead_id`) avec leurs étapes et leurs
+    statuts. Pour « où en sont les relances de ce prospect ? »."""
+    from . import outreach
+
+    return outreach.lister(int(lead_id))
+
+
+# --- Devis freelance des prospects ---
+# 09/11 (T90, incrément suivant, validé par l'utilisateur) : DEVIS liés aux prospects (`astrel/devis.py`,
+# mêmes tables dans runtime/crm.db) et BROUILLONS de devis déposés dans la file d'envoi (outbox).
+# INVARIANT : aucun envoi automatique, aucun contact d'un prospect sans le clic de l'utilisateur au HUD.
+# Pas de déclencheur autonome : `devis_prepare` est lancé à la demande, et ne fait que DÉPOSER un
+# brouillon (l'envoi reste le clic de l'utilisateur).
+
+@server.tool()
+def devis_create(lead_id: int, lignes: list[dict] = [], tva_pct: float | None = None,  # noqa: B006
+                 notes: str = "", numero: str = "") -> dict:
+    """Crée un DEVIS pour un prospect du CRM (par son `lead_id`, donné par crm_lead_list) et rend sa
+    fiche avec ses lignes et ses totaux (HT, TTC). Pour « fais un devis pour ce prospect ». `lignes` :
+    liste de {designation, quantite, prix_unitaire} (facultatif, on peut en ajouter après avec
+    devis_add_line) ; quantité et prix >= 0. `tva_pct` : taux de TVA en % (défaut : celui de ton
+    profil, 20). `notes` : texte libre. `numero` : imposé, sinon auto (« DEV-AAAA-NNNNN »). On
+    n'envoie RIEN et on ne contacte personne : c'est juste rangé pour que l'utilisateur l'envoie plus tard."""
+    from . import devis
+
+    try:
+        return devis.creer(int(lead_id), lignes=lignes, tva_pct=tva_pct, notes=notes, numero=numero)
+    except KeyError:
+        raise ToolError(f"prospect {lead_id} introuvable")
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def devis_add_line(devis_id: int, designation: str, quantite: float = 1, prix_unitaire: float = 0) -> dict:
+    """Ajoute une LIGNE à un devis (par son `devis_id`, donné par devis_list) et recalcule ses totaux ;
+    rend la fiche du devis. Pour « ajoute une ligne de 2 jours à 400 € ». `designation` est obligatoire ;
+    `quantite` (nombre de jours ou d'unités, >= 0) ; `prix_unitaire` (en euros, >= 0). On ne contacte
+    personne : cet outil ne fait que compléter le devis."""
+    from . import devis
+
+    try:
+        return devis.ajouter_ligne(int(devis_id), designation, quantite=quantite,
+                                   prix_unitaire=prix_unitaire)
+    except KeyError:
+        raise ToolError(f"devis {devis_id} introuvable")
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def devis_list(lead_id: int | None = None, statut: str = "") -> list[dict]:
+    """Liste les DEVIS, du plus récent au plus ancien, avec leurs lignes et leurs totaux. Pour « montre
+    mes devis », « les devis de ce prospect ». `lead_id` : ceux d'un prospect donné (vide = tous) ;
+    `statut` : n'en garder qu'un (brouillon, envoyé, accepté, refusé)."""
+    from . import devis
+
+    try:
+        return devis.lister(lead_id=lead_id, statut=statut or None)
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def devis_get(devis_id: int) -> dict:
+    """Rend la fiche complète d'un DEVIS (lignes et totaux) par son identifiant (`devis_id`, donné par
+    devis_list). Pour « montre-moi le devis »."""
+    from . import devis
+
+    fiche = devis.get(int(devis_id))
+    if fiche is None:
+        raise ToolError(f"devis {devis_id} introuvable")
+    return fiche
+
+
+@server.tool()
+def devis_update(devis_id: int, statut: str = "", tva_pct: float | None = None, notes: str = "",
+                 numero: str = "") -> dict:
+    """Met à jour un DEVIS (par son `devis_id`) et recalcule ses totaux. Pour « passe le devis en
+    accepté », « change la TVA ». Ne donne QUE les champs à changer ; laisse vide ceux qu'on ne touche
+    pas. Champs : statut (brouillon, envoyé, accepté, refusé), tva_pct (en %), notes, numero. « envoyé »
+    note seulement qu'il est parti : l'envoi réel reste le clic de l'utilisateur au HUD, via la file d'envoi."""
+    from . import devis
+
+    champs: dict = {}
+    if statut:
+        champs["statut"] = statut
+    if numero:
+        champs["numero"] = numero
+    if notes:
+        champs["notes"] = notes
+    if tva_pct is not None:
+        champs["tva_pct"] = tva_pct
+    if not champs:
+        raise ToolError("rien à mettre à jour : donne au moins un champ à changer")
+    try:
+        return devis.maj(int(devis_id), **champs)
+    except KeyError:
+        raise ToolError(f"devis {devis_id} introuvable")
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def devis_prepare(devis_id: int) -> dict:
+    """Prépare un devis à l'envoi (par son `devis_id`) : construit son texte lisible et le DÉPOSE comme
+    BROUILLON dans la file d'envoi de l'utilisateur (outbox). Pour « prépare le devis à envoyer ». Tu
+    n'envoies JAMAIS le devis : l'utilisateur le relit, l'édite et l'ENVOIE lui-même au HUD. Rend l'id du
+    brouillon."""
+    from . import devis
+
+    def _stage(channel: str, text: str, to: str = "", source: str = "claude") -> dict:
+        reply = state.send_command(json.dumps(
+            {"cmd": "outbox_stage", "text": text, "channel": channel, "to": to}), timeout=5.0)
+        try:
+            return json.loads(reply or "{}")
+        except ValueError:
+            return {"ok": False, "error": reply or "la file d'envoi n'a pas répondu"}
+
+    res = devis.preparer(int(devis_id), stage=_stage)
+    if not res.get("ok"):
+        raise ToolError(res.get("error") or "préparation du devis impossible")
+    return res
+
+
+# --- Factures freelance des prospects ---
+# 09/11 (T90 Facture, incrément suivant, validé par l'utilisateur) : FACTURES liées aux prospects
+# (`astrel/facture.py`, mêmes tables dans runtime/crm.db), nées d'un DEVIS accepté ou autonomes, et
+# BROUILLONS de factures déposés dans la file d'envoi (outbox).
+# INVARIANT : aucun envoi automatique, aucun contact d'un client sans le clic de l'utilisateur au HUD.
+# Pas de déclencheur autonome : `facture_prepare` est lancé à la demande, et ne fait que DÉPOSER un
+# brouillon (l'envoi reste le clic de l'utilisateur).
+
+@server.tool()
+def facture_create(lead_id: int, devis_id: int | None = None, lignes: list[dict] = [],  # noqa: B006
+                   tva_pct: float | None = None, echeance: str = "", notes: str = "",
+                   numero: str = "") -> dict:
+    """Crée une FACTURE pour un prospect du CRM (par son `lead_id`, donné par crm_lead_list) et rend sa
+    fiche avec ses lignes et ses totaux (HT, TTC). Pour « fais une facture pour ce client ». `devis_id` :
+    facture née d'un DEVIS accepté (donné par devis_list) — on reprend ses lignes et sa TVA ; les
+    `lignes` passées s'ajoutent. `lignes` : liste de {designation, quantite, prix_unitaire} (on peut en
+    ajouter après avec facture_add_line) ; quantité et prix >= 0. `tva_pct` : taux de TVA en % (défaut :
+    celui du devis repris, sinon de ton profil, 20). `echeance` : date « AAAA-MM-JJ ». `notes` : texte
+    libre. `numero` : imposé, sinon auto (« FAC-AAAA-NNNNN »). On n'envoie RIEN et on ne contacte
+    personne : c'est juste rangé pour que l'utilisateur l'envoie plus tard."""
+    from . import facture
+
+    try:
+        return facture.creer(int(lead_id), devis_id=devis_id, lignes=lignes, tva_pct=tva_pct,
+                             echeance=echeance, notes=notes, numero=numero)
+    except KeyError as exc:
+        raise ToolError(str(exc).strip("'") or f"prospect {lead_id} introuvable")
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def facture_add_line(facture_id: int, designation: str, quantite: float = 1,
+                     prix_unitaire: float = 0) -> dict:
+    """Ajoute une LIGNE à une facture (par son `facture_id`, donné par facture_list) et recalcule ses
+    totaux ; rend la fiche de la facture. Pour « ajoute une ligne de 2 jours à 400 € ». `designation`
+    est obligatoire ; `quantite` (nombre de jours ou d'unités, >= 0) ; `prix_unitaire` (en euros, >= 0).
+    On ne contacte personne : cet outil ne fait que compléter la facture."""
+    from . import facture
+
+    try:
+        return facture.ajouter_ligne(int(facture_id), designation, quantite=quantite,
+                                     prix_unitaire=prix_unitaire)
+    except KeyError:
+        raise ToolError(f"facture {facture_id} introuvable")
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def facture_list(lead_id: int | None = None, statut: str = "") -> list[dict]:
+    """Liste les FACTURES, de la plus récente à la plus ancienne, avec leurs lignes et leurs totaux. Pour
+    « montre mes factures », « les factures impayées ». `lead_id` : celles d'un prospect donné (vide =
+    toutes) ; `statut` : n'en garder qu'un (brouillon, émise, payée, impayée, annulée)."""
+    from . import facture
+
+    try:
+        return facture.lister(lead_id=lead_id, statut=statut or None)
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def facture_get(facture_id: int) -> dict:
+    """Rend la fiche complète d'une FACTURE (lignes et totaux) par son identifiant (`facture_id`, donné
+    par facture_list). Pour « montre-moi la facture »."""
+    from . import facture
+
+    fiche = facture.get(int(facture_id))
+    if fiche is None:
+        raise ToolError(f"facture {facture_id} introuvable")
+    return fiche
+
+
+@server.tool()
+def facture_update(facture_id: int, statut: str = "", tva_pct: float | None = None,
+                   echeance: str = "", notes: str = "", numero: str = "") -> dict:
+    """Met à jour une FACTURE (par son `facture_id`) et recalcule ses totaux. Pour « passe la facture en
+    payée », « marque-la impayée », « change l'échéance ». Ne donne QUE les champs à changer ; laisse
+    vide ceux qu'on ne touche pas. Champs : statut (brouillon, émise, payée, impayée, annulée), tva_pct
+    (en %), echeance (« AAAA-MM-JJ »), notes, numero. « émise » note seulement qu'elle est partie :
+    l'envoi réel reste le clic de l'utilisateur au HUD, via la file d'envoi."""
+    from . import facture
+
+    champs: dict = {}
+    if statut:
+        champs["statut"] = statut
+    if numero:
+        champs["numero"] = numero
+    if echeance:
+        champs["echeance"] = echeance
+    if notes:
+        champs["notes"] = notes
+    if tva_pct is not None:
+        champs["tva_pct"] = tva_pct
+    if not champs:
+        raise ToolError("rien à mettre à jour : donne au moins un champ à changer")
+    try:
+        return facture.maj(int(facture_id), **champs)
+    except KeyError:
+        raise ToolError(f"facture {facture_id} introuvable")
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def facture_prepare(facture_id: int) -> dict:
+    """Prépare une facture à l'envoi (par son `facture_id`) : construit son texte lisible et le DÉPOSE
+    comme BROUILLON dans la file d'envoi de l'utilisateur (outbox). Pour « prépare la facture à envoyer ». Tu
+    n'envoies JAMAIS la facture : l'utilisateur la relit, l'édite et l'ENVOIE lui-même au HUD. Rend l'id du
+    brouillon."""
+    from . import facture
+
+    def _stage(channel: str, text: str, to: str = "", source: str = "claude") -> dict:
+        reply = state.send_command(json.dumps(
+            {"cmd": "outbox_stage", "text": text, "channel": channel, "to": to}), timeout=5.0)
+        try:
+            return json.loads(reply or "{}")
+        except ValueError:
+            return {"ok": False, "error": reply or "la file d'envoi n'a pas répondu"}
+
+    res = facture.preparer(int(facture_id), stage=_stage)
+    if not res.get("ok"):
+        raise ToolError(res.get("error") or "préparation de la facture impossible")
+    return res
+
+
+# --- Projets freelance des prospects ---
+# 10/11 (T90 Projet, incrément suivant, validé par l'utilisateur) : PROJETS liés aux prospects
+# (`astrel/projet.py`, même table dans runtime/crm.db), nés d'un DEVIS accepté ou autonomes. Un projet =
+# le TRAVAIL livré à un client (statut d'avancement, livrables, dates, montant). AUCUN envoi, AUCUNE
+# facturation ici : un projet ne s'envoie pas (c'est la facture qui va dans la file d'envoi). Pas de
+# déclencheur autonome : tout est lancé à la demande.
+
+@server.tool()
+def projet_create(lead_id: int, devis_id: int | None = None, titre: str = "", montant: float | None = None,
+                  date_debut: str = "", date_fin: str = "", livrables: str = "", notes: str = "") -> dict:
+    """Crée un PROJET pour un prospect du CRM et rend sa fiche. Un projet = le travail à livrer à un
+    client (par son `lead_id`, donné par crm_lead_list), suivi par son avancement. Pour « crée un projet
+    pour ce client ». `devis_id` : projet né d'un DEVIS accepté (donné par devis_list) — on reprend son titre
+    (numéro) et son montant (total TTC) si tu ne les donnes pas. `titre` : nom du projet. `montant` : prix
+    en euros (défaut : celui du devis repris, sinon 0). `date_debut` / `date_fin` : dates « AAAA-MM-JJ ».
+    `livrables` : ce qui est à livrer (texte libre). `notes` : texte libre. On n'envoie RIEN, on ne
+    facture RIEN et on ne contacte personne : c'est juste rangé pour le suivi."""
+    from . import projet
+
+    try:
+        return projet.creer(int(lead_id), devis_id=devis_id, titre=titre, montant=montant,
+                            date_debut=date_debut, date_fin=date_fin, livrables=livrables, notes=notes)
+    except KeyError as exc:
+        raise ToolError(str(exc).strip("'") or f"prospect {lead_id} introuvable")
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def projet_list(lead_id: int | None = None, statut: str = "") -> list[dict]:
+    """Liste les PROJETS, du plus récent au plus ancien. Pour « montre mes projets », « les projets en
+    cours », « les projets de ce client ». `lead_id` : ceux d'un prospect donné (vide = tous) ; `statut` :
+    n'en garder qu'un (prospect, en_cours, livré, clos, annulé)."""
+    from . import projet
+
+    try:
+        return projet.lister(lead_id=lead_id, statut=statut or None)
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def projet_get(projet_id: int) -> dict:
+    """Rend la fiche complète d'un PROJET par son identifiant. `projet_id` donné par projet_list. Pour
+    « montre-moi le projet »."""
+    from . import projet
+
+    fiche = projet.get(int(projet_id))
+    if fiche is None:
+        raise ToolError(f"projet {projet_id} introuvable")
+    return fiche
+
+
+@server.tool()
+def projet_update(projet_id: int, titre: str = "", statut: str = "", montant: float | None = None,
+                  date_debut: str = "", date_fin: str = "", livrables: str = "", notes: str = "") -> dict:
+    """Met à jour un PROJET (par son `projet_id`). Pour « passe le projet en cours », « marque-le livré »,
+    « ajoute la date de fin », « note les livrables ». Ne donne QUE les champs à changer ; laisse vide
+    ceux qu'on ne touche pas. Champs : titre, statut (prospect, en_cours, livré, clos, annulé), montant
+    (en €), date_debut / date_fin (« AAAA-MM-JJ »), livrables, notes. Aucun envoi, aucune facturation."""
+    from . import projet
+
+    champs: dict = {}
+    if titre:
+        champs["titre"] = titre
+    if statut:
+        champs["statut"] = statut
+    if montant is not None:
+        champs["montant"] = montant
+    if date_debut:
+        champs["date_debut"] = date_debut
+    if date_fin:
+        champs["date_fin"] = date_fin
+    if livrables:
+        champs["livrables"] = livrables
+    if notes:
+        champs["notes"] = notes
+    if not champs:
+        raise ToolError("rien à mettre à jour : donne au moins un champ à changer")
+    try:
+        return projet.maj(int(projet_id), **champs)
+    except KeyError:
+        raise ToolError(f"projet {projet_id} introuvable")
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+# --- Contrats de maintenance freelance des prospects ---
+# 10/11 (T90 Maintenance, dernier module cœur, validé par l'utilisateur) : CONTRATS DE MAINTENANCE liés aux
+# prospects (`astrel/maintenance.py`, même table dans runtime/crm.db), nés d'un PROJET livré ou autonomes.
+# Un contrat = la maintenance RÉCURRENTE d'un site/app livré (type, montant, fréquence, statut, échéance).
+# AUCUN envoi, AUCUNE facturation, AUCUNE surveillance réseau/uptime ici (DONNÉES seulement, comme les
+# projets ; une facture récurrente passe par facture_*). Pas de déclencheur autonome : tout à la demande.
+
+@server.tool()
+def maintenance_create(lead_id: int, projet_id: int | None = None, titre: str = "", type_: str = "forfait",
+                       montant: float | None = None, frequence: str = "mensuelle",
+                       prochaine_echeance: str = "", notes: str = "") -> dict:
+    """Crée un CONTRAT DE MAINTENANCE pour un prospect du CRM et rend sa fiche. Un contrat = la maintenance
+    récurrente d'un site ou d'une app livré à un client (par son `lead_id`, donné par crm_lead_list). Pour
+    « mets en place un contrat de maintenance pour ce client ». `projet_id` : contrat né d'un PROJET livré
+    (donné par projet_list) — on reprend son client et son titre si tu ne les donnes pas. `titre` : nom du
+    contrat. `type_` : forfait, horaire, mensuel ou annuel. `montant` : prix en euros. `frequence` :
+    mensuelle, trimestrielle, annuelle ou au_besoin. `prochaine_echeance` : date « AAAA-MM-JJ ». `notes` :
+    texte libre. On n'envoie RIEN, on ne facture RIEN, on ne surveille RIEN (c'est un chantier séparé) : le
+    contrat est juste rangé pour le suivi."""
+    from . import maintenance
+
+    try:
+        return maintenance.creer(int(lead_id), projet_id=projet_id, titre=titre, type_=type_,
+                                 montant=montant, frequence=frequence,
+                                 prochaine_echeance=prochaine_echeance, notes=notes)
+    except KeyError as exc:
+        raise ToolError(str(exc).strip("'") or f"prospect {lead_id} introuvable")
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def maintenance_list(lead_id: int | None = None, statut: str = "") -> list[dict]:
+    """Liste les CONTRATS DE MAINTENANCE, du plus récent au plus ancien. Pour « montre mes contrats de
+    maintenance », « les contrats actifs », « les contrats de ce client ». `lead_id` : ceux d'un prospect
+    donné (vide = tous) ; `statut` : n'en garder qu'un (actif, suspendu, termine)."""
+    from . import maintenance
+
+    try:
+        return maintenance.lister(lead_id=lead_id, statut=statut or None)
+    except ValueError as exc:
+        raise ToolError(str(exc))
+
+
+@server.tool()
+def maintenance_get(maintenance_id: int) -> dict:
+    """Rend la fiche complète d'un CONTRAT DE MAINTENANCE par son identifiant. `maintenance_id` donné par
+    maintenance_list. Pour « montre-moi le contrat de maintenance »."""
+    from . import maintenance
+
+    fiche = maintenance.get(int(maintenance_id))
+    if fiche is None:
+        raise ToolError(f"contrat de maintenance {maintenance_id} introuvable")
+    return fiche
+
+
+@server.tool()
+def maintenance_update(maintenance_id: int, titre: str = "", type_: str = "", montant: float | None = None,
+                       frequence: str = "", statut: str = "", prochaine_echeance: str = "",
+                       notes: str = "") -> dict:
+    """Met à jour un CONTRAT DE MAINTENANCE (par son `maintenance_id`). Pour « suspends le contrat »,
+    « termine-le », « change la prochaine échéance », « passe-le en annuel ». Ne donne QUE les champs à
+    changer ; laisse vide ceux qu'on ne touche pas. Champs : titre, type_ (forfait, horaire, mensuel,
+    annuel), montant (en €), frequence (mensuelle, trimestrielle, annuelle, au_besoin), statut (actif,
+    suspendu, termine), prochaine_echeance (« AAAA-MM-JJ »), notes. Aucun envoi, aucune facturation,
+    aucune surveillance."""
+    from . import maintenance
+
+    champs: dict = {}
+    if titre:
+        champs["titre"] = titre
+    if type_:
+        champs["type"] = type_
+    if montant is not None:
+        champs["montant"] = montant
+    if frequence:
+        champs["frequence"] = frequence
+    if statut:
+        champs["statut"] = statut
+    if prochaine_echeance:
+        champs["prochaine_echeance"] = prochaine_echeance
+    if notes:
+        champs["notes"] = notes
+    if not champs:
+        raise ToolError("rien à mettre à jour : donne au moins un champ à changer")
+    try:
+        return maintenance.maj(int(maintenance_id), **champs)
+    except KeyError:
+        raise ToolError(f"contrat de maintenance {maintenance_id} introuvable")
+    except ValueError as exc:
+        raise ToolError(str(exc))
 
 
 @server.tool()
@@ -666,19 +1259,24 @@ def todo_drop(id: str, raison: str) -> dict:  # noqa: A002
 
 @server.tool()
 def passation(de: str, a: str, fait: str, preuves: str = "", a_tester: str = "", risques: str = "",
-              fichiers: list[str] = [], mission: str = "", ameliorations: list[str] = []) -> dict:  # noqa: B006
+              fichiers: list[str] = [], mission: str = "", ameliorations: list[str] = [],  # noqa: B006
+              demande: str = "", criteres: str = "", preuve_requise: str = "") -> dict:
     """Passe la main à l'agent suivant : ajoute une FICHE au journal d'équipe
     `runtime/equipe/<mission>/journal.md` (permis même en lecture seule ; ne pas l'écrire par
     Write). `de` : ton métier (codeur, testeur, relecteur, planificateur, avocat-du-diable…) ;
-    `a` : le suivant (ou « astrel ») ; `fait` : ce qui est fait ; `preuves` : commande lancée et
-    sa sortie, ou fichier:ligne (vide = « non vérifié ») ; `a_tester`, `risques`, `fichiers`
-    (chemins) ; `mission` : nom donné par la consigne (« P13 ») ; `ameliorations` : titres courts des
-    remarques basses, idées, défauts non bloquants (une carte de la todo chacun). 2 Ko au plus. Rend le numéro
-    de fiche et le chemin du journal, que le suivant lira."""
+    `a` : le suivant (ou « astrel »), c'est à lui que va la sortie ; `fait` : ce qui est fait ;
+    `preuves` : commande lancée et sa sortie, ou fichier:ligne (vide = « non vérifié ») ; `a_tester`,
+    `risques`, `fichiers` (chemins) ; `mission` : nom donné par la consigne (« P13 ») ; `ameliorations` :
+    titres courts des remarques basses, idées, défauts non bloquants (une carte de la todo chacun).
+    GABARIT d'une passation carrée : `demande` (ce que le suivant doit faire), `criteres` (critères
+    d'acceptation MESURABLES : à quoi on voit que c'est fini), `preuve_requise` (ce qu'il doit montrer
+    pour prouver « fini »). Écris TON contenu, ne recopie pas la fiche précédente. 2 Ko au plus. Rend le
+    numéro de fiche et le chemin du journal, que le suivant lira."""
     from . import equipe
 
     return equipe.deposer(de, a, fait, a_tester=a_tester, risques=risques, fichiers=fichiers,
-                          preuves=preuves, mission=mission, ameliorations=ameliorations)
+                          preuves=preuves, mission=mission, ameliorations=ameliorations,
+                          demande=demande, criteres=criteres, preuve_requise=preuve_requise)
 
 
 # --- courrier entre agents d'une mission (24/10, plan P33, `courrier.py`) ---
